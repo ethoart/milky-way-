@@ -22,7 +22,8 @@ const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<voi
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const handleLoginClick = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!username || !password) {
         alert('Please enter your credentials');
         return;
@@ -51,19 +52,36 @@ const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<voi
             <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-2">Enterprise OMS Engine</p>
         </div>
         
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="bg-slate-50 rounded-2xl px-5 py-4 border border-slate-200 flex items-center gap-3 focus-within:ring-2 focus-within:ring-blue-500 transition-all">
             <UserIcon size={18} className="text-slate-400" />
-            <input className="w-full bg-transparent text-slate-900 font-bold outline-none text-[13px]" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" />
+            <input 
+              className="w-full bg-transparent text-slate-900 font-bold outline-none text-[13px]" 
+              value={username} 
+              onChange={e => setUsername(e.target.value)} 
+              placeholder="Username"
+              autoComplete="username"
+            />
           </div>
           <div className="bg-slate-50 rounded-2xl px-5 py-4 border border-slate-200 flex items-center gap-3 focus-within:ring-2 focus-within:ring-blue-500 transition-all">
             <Lock size={18} className="text-slate-400" />
-            <input type="password" className="w-full bg-transparent text-slate-900 font-bold outline-none text-[13px]" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
+            <input 
+              type="password" 
+              className="w-full bg-transparent text-slate-900 font-bold outline-none text-[13px]" 
+              value={password} 
+              onChange={e => setPassword(e.target.value)} 
+              placeholder="Password"
+              autoComplete="current-password"
+            />
           </div>
-          <button onClick={handleLoginClick} disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50">
+          <button 
+            type="submit"
+            disabled={loading} 
+            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50"
+          >
             {loading ? 'SYNCING...' : 'SIGN IN TO CLUSTER'}
           </button>
-        </div>
+        </form>
 
         <div className="mt-10 text-center">
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">
@@ -148,7 +166,6 @@ export default function App() {
          {renderPage()}
       </main>
       
-      {/* Dev Tools Trigger (Hidden by default, requires specific key sequence or hidden click) */}
       <div 
         className="fixed bottom-0 right-0 w-4 h-4 opacity-0 hover:opacity-10 cursor-help z-[9999]" 
         onClick={() => {
