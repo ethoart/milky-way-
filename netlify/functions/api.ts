@@ -6,43 +6,36 @@ const CENTRAL_URI = process.env.MONGODB_URI;
 const CENTRAL_DB_NAME = 'milkyway_central';
 
 // Connection Pooling
-let cachedClient: MongoClient | null = null;
+let cachedCentralClient: MongoClient | null = null;
+const tenantClients = new Map<string, MongoClient>();
 
-async function getConnectedClient() {
-  if (cachedClient) {
-    try {
-      // Ping the server to check if connection is still alive
-      await cachedClient.db('admin').command({ ping: 1 });
-      return cachedClient;
-    } catch (e) {
-      console.warn("Cached MongoDB client lost connection, reconnecting...");
-      cachedClient = null;
-    }
-  }
+async function getConnectedClient(uri: string = CENTRAL_URI!) {
+  // Check cache for this specific URI
+  const isCentral = uri === CENTRAL_URI;
+  if (isCentral && cachedCentralClient) return cachedCentralClient;
+  if (!isCentral && tenantClients.has(uri)) return tenantClients.get(uri)!;
 
-  if (!CENTRAL_URI) {
-    throw new Error('MONGODB_URI environment variable is missing in Netlify settings.');
-  }
+  if (!uri) throw new Error('Target MongoDB URI is missing.');
 
-  const client = new MongoClient(CENTRAL_URI, {
+  const client = new MongoClient(uri, {
     serverApi: {
       version: ServerApiVersion.v1,
       strict: true,
       deprecationErrors: true,
     },
-    // Prevent long hangs that cause 502s
-    connectTimeoutMS: 5000,
-    serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 30000,
+    connectTimeoutMS: 8000,
+    serverSelectionTimeoutMS: 8000,
   });
 
   await client.connect();
-  cachedClient = client;
+  
+  if (isCentral) cachedCentralClient = client;
+  else tenantClients.set(uri, client);
+  
   return client;
 }
 
 export const handler: Handler = async (event, context) => {
-  // Prevent context from waiting for the event loop to be empty (important for serverless DB)
   context.callbackWaitsForEmptyEventLoop = false;
 
   const headers = {
@@ -52,12 +45,10 @@ export const handler: Handler = async (event, context) => {
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   };
 
-  // Handle pre-flight OPTIONS request
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers, body: '' };
   }
 
-  // Path Normalization
   const apiPrefix = '/.netlify/functions/api';
   let path = event.path.replace(apiPrefix, '').replace('/api', '') || '/';
   if (!path.startsWith('/')) path = '/' + path;
@@ -65,27 +56,25 @@ export const handler: Handler = async (event, context) => {
   const method = event.httpMethod;
 
   try {
-    const mongoClient = await getConnectedClient();
-    const centralDb = mongoClient.db(CENTRAL_DB_NAME);
+    // 1. Always start with Central DB to authenticate and find Tenant Config
+    const centralClient = await getConnectedClient(CENTRAL_URI!);
+    const centralDb = centralClient.db(CENTRAL_DB_NAME);
     const usersCol = centralDb.collection('users');
     const tenantsCol = centralDb.collection('tenants');
 
-    // System Bootstrapping: Ensure Dev Admin exists
+    // Bootstrap check
     const devExists = await usersCol.findOne({ role: 'DEV_ADMIN' });
     if (!devExists) {
       await usersCol.insertOne({
         id: 'dev-root',
         username: 'admin@milkyway.com',
-        password: 'admin', // Default password
+        password: 'admin',
         role: 'DEV_ADMIN',
         createdAt: new Date().toISOString()
       });
     }
 
-    // Health Check
-    if (path === '/health' || path === '/') {
-      return { statusCode: 200, headers, body: JSON.stringify({ status: 'connected', timestamp: new Date().toISOString() }) };
-    }
+    if (path === '/health') return { statusCode: 200, headers, body: JSON.stringify({ status: 'connected' }) };
 
     // --- Authentication ---
     if (path === '/login' && method === 'POST') {
@@ -98,7 +87,7 @@ export const handler: Handler = async (event, context) => {
       return { statusCode: 401, headers, body: JSON.stringify({ error: 'Invalid credentials' }) };
     }
 
-    // --- Tenant Management (Infrastructure) ---
+    // --- Central Infrastructure ---
     if (path === '/tenants') {
       if (method === 'GET') {
         const tenants = await tenantsCol.find({}).toArray();
@@ -107,9 +96,7 @@ export const handler: Handler = async (event, context) => {
       if (method === 'POST') {
         const { tenant, adminUser } = JSON.parse(event.body || '{}');
         await tenantsCol.updateOne({ id: tenant.id }, { $set: tenant }, { upsert: true });
-        if (adminUser) {
-          await usersCol.updateOne({ id: adminUser.id }, { $set: adminUser }, { upsert: true });
-        }
+        if (adminUser) await usersCol.updateOne({ id: adminUser.id }, { $set: adminUser }, { upsert: true });
         return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
       }
       if (method === 'PUT') {
@@ -119,7 +106,6 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    // --- User Management (Team) ---
     if (path === '/users') {
       if (method === 'GET') {
         const users = await usersCol.find({}).toArray();
@@ -132,28 +118,37 @@ export const handler: Handler = async (event, context) => {
       }
       if (method === 'DELETE') {
         const id = event.queryStringParameters?.id;
-        if (!id) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing id' }) };
         await usersCol.deleteOne({ id });
         return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
       }
     }
 
-    // --- Multi-Tenant Order/Product Logic ---
+    // --- Dynamic Tenant-Specific Storage Routing ---
     const tenantId = event.queryStringParameters?.tenantId || JSON.parse(event.body || '{}').tenantId;
-    if (!tenantId && (path.includes('orders') || path.includes('products'))) {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing tenantId parameter' }) };
+    
+    // Default to central DB unless we find a specific URI
+    let activeDb = centralDb;
+    
+    if (tenantId) {
+      const tenantConfig = await tenantsCol.findOne({ id: tenantId });
+      if (tenantConfig && tenantConfig.mongoUri) {
+        try {
+          const tenantClient = await getConnectedClient(tenantConfig.mongoUri);
+          // Use the DB specified in the URI or the tenant name as DB name
+          const dbName = new URL(tenantConfig.mongoUri).pathname.slice(1) || `mw_cluster_${tenantId}`;
+          activeDb = tenantClient.db(dbName);
+        } catch (e) {
+          console.error(`Failed to connect to tenant cluster ${tenantId}, falling back to central.`, e);
+        }
+      }
     }
-
-    // We use the central DB for order data but filter by tenantId for simplified structure
-    // In a high-scale environment, we would switch to getTenantDb(tenantId)
-    const activeDb = centralDb; 
 
     if (path === '/orders') {
       const ordersCol = activeDb.collection('orders');
       if (method === 'GET') {
         const id = event.queryStringParameters?.id;
         if (id) {
-          const order = await ordersCol.findOne({ id, tenantId });
+          const order = await ordersCol.findOne({ id });
           return { statusCode: 200, headers, body: JSON.stringify(order) };
         }
         const orders = await ordersCol.find({ tenantId }).sort({ createdAt: -1 }).toArray();
@@ -179,17 +174,10 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    return { statusCode: 404, headers, body: JSON.stringify({ error: 'Endpoint Not Found', path }) };
+    return { statusCode: 404, headers, body: JSON.stringify({ error: 'Endpoint Not Found' }) };
 
   } catch (error: any) {
-    console.error("Critical API Failure:", error);
-    return { 
-      statusCode: 500, 
-      headers, 
-      body: JSON.stringify({ 
-        error: 'Milky Way Internal Cluster Error', 
-        details: error.message 
-      }) 
-    };
+    console.error("API Failure:", error);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal Cluster Error', details: error.message }) };
   }
 };

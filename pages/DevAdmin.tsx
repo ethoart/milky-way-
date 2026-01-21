@@ -3,16 +3,12 @@ import { db } from '../services/mockBackend';
 import { Tenant, User, Order, OrderStatus, Product, UserRole } from '../types';
 import { 
   Database, 
-  PlusCircle, 
   ShieldCheck, 
   Edit, 
-  ExternalLink, 
-  Globe, 
-  Users, 
-  Lock, 
-  Zap, 
+  RefreshCcw,
+  Server,
   Fingerprint,
-  RefreshCcw
+  Zap
 } from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
 
@@ -62,30 +58,9 @@ export const DevAdmin: React.FC = () => {
 
   const metrics = useMemo(() => {
     const todayStr = new Date().toDateString();
-    
-    const userStats = users.filter(u => u.role !== UserRole.DEV_ADMIN).map(user => {
-        const tenantOrders = orders.filter(o => o.tenantId === user.tenantId);
-        const userConfirmed = tenantOrders.filter(o => o.openedBy === user.username && o.status === OrderStatus.CONFIRMED).length;
-        const dailyShipped = tenantOrders.filter(o => 
-          o.shippedAt && new Date(o.shippedAt).toDateString() === todayStr && o.openedBy === user.username
-        ).length;
-        
-        const deliveredOrders = tenantOrders.filter(o => o.openedBy === user.username && o.status === OrderStatus.DELIVERED);
-        const revenue = deliveredOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-
-        return {
-            ...user,
-            confirmed: userConfirmed,
-            dailyShipped,
-            share: revenue * 0.05, // 5% dev commission simulation
-            tenantName: tenants.find(t => t.id === user.tenantId)?.settings.shopName || 'Unknown Cluster'
-        };
-    }).sort((a, b) => b.share - a.share);
-
     const totalGlobalDelivered = orders.filter(o => o.status === OrderStatus.DELIVERED).reduce((s, o) => s + o.totalAmount, 0);
-    const totalGlobalShippedToday = orders.filter(o => o.shippedAt && new Date(o.shippedAt).toDateString() === todayStr).length;
-
-    return { userStats, totalGlobalDelivered, totalGlobalShippedToday };
+    const userStats = users.map(u => ({ ...u, tenantName: tenants.find(t => t.id === u.tenantId)?.settings.shopName || 'Unknown' }));
+    return { userStats, totalGlobalDelivered };
   }, [users, orders, tenants]);
 
   const handleCreate = async () => {
@@ -103,18 +78,12 @@ export const DevAdmin: React.FC = () => {
       if(!editingId) return;
       const t = tenants.find(x => x.id === editingId);
       if(!t) return;
-      
       const updatedTenant: Tenant = {
           ...t,
           name: formData.name,
           mongoUri: formData.mongoUri,
-          settings: {
-              ...t.settings,
-              shopName: formData.shopName,
-              logoUrl: formData.logoUrl
-          }
+          settings: { ...t.settings, shopName: formData.shopName, logoUrl: formData.logoUrl }
       };
-      
       await db.updateTenant(updatedTenant);
       setEditingId(null);
       setFormData({ name: '', shopName: '', logoUrl: '', mongoUri: '', adminEmail: '', adminPass: '' });
@@ -134,7 +103,6 @@ export const DevAdmin: React.FC = () => {
                     <h2 className="text-5xl font-black mb-2 tracking-tighter uppercase">Milky Way Master</h2>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest opacity-60">Cross-Cluster Intelligence Command</p>
                 </div>
-                
                 <div className="flex gap-4">
                    <div className="bg-white/5 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/10 text-center min-w-[160px]">
                       <p className="text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Global Settle</p>
@@ -145,10 +113,9 @@ export const DevAdmin: React.FC = () => {
                    </button>
                 </div>
             </div>
-
             <div className="flex gap-2 p-1.5 bg-white/5 rounded-2xl w-fit border border-white/10">
                 <button onClick={() => setView('CLUSTERS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'CLUSTERS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Active Clusters</button>
-                <button onClick={() => setView('USERS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'USERS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Super Admins</button>
+                <button onClick={() => setView('USERS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'USERS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Identity Registry</button>
                 <button onClick={() => setView('SECURITY')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'SECURITY' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Security Grid</button>
             </div>
         </div>
@@ -167,46 +134,31 @@ export const DevAdmin: React.FC = () => {
                                 <div>
                                     <h4 className="text-xl font-black text-slate-900 tracking-tighter uppercase">{t.settings.shopName || t.name}</h4>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Node Identifier: {t.id}</p>
+                                    <p className="text-[9px] font-mono text-blue-500 mt-1 truncate max-w-[300px]">{t.mongoUri || 'Using Central Milky Way Pool'}</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button onClick={() => { setEditingId(t.id); setFormData({ ...formData, name: t.name, shopName: t.settings.shopName }); }} className="p-3 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all"><Edit size={16} /></button>
+                                <button onClick={() => { setEditingId(t.id); setFormData({ ...formData, name: t.name, shopName: t.settings.shopName, mongoUri: t.mongoUri || '' }); }} className="p-3 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all"><Edit size={16} /></button>
                             </div>
                         </div>
                     ))}
                 </div>
             )}
-
             {view === 'USERS' && (
                 <div className="modern-card overflow-hidden">
                     <table className="w-full text-left compact-table">
-                        <thead>
-                            <tr className="bg-slate-50/50">
-                                <th>Identity</th>
-                                <th>Cluster</th>
-                                <th className="text-right">Ships</th>
-                            </tr>
-                        </thead>
+                        <thead><tr className="bg-slate-50/50"><th>Identity</th><th>Cluster</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">
-                            {metrics.userStats.filter(u => u.role === UserRole.SUPER_ADMIN).map((u: any) => (
-                                <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                                    <td>
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-[10px] font-bold text-blue-400">
-                                                {u.username.slice(0, 2).toUpperCase()}
-                                            </div>
-                                            <span className="font-black text-slate-900 text-sm uppercase">{u.username}</span>
-                                        </div>
-                                    </td>
+                            {metrics.userStats.map((u: any) => (
+                                <tr key={u.id}>
+                                    <td><span className="font-black text-slate-900 text-sm uppercase">{u.username}</span></td>
                                     <td><span className="text-[10px] font-black text-slate-500 uppercase bg-slate-100 px-2 py-1 rounded-md">{u.tenantName}</span></td>
-                                    <td className="text-right font-black text-blue-600">{u.dailyShipped}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
             )}
-
             {view === 'SECURITY' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="modern-card p-6 bg-slate-900 text-white border-none h-[400px] flex flex-col">
@@ -223,21 +175,32 @@ export const DevAdmin: React.FC = () => {
                     <div className="modern-card p-8 flex flex-col items-center justify-center text-center space-y-6">
                         <Zap size={48} className="text-blue-500 animate-pulse" />
                         <h4 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Cluster Protection Active</h4>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">MongoDB Atlas Encryption & Node Isolation</p>
                     </div>
                 </div>
             )}
         </div>
-
         <div className="lg:col-span-4">
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-8 sticky top-10">
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2 uppercase tracking-tight">Provision Cluster</h3>
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Provision Cluster</h3>
                 <div className="space-y-4">
-                    <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Internal ID (t-xyz)" />
-                    <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" value={formData.shopName} onChange={e => setFormData({...formData, shopName: e.target.value})} placeholder="Dashboard Name" />
-                    <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" value={formData.adminEmail} onChange={e => setFormData({...formData, adminEmail: e.target.value})} placeholder="Super Admin User" />
-                    <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" value={formData.adminPass} onChange={e => setFormData({...formData, adminPass: e.target.value})} placeholder="Super Admin Key" />
-                    <button onClick={editingId ? handleUpdate : handleCreate} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-blue-700 transition-all">
+                    <div>
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">System Identifier</label>
+                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="t-xyz" />
+                    </div>
+                    <div>
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">Branding Name</label>
+                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" value={formData.shopName} onChange={e => setFormData({...formData, shopName: e.target.value})} placeholder="Shop Name" />
+                    </div>
+                    <div>
+                        <label className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-1.5 ml-1 flex items-center gap-1.5"><Server size={10}/> Dedicated Mongo URI</label>
+                        <input className="w-full bg-blue-50 border border-blue-100 rounded-2xl px-5 py-4 text-[10px] font-mono font-bold outline-none text-blue-600" value={formData.mongoUri} onChange={e => setFormData({...formData, mongoUri: e.target.value})} placeholder="mongodb+srv://..." />
+                    </div>
+                    <div className="pt-4 border-t border-slate-100">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">Super Admin Account</label>
+                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none mb-2" value={formData.adminEmail} onChange={e => setFormData({...formData, adminEmail: e.target.value})} placeholder="Email/Username" />
+                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" value={formData.adminPass} onChange={e => setFormData({...formData, adminPass: e.target.value})} placeholder="Security Key" />
+                    </div>
+                    <button onClick={editingId ? handleUpdate : handleCreate} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-blue-700 transition-all mt-4">
                         {editingId ? 'Update Identity' : 'Inject Infrastructure'}
                     </button>
                 </div>

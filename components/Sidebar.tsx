@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { 
   LayoutDashboard, 
@@ -13,7 +12,8 @@ import {
   Wallet,
   CalendarCheck,
   ChevronRight,
-  Globe
+  Globe,
+  Scan
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 
@@ -108,7 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
               {SectionHeader('Assets')}
               {navItem('financials', <Wallet />, 'Financials')}
               {navItem('inventory', <Package />, 'Inventory')}
-              {navItem('returns', <ScanLine />, 'Return Scanner')}
+              {navItem('returns', <Scan size={18} className="text-blue-500"/>, 'Milky Way Scan')}
               
               {user.role === UserRole.SUPER_ADMIN && (
                   <>
