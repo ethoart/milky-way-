@@ -7,7 +7,9 @@ class BackendService {
   private async request(path: string, method: string = 'GET', body?: any, params?: any) {
     const url = new URL(`${window.location.origin}${API_BASE}${path}`);
     if (params) {
-      Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+      Object.keys(params).forEach(key => {
+        if (params[key]) url.searchParams.append(key, params[key]);
+      });
     }
 
     try {
@@ -24,7 +26,7 @@ class BackendService {
 
       return response.json();
     } catch (e: any) {
-      console.error(`Milky Way API Request Failed [${path}]:`, e);
+      console.error(`Milky Way Error [${path}]:`, e);
       throw e;
     }
   }
@@ -112,7 +114,7 @@ class BackendService {
 
     const adminUser = {
       id: `u-sa-${Date.now()}`,
-      username: data.adminEmail, // Workforce ID for login
+      username: data.adminEmail,
       password: data.adminPass,
       role: 'SUPER_ADMIN',
       tenantId: tenantId,
@@ -164,7 +166,15 @@ class BackendService {
   }
 
   async addTeamMember(tenantId: string, username: string, role: UserRole, email: string, password?: string): Promise<void> {
-    await this.request('/users', 'POST', { tenantId, username, role, email, password });
+    const newUser = {
+        id: `u-${Date.now()}`,
+        tenantId,
+        username,
+        role,
+        email,
+        password
+    };
+    await this.request('/users', 'POST', newUser);
   }
 
   async removeTeamMember(userId: string): Promise<void> {
