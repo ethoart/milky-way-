@@ -108,7 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
               {SectionHeader('Assets')}
               {navItem('financials', <Wallet />, 'Financials')}
               {navItem('inventory', <Package />, 'Inventory')}
-              {navItem('returns', <ScanLine />, 'Return Scanner')}
+              {navItem('scanner', <ScanLine />, 'OMS Scanner')}
               
               {user.role === UserRole.SUPER_ADMIN && (
                   <>

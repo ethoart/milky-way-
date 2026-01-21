@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { OrderDetail } from './pages/OrderDetail'; 
 import { Stock } from './pages/Stock';
-import { Returns } from './pages/Returns';
+import { Scanner } from './pages/Scanner';
 import { DevAdmin } from './pages/DevAdmin';
 import { Settings } from './pages/Settings';
 import { Team } from './pages/Team';
@@ -162,7 +163,7 @@ export default function App() {
         case 'today_shipped': return <TodayShipped tenantId={user.tenantId!} />;
         case 'financials': return <FinancialCenter tenantId={user.tenantId!} />;
         case 'inventory': return <Stock tenantId={user.tenantId!} />;
-        case 'returns': return <Returns tenantId={user.tenantId!} />;
+        case 'scanner': return <Scanner tenantId={user.tenantId!} />;
         case 'settings': return <Settings tenantId={user.tenantId!} />;
         case 'team': return <Team tenantId={user.tenantId!} />;
         case 'dev_dashboard': return <DevAdmin />;
