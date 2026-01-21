@@ -1,4 +1,3 @@
-
 import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings } from '../types';
 
 const API_BASE = '/api';
@@ -20,14 +19,13 @@ class BackendService {
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `Server Error: ${response.status}`);
+      throw new Error(err.error || err.details || `Server Error: ${response.status}`);
     }
     return await response.json();
   }
 
   // Auth
   async login(username: string, password?: string): Promise<User | null> {
-    // We send the request without a tenantId first to check central DB (Dev/Super Admin)
     return this.request('/login', 'POST', { username, password });
   }
 
@@ -58,7 +56,7 @@ class BackendService {
   }
 
   async getOrder(orderId: string): Promise<Order | null> {
-    return this.request(`/orders/${orderId}`);
+    return this.request(`/orders`, 'GET', null, { id: orderId });
   }
 
   async createOrders(orders: Order[]): Promise<void> {

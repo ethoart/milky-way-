@@ -14,33 +14,37 @@ import { FinancialCenter } from './pages/FinancialCenter';
 import { TodayShipped } from './pages/TodayShipped';
 import { User, UserRole, Tenant } from './types';
 import { db } from './services/mockBackend';
-import { Lock, User as UserIcon, Menu, Globe, Shield } from 'lucide-react';
+import { Lock, User as UserIcon, Menu, Globe, Shield, WifiOff } from 'lucide-react';
 
 const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<void> }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string, type: 'auth' | 'infra' } | null>(null);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!username || !password) {
-        setError('Please enter your credentials');
+        setError({ message: 'Identity & Secret required', type: 'auth' });
         return;
     }
     try {
       setLoading(true);
       await onLogin(username, password);
     } catch (e: any) {
-      setError(e.message || 'Authentication failed. Check cluster connection.');
+      const isInfra = e.message.includes('Cluster') || e.message.includes('Server Error');
+      setError({ 
+        message: e.message || 'Authentication failed', 
+        type: isInfra ? 'infra' : 'auth' 
+      });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f1f5f9] p-4 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-[#f1f5f9] p-4 relative overflow-hidden font-['Plus_Jakarta_Sans']">
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/10 rounded-full blur-[100px]"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[100px]"></div>
       
@@ -54,8 +58,16 @@ const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<voi
         </div>
         
         {error && (
-          <div className="mb-6 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-600 text-[10px] font-black uppercase text-center animate-shake">
-            {error}
+          <div className={`mb-6 p-4 border rounded-2xl text-[10px] font-black uppercase text-center animate-shake ${
+            error.type === 'infra' 
+            ? 'bg-amber-50 border-amber-100 text-amber-700' 
+            : 'bg-rose-50 border-rose-100 text-rose-600'
+          }`}>
+            <div className="flex items-center justify-center gap-2 mb-1">
+              {error.type === 'infra' ? <WifiOff size={14}/> : <Shield size={14}/>}
+              {error.type === 'infra' ? 'CLUSTER DISCONNECTED' : 'ACCESS DENIED'}
+            </div>
+            {error.message}
           </div>
         )}
 
@@ -112,9 +124,14 @@ export default function App() {
   useEffect(() => {
     const saved = localStorage.getItem('mw_user');
     if (saved) {
-        const u = JSON.parse(saved); setUser(u);
-        if (u.role === UserRole.DEV_ADMIN) setCurrentPage('dev_dashboard');
-        else if (u.tenantId) db.getTenant(u.tenantId).then(t => t && setTenant(t));
+        try {
+            const u = JSON.parse(saved);
+            setUser(u);
+            if (u.role === UserRole.DEV_ADMIN) setCurrentPage('dev_dashboard');
+            else if (u.tenantId) db.getTenant(u.tenantId).then(t => t && setTenant(t));
+        } catch (e) {
+            localStorage.removeItem('mw_user');
+        }
     }
   }, []);
 
