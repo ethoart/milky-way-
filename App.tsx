@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
@@ -21,18 +20,20 @@ const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<voi
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     if (!username || !password) {
-        alert('Please enter your credentials');
+        setError('Please enter your credentials');
         return;
     }
     try {
       setLoading(true);
       await onLogin(username, password);
-    } catch (e) {
-      alert('Authentication failed. Please check your credentials.');
+    } catch (e: any) {
+      setError(e.message || 'Authentication failed. Check cluster connection.');
     } finally {
       setLoading(false);
     }
@@ -48,29 +49,37 @@ const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<voi
             <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-200 mb-5">
                 <Globe className="text-white" size={28} />
             </div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Milky Way</h1>
-            <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-2">Enterprise OMS Engine</p>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Milky Way OMS</h1>
+            <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-2">Enterprise Access Protocol</p>
         </div>
         
+        {error && (
+          <div className="mb-6 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-600 text-[10px] font-black uppercase text-center animate-shake">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="bg-slate-50 rounded-2xl px-5 py-4 border border-slate-200 flex items-center gap-3 focus-within:ring-2 focus-within:ring-blue-500 transition-all">
             <UserIcon size={18} className="text-slate-400" />
             <input 
+              name="username"
               className="w-full bg-transparent text-slate-900 font-bold outline-none text-[13px]" 
               value={username} 
               onChange={e => setUsername(e.target.value)} 
-              placeholder="Username"
+              placeholder="Identity (Email)"
               autoComplete="username"
             />
           </div>
           <div className="bg-slate-50 rounded-2xl px-5 py-4 border border-slate-200 flex items-center gap-3 focus-within:ring-2 focus-within:ring-blue-500 transition-all">
             <Lock size={18} className="text-slate-400" />
             <input 
+              name="password"
               type="password" 
               className="w-full bg-transparent text-slate-900 font-bold outline-none text-[13px]" 
               value={password} 
               onChange={e => setPassword(e.target.value)} 
-              placeholder="Password"
+              placeholder="Secret Key"
               autoComplete="current-password"
             />
           </div>
@@ -79,13 +88,13 @@ const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<voi
             disabled={loading} 
             className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50"
           >
-            {loading ? 'SYNCING...' : 'SIGN IN TO CLUSTER'}
+            {loading ? 'SYNCING CLUSTER...' : 'SIGN IN TO MILKY WAY'}
           </button>
         </form>
 
         <div className="mt-10 text-center">
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">
-                Authorized Entry Point
+                Authorized Entry Point Only
             </p>
         </div>
       </div>
@@ -114,7 +123,9 @@ export default function App() {
     if (userObj) {
       setUser(userObj);
       localStorage.setItem('mw_user', JSON.stringify(userObj));
-      if (userObj.tenantId) db.getTenant(userObj.tenantId).then(t => t && setTenant(t));
+      if (userObj.tenantId) {
+        db.getTenant(userObj.tenantId).then(t => t && setTenant(t));
+      }
       setCurrentPage(userObj.role === UserRole.DEV_ADMIN ? 'dev_dashboard' : 'dashboard');
     } else {
         throw new Error("Invalid credentials");
@@ -143,7 +154,7 @@ export default function App() {
     }
   };
 
-  const defaultTitle = user.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way default';
+  const defaultTitle = user.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way OMS';
   const displayShopName = tenant?.settings.shopName || defaultTitle;
 
   return (
