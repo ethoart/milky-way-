@@ -1,95 +1,95 @@
+
 import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings } from '../types';
 
 const API_BASE = '/.netlify/functions/api';
 
 class BackendService {
-  private async request(path: string, method: string = 'GET', body?: any, params?: any) {
+  private async request(path: string, method: string = 'GET', body?: any, params: any = {}) {
     const url = new URL(`${window.location.origin}${API_BASE}${path}`);
-    if (params) {
-      Object.keys(params).forEach(key => {
-        if (params[key] !== null && params[key] !== undefined) {
-          url.searchParams.append(key, params[key]);
-        }
-      });
+    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+
+    const response = await fetch(url.toString(), {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Connection Failed');
     }
-
-    try {
-      const response = await fetch(url.toString(), {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `API Error: ${response.status}`);
-      }
-
-      return await response.json();
-    } catch (e: any) {
-      console.error(`Milky Way Error [${path}]:`, e);
-      throw e;
-    }
+    return await response.json();
   }
 
-  async checkConnection(): Promise<boolean> {
-    try {
-      const res = await fetch(`${API_BASE}/health`);
-      return res.ok;
-    } catch (e) {
-      return false;
-    }
-  }
-
+  // Auth
   async login(username: string, password?: string): Promise<User | null> {
-    try {
-      const user = await this.request('/login', 'POST', { username, password });
-      if (user) {
-        const logs = JSON.parse(localStorage.getItem('mw_oms_security_logs') || '[]');
-        logs.push({ timestamp: new Date().toISOString(), event: 'AUTH_SUCCESS', user: username, ip: 'Cloud' });
-        localStorage.setItem('mw_oms_security_logs', JSON.stringify(logs.slice(-50)));
-        return user;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
+    return this.request('/login', 'POST', { username, password });
   }
 
+  // Users
+  // Fix: Added getAllUsers method for DevAdmin
+  async getAllUsers(): Promise<User[]> {
+    return this.request('/users');
+  }
+
+  // Fix: Added getTeamMembers method for Team page
+  async getTeamMembers(tenantId: string): Promise<User[]> {
+    return this.request('/team', 'GET', null, { tenantId });
+  }
+
+  // Fix: Added addTeamMember method for Team page
+  async addTeamMember(tenantId: string, username: string, role: UserRole, email?: string, password?: string): Promise<void> {
+    await this.request('/team', 'POST', { tenantId, username, role, email, password });
+  }
+
+  // Fix: Added removeTeamMember method for Team page
+  async removeTeamMember(id: string): Promise<void> {
+    await this.request('/team', 'DELETE', null, { id });
+  }
+
+  // Orders
   async getOrders(tenantId: string): Promise<Order[]> {
-    return this.request('/orders', 'GET', null, { tenantId }) || [];
+    return this.request('/orders', 'GET', null, { tenantId });
   }
 
+  // Fix: Added getAllOrders method for DevAdmin
   async getAllOrders(): Promise<Order[]> {
-    return this.request('/orders', 'GET') || [];
+    return this.request('/orders/all');
+  }
+
+  // Fix: Added getOrder method for OrderDetail
+  async getOrder(orderId: string): Promise<Order | null> {
+    return this.request(`/orders/${orderId}`);
+  }
+
+  // Fix: Added createOrders method for Leads page
+  async createOrders(orders: Order[]): Promise<void> {
+    await this.request('/orders/bulk', 'POST', { orders });
   }
 
   async updateOrder(order: Order): Promise<void> {
-    await this.request('/orders', 'POST', { order, tenantId: order.tenantId });
-  }
-  
-  async createOrders(orders: Order[]): Promise<void> {
-    for (const o of orders) {
-      await this.updateOrder(o);
-    }
+    await this.request('/orders', 'POST', { order }, { tenantId: order.tenantId });
   }
 
+  // Products
   async getProducts(tenantId: string): Promise<Product[]> {
-    return this.request('/products', 'GET', null, { tenantId }) || [];
+    return this.request('/products', 'GET', null, { tenantId });
   }
 
+  // Fix: Added getAllProducts method for DevAdmin
   async getAllProducts(): Promise<Product[]> {
-    return this.request('/products', 'GET') || [];
+    return this.request('/products/all');
   }
 
   async updateProduct(product: Product): Promise<void> {
-    await this.request('/products', 'POST', { product, tenantId: product.tenantId });
+    await this.request('/products', 'POST', { product }, { tenantId: product.tenantId });
   }
 
+  // Tenants
   async getTenants(): Promise<Tenant[]> {
-    return this.request('/tenants', 'GET') || [];
+    return this.request('/tenants');
   }
-  
+
   async getTenant(tenantId: string): Promise<Tenant | undefined> {
     const tenants = await this.getTenants();
     return tenants.find(t => t.id === tenantId);
@@ -117,7 +117,7 @@ class BackendService {
       id: `u-sa-${Date.now()}`,
       username: data.adminEmail,
       password: data.adminPass,
-      role: 'SUPER_ADMIN',
+      role: UserRole.SUPER_ADMIN,
       tenantId: tenantId,
       email: data.adminEmail
     };
@@ -125,58 +125,20 @@ class BackendService {
     await this.request('/tenants', 'POST', { tenant, adminUser });
   }
 
+  // Fix: Added updateTenant method for DevAdmin
   async updateTenant(tenant: Tenant): Promise<void> {
-    await this.request('/tenants', 'PUT', { tenant });
+    await this.request('/tenants', 'POST', { tenant });
   }
 
+  // Fix: Added updateTenantSettings method for Settings page
   async updateTenantSettings(tenantId: string, settings: TenantSettings): Promise<void> {
-    const tenant = await this.getTenant(tenantId);
-    if (tenant) {
-      tenant.settings = settings;
-      await this.updateTenant(tenant);
-    }
+    await this.request('/tenants/settings', 'POST', { tenantId, settings });
   }
 
-  async shipOrder(order: Order, tenantId: string): Promise<Order> {
-    const updated: Order = {
-      ...order,
-      status: OrderStatus.SHIPPED,
-      shippedAt: new Date().toISOString(),
-      logs: [...(order.logs || []), { 
-        id: `l-${Date.now()}`, 
-        message: `Milky Way: Dispatched to Logistics`, 
-        timestamp: new Date().toISOString(), 
-        user: 'System' 
-      }]
-    };
-    
-    await this.updateOrder(updated);
-    return updated;
-  }
-
-  async getTeamMembers(tenantId: string): Promise<User[]> {
-    const all = await this.getAllUsers();
-    return all.filter(u => u.tenantId === tenantId);
-  }
-
-  async getAllUsers(): Promise<User[]> {
-    return this.request('/users', 'GET') || [];
-  }
-
-  async addTeamMember(tenantId: string, username: string, role: UserRole, email: string, password?: string): Promise<void> {
-    const newUser = {
-        id: `u-${Date.now()}`,
-        tenantId,
-        username,
-        role,
-        email,
-        password
-    };
-    await this.request('/users', 'POST', newUser);
-  }
-
-  async removeTeamMember(userId: string): Promise<void> {
-    await this.request('/users', 'DELETE', null, { id: userId });
+  // Others
+  // Fix: Added getSecurityLogs method for DevAdmin
+  async getSecurityLogs(): Promise<any[]> {
+    return this.request('/security-logs');
   }
 
   async getCustomerHistory(phone: string, tenantId: string): Promise<any> {
@@ -195,31 +157,18 @@ class BackendService {
   async processReturn(trackingOrId: string, tenantId: string): Promise<Order | null> {
     const orders = await this.getOrders(tenantId);
     const order = orders.find(o => o.id === trackingOrId || o.trackingNumber === trackingOrId);
-    
     if (order) {
-      const updatedOrder: Order = { 
-        ...order, 
-        status: OrderStatus.RETURN_COMPLETED, 
-        logs: [...(order.logs || []), { 
-          id: `l-${Date.now()}`, 
-          message: 'Returns: Restocked via Cloud Scanner', 
-          timestamp: new Date().toISOString(), 
-          user: 'System' 
-        }] 
-      };
+      const updatedOrder: Order = { ...order, status: OrderStatus.RETURN_COMPLETED };
       await this.updateOrder(updatedOrder);
       return updatedOrder;
     }
     return null;
   }
-
-  async getSecurityLogs(): Promise<any[]> {
-    return JSON.parse(localStorage.getItem('mw_oms_security_logs') || '[]');
-  }
-
-  async getOrder(orderId: string): Promise<Order | undefined> {
-    const all = await this.getAllOrders();
-    return all.find((o: Order) => o.id === orderId);
+  
+  async shipOrder(order: Order, tenantId: string): Promise<Order> {
+    const updated: Order = { ...order, status: OrderStatus.SHIPPED, shippedAt: new Date().toISOString() };
+    await this.updateOrder(updated);
+    return updated;
   }
 }
 
