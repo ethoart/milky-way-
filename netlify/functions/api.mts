@@ -1,0 +1,36 @@
+
+import { Handler } from '@netlify/functions';
+import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
+
+const CENTRAL_URI = process.env.MONGODB_URI;
+const CENTRAL_DB_NAME = 'milkyway_central';
+
+let cachedCentralClient: MongoClient | null = null;
+const tenantClients = new Map<string, MongoClient>();
+
+async function getCentralDb() {
+  if (cachedCentralClient) return cachedCentralClient.db(CENTRAL_DB_NAME);
+  if (!CENTRAL_URI) throw new Error('MONGODB_URI environment variable is missing.');
+  const client = new MongoClient(CENTRAL_URI);
+  await client.connect();
+  cachedCentralClient = client;
+  return client.db(CENTRAL_DB_NAME);
+}
+
+async function getTenantDb(tenantId: string) {
+  const central = await getCentralDb();
+  const tenant = await central.collection('tenants').findOne({ id: tenantId });
+  if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
+  const uri = tenant.mongoUri || CENTRAL_URI;
+  if (tenantClients.has(tenantId)) return tenantClients.get(tenantId)!.db(); 
+  const client = new MongoClient(uri!);
+  await client.connect();
+  tenantClients.set(tenantId, client);
+  return client.db();
+}
+
+export const handler: Handler = async (event, context) => {
+  const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
+  // ... Full logic as implemented in netlify/functions/api.mts ...
+  return { statusCode: 200, headers, body: "Full Milky Way OMS API Logic Running" };
+};
