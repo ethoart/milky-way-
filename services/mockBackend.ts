@@ -54,7 +54,6 @@ class BackendService {
   }
 
   async getAllOrders(): Promise<Order[]> {
-    // DevAdmin view often needs cross-tenant data, handled by backend filtering
     return this.request('/orders', 'GET');
   }
 
@@ -67,7 +66,6 @@ class BackendService {
   }
   
   async createOrders(orders: Order[]): Promise<void> {
-    // Bulk handled via loop to maintain backend simplicity
     for (const o of orders) {
       await this.updateOrder(o);
     }
@@ -124,8 +122,15 @@ class BackendService {
     await this.request('/tenants', 'POST', { tenant, adminUser });
   }
 
-  async updateTenant(tenant: Tenant): Promise<void> {
-    await this.request('/tenants', 'PUT', { tenant });
+  async updateTenant(tenant: Tenant, adminEmail?: string, adminPass?: string): Promise<void> {
+    const payload: any = { tenant };
+    if (adminEmail && adminPass) {
+      payload.adminUser = {
+        username: adminEmail,
+        password: adminPass
+      };
+    }
+    await this.request('/tenants', 'PUT', payload);
   }
 
   async updateTenantSettings(tenantId: string, settings: TenantSettings): Promise<void> {
@@ -210,7 +215,6 @@ class BackendService {
   }
 
   async getSecurityLogs(): Promise<any[]> {
-    // Logs are typically server-side but we simulate here
     return JSON.parse(localStorage.getItem('mw_oms_security_logs') || '[]');
   }
 }

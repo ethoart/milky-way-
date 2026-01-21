@@ -56,23 +56,10 @@ export const handler: Handler = async (event, context) => {
   const method = event.httpMethod;
 
   try {
-    // 1. Always start with Central DB to authenticate and find Tenant Config
     const centralClient = await getConnectedClient(CENTRAL_URI!);
     const centralDb = centralClient.db(CENTRAL_DB_NAME);
     const usersCol = centralDb.collection('users');
     const tenantsCol = centralDb.collection('tenants');
-
-    // Bootstrap check
-    const devExists = await usersCol.findOne({ role: 'DEV_ADMIN' });
-    if (!devExists) {
-      await usersCol.insertOne({
-        id: 'dev-root',
-        username: 'admin@milkyway.com',
-        password: 'admin',
-        role: 'DEV_ADMIN',
-        createdAt: new Date().toISOString()
-      });
-    }
 
     if (path === '/health') return { statusCode: 200, headers, body: JSON.stringify({ status: 'connected' }) };
 
@@ -100,8 +87,17 @@ export const handler: Handler = async (event, context) => {
         return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
       }
       if (method === 'PUT') {
-        const { tenant } = JSON.parse(event.body || '{}');
+        const { tenant, adminUser } = JSON.parse(event.body || '{}');
+        // Update Tenant Metadata
         await tenantsCol.updateOne({ id: tenant.id }, { $set: tenant });
+        
+        // Update Primary Super Admin credentials if provided
+        if (adminUser && adminUser.username && adminUser.password) {
+          await usersCol.updateOne(
+            { tenantId: tenant.id, role: 'SUPER_ADMIN' },
+            { $set: { username: adminUser.username, password: adminUser.password } }
+          );
+        }
         return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
       }
     }
@@ -125,8 +121,6 @@ export const handler: Handler = async (event, context) => {
 
     // --- Dynamic Tenant-Specific Storage Routing ---
     const tenantId = event.queryStringParameters?.tenantId || JSON.parse(event.body || '{}').tenantId;
-    
-    // Default to central DB unless we find a specific URI
     let activeDb = centralDb;
     
     if (tenantId) {
@@ -134,11 +128,10 @@ export const handler: Handler = async (event, context) => {
       if (tenantConfig && tenantConfig.mongoUri) {
         try {
           const tenantClient = await getConnectedClient(tenantConfig.mongoUri);
-          // Use the DB specified in the URI or the tenant name as DB name
           const dbName = new URL(tenantConfig.mongoUri).pathname.slice(1) || `mw_cluster_${tenantId}`;
           activeDb = tenantClient.db(dbName);
         } catch (e) {
-          console.error(`Failed to connect to tenant cluster ${tenantId}, falling back to central.`, e);
+          console.error(`Tenant DB Routing Error: ${tenantId}`, e);
         }
       }
     }
@@ -177,7 +170,7 @@ export const handler: Handler = async (event, context) => {
     return { statusCode: 404, headers, body: JSON.stringify({ error: 'Endpoint Not Found' }) };
 
   } catch (error: any) {
-    console.error("API Failure:", error);
+    console.error("API Critical Failure:", error);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal Cluster Error', details: error.message }) };
   }
 };

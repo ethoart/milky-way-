@@ -78,16 +78,39 @@ export const DevAdmin: React.FC = () => {
       if(!editingId) return;
       const t = tenants.find(x => x.id === editingId);
       if(!t) return;
+      
       const updatedTenant: Tenant = {
           ...t,
           name: formData.name,
           mongoUri: formData.mongoUri,
           settings: { ...t.settings, shopName: formData.shopName, logoUrl: formData.logoUrl }
       };
-      await db.updateTenant(updatedTenant);
-      setEditingId(null);
-      setFormData({ name: '', shopName: '', logoUrl: '', mongoUri: '', adminEmail: '', adminPass: '' });
-      load();
+      
+      try {
+        await db.updateTenant(updatedTenant, formData.adminEmail, formData.adminPass);
+        setEditingId(null);
+        setFormData({ name: '', shopName: '', logoUrl: '', mongoUri: '', adminEmail: '', adminPass: '' });
+        load();
+        alert("System: Cluster and Super Admin identity updated successfully.");
+      } catch (e: any) {
+        alert(`Update Failed: ${e.message}`);
+      }
+  };
+
+  const handleEditClick = (t: Tenant) => {
+    // Find the current super admin for this tenant to pre-populate username
+    const currentAdmin = users.find(u => u.tenantId === t.id && u.role === UserRole.SUPER_ADMIN);
+    
+    setEditingId(t.id);
+    setFormData({
+      ...formData,
+      name: t.name,
+      shopName: t.settings.shopName || '',
+      logoUrl: t.settings.logoUrl || '',
+      mongoUri: t.mongoUri || '',
+      adminEmail: currentAdmin?.username || '',
+      adminPass: '' // Keep password blank for security, only update if typed
+    });
   };
 
   return (
@@ -138,7 +161,7 @@ export const DevAdmin: React.FC = () => {
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button onClick={() => { setEditingId(t.id); setFormData({ ...formData, name: t.name, shopName: t.settings.shopName, mongoUri: t.mongoUri || '' }); }} className="p-3 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all"><Edit size={16} /></button>
+                                <button onClick={() => handleEditClick(t)} className="p-3 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all"><Edit size={16} /></button>
                             </div>
                         </div>
                     ))}
@@ -147,12 +170,13 @@ export const DevAdmin: React.FC = () => {
             {view === 'USERS' && (
                 <div className="modern-card overflow-hidden">
                     <table className="w-full text-left compact-table">
-                        <thead><tr className="bg-slate-50/50"><th>Identity</th><th>Cluster</th></tr></thead>
+                        <thead><tr className="bg-slate-50/50"><th>Identity</th><th>Cluster</th><th>Role</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">
                             {metrics.userStats.map((u: any) => (
-                                <tr key={u.id}>
+                                <tr key={u.id} className="hover:bg-slate-50">
                                     <td><span className="font-black text-slate-900 text-sm uppercase">{u.username}</span></td>
                                     <td><span className="text-[10px] font-black text-slate-500 uppercase bg-slate-100 px-2 py-1 rounded-md">{u.tenantName}</span></td>
+                                    <td><span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">{u.role}</span></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -181,11 +205,11 @@ export const DevAdmin: React.FC = () => {
         </div>
         <div className="lg:col-span-4">
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-8 sticky top-10">
-                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Provision Cluster</h3>
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{editingId ? 'Edit Cluster' : 'Provision Cluster'}</h3>
                 <div className="space-y-4">
                     <div>
                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">System Identifier</label>
-                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="t-xyz" />
+                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="t-xyz" disabled={!!editingId} />
                     </div>
                     <div>
                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">Branding Name</label>
@@ -198,11 +222,14 @@ export const DevAdmin: React.FC = () => {
                     <div className="pt-4 border-t border-slate-100">
                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">Super Admin Account</label>
                         <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none mb-2" value={formData.adminEmail} onChange={e => setFormData({...formData, adminEmail: e.target.value})} placeholder="Email/Username" />
-                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" value={formData.adminPass} onChange={e => setFormData({...formData, adminPass: e.target.value})} placeholder="Security Key" />
+                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" type="password" value={formData.adminPass} onChange={e => setFormData({...formData, adminPass: e.target.value})} placeholder={editingId ? "New Key (leave blank to keep)" : "Security Key"} />
                     </div>
                     <button onClick={editingId ? handleUpdate : handleCreate} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-blue-700 transition-all mt-4">
                         {editingId ? 'Update Identity' : 'Inject Infrastructure'}
                     </button>
+                    {editingId && (
+                      <button onClick={() => { setEditingId(null); setFormData({name: '', shopName: '', logoUrl: '', mongoUri: '', adminEmail: '', adminPass: ''}); }} className="w-full text-slate-400 font-bold text-[10px] uppercase tracking-widest py-2">Cancel Edit</button>
+                    )}
                 </div>
             </div>
         </div>
