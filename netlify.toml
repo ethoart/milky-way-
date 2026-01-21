@@ -8,7 +8,7 @@
   external_node_modules = ["mongodb"]
 
 [[redirects]]
-  from = "/.netlify/functions/api/*"
+  from = "/api/*"
   to = "/.netlify/functions/api"
   status = 200
 

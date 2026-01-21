@@ -1,12 +1,16 @@
 
 import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings } from '../types';
 
-const API_BASE = '/.netlify/functions/api';
+const API_BASE = '/api';
 
 class BackendService {
   private async request(path: string, method: string = 'GET', body?: any, params: any = {}) {
     const url = new URL(`${window.location.origin}${API_BASE}${path}`);
-    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+    Object.keys(params).forEach(key => {
+      if (params[key] !== undefined && params[key] !== null) {
+        url.searchParams.append(key, params[key]);
+      }
+    });
 
     const response = await fetch(url.toString(), {
       method,
@@ -16,33 +20,30 @@ class BackendService {
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || 'Connection Failed');
+      throw new Error(err.error || `Server Error: ${response.status}`);
     }
     return await response.json();
   }
 
   // Auth
   async login(username: string, password?: string): Promise<User | null> {
+    // We send the request without a tenantId first to check central DB (Dev/Super Admin)
     return this.request('/login', 'POST', { username, password });
   }
 
   // Users
-  // Fix: Added getAllUsers method for DevAdmin
   async getAllUsers(): Promise<User[]> {
     return this.request('/users');
   }
 
-  // Fix: Added getTeamMembers method for Team page
   async getTeamMembers(tenantId: string): Promise<User[]> {
     return this.request('/team', 'GET', null, { tenantId });
   }
 
-  // Fix: Added addTeamMember method for Team page
   async addTeamMember(tenantId: string, username: string, role: UserRole, email?: string, password?: string): Promise<void> {
-    await this.request('/team', 'POST', { tenantId, username, role, email, password });
+    await this.request('/team', 'POST', { tenantId, username, role, email, password }, { tenantId });
   }
 
-  // Fix: Added removeTeamMember method for Team page
   async removeTeamMember(id: string): Promise<void> {
     await this.request('/team', 'DELETE', null, { id });
   }
@@ -52,19 +53,17 @@ class BackendService {
     return this.request('/orders', 'GET', null, { tenantId });
   }
 
-  // Fix: Added getAllOrders method for DevAdmin
   async getAllOrders(): Promise<Order[]> {
     return this.request('/orders/all');
   }
 
-  // Fix: Added getOrder method for OrderDetail
   async getOrder(orderId: string): Promise<Order | null> {
     return this.request(`/orders/${orderId}`);
   }
 
-  // Fix: Added createOrders method for Leads page
   async createOrders(orders: Order[]): Promise<void> {
-    await this.request('/orders/bulk', 'POST', { orders });
+    const tenantId = orders[0]?.tenantId;
+    await this.request('/orders/bulk', 'POST', { orders }, { tenantId });
   }
 
   async updateOrder(order: Order): Promise<void> {
@@ -76,7 +75,6 @@ class BackendService {
     return this.request('/products', 'GET', null, { tenantId });
   }
 
-  // Fix: Added getAllProducts method for DevAdmin
   async getAllProducts(): Promise<Product[]> {
     return this.request('/products/all');
   }
@@ -125,18 +123,14 @@ class BackendService {
     await this.request('/tenants', 'POST', { tenant, adminUser });
   }
 
-  // Fix: Added updateTenant method for DevAdmin
   async updateTenant(tenant: Tenant): Promise<void> {
     await this.request('/tenants', 'POST', { tenant });
   }
 
-  // Fix: Added updateTenantSettings method for Settings page
   async updateTenantSettings(tenantId: string, settings: TenantSettings): Promise<void> {
-    await this.request('/tenants/settings', 'POST', { tenantId, settings });
+    await this.request('/tenants/settings', 'POST', { tenantId, settings }, { tenantId });
   }
 
-  // Others
-  // Fix: Added getSecurityLogs method for DevAdmin
   async getSecurityLogs(): Promise<any[]> {
     return this.request('/security-logs');
   }

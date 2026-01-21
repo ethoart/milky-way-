@@ -1,5 +1,3 @@
-// Milky Way OMS Production API Handler
-// Handles Auth, Multi-Tenancy, and Infrastructure Control
 
 import { Handler } from '@netlify/functions';
 import { MongoClient, ServerApiVersion } from 'mongodb';
@@ -12,9 +10,11 @@ const tenantClients = new Map<string, MongoClient>();
 
 async function getCentralDb() {
   if (!centralClient) {
-    centralClient = new MongoClient(MONGODB_URI!, {
+    if (!MONGODB_URI) throw new Error('MONGODB_URI is not defined in environment variables');
+    centralClient = new MongoClient(MONGODB_URI, {
       serverApi: ServerApiVersion.v1,
-      connectTimeoutMS: 10000,
+      connectTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 5000,
     });
     await centralClient.connect();
   }
@@ -28,11 +28,12 @@ async function getTenantDb(tenantId: string) {
   const centralDb = await getCentralDb();
   const tenant = await centralDb.collection('tenants').findOne({ id: tenantId });
 
-  if (!tenant || !tenant.mongoUri) throw new Error('Tenant cluster not configured');
+  if (!tenant || !tenant.mongoUri) throw new Error(`Cluster not found for tenant: ${tenantId}`);
 
   const client = new MongoClient(tenant.mongoUri, {
     serverApi: ServerApiVersion.v1,
-    connectTimeoutMS: 10000,
+    connectTimeoutMS: 5000,
+    serverSelectionTimeoutMS: 5000,
   });
   
   await client.connect();
@@ -41,7 +42,7 @@ async function getTenantDb(tenantId: string) {
 }
 
 export const handler: Handler = async (event) => {
-  const path = event.path.replace('/.netlify/functions/api', '');
+  let path = event.path.replace('/.netlify/functions/api', '').replace('/api', '');
   const method = event.httpMethod;
   const tenantId = event.queryStringParameters?.tenantId || '';
   
@@ -52,8 +53,10 @@ export const handler: Handler = async (event) => {
       const { username, password } = JSON.parse(event.body || '{}');
       let user = await centralDb.collection('users').findOne({ username, password });
       if (!user && tenantId) {
-        const tDb = await getTenantDb(tenantId);
-        user = await tDb.collection('users').findOne({ username, password });
+        try {
+          const tDb = await getTenantDb(tenantId);
+          user = await tDb.collection('users').findOne({ username, password });
+        } catch (e) {}
       }
       return { statusCode: user ? 200 : 401, body: JSON.stringify(user || { error: 'Invalid' }) };
     }
@@ -77,8 +80,8 @@ export const handler: Handler = async (event) => {
          return { statusCode: 200, body: JSON.stringify({ success: true }) };
        }
     }
-
-    return { statusCode: 404, body: "Not Found" };
+    
+    return { statusCode: 404, body: JSON.stringify({ error: "Not Found" }) };
   } catch (e: any) {
     return { statusCode: 500, body: JSON.stringify({ error: e.message }) };
   }
