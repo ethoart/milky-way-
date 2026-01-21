@@ -1,4 +1,3 @@
-
 import { Handler } from '@netlify/functions';
 import { MongoClient, ServerApiVersion } from 'mongodb';
 
