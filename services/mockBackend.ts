@@ -1,4 +1,3 @@
-
 import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings } from '../types';
 
 const API_BASE = '/.netlify/functions/api';
@@ -8,7 +7,9 @@ class BackendService {
     const url = new URL(`${window.location.origin}${API_BASE}${path}`);
     if (params) {
       Object.keys(params).forEach(key => {
-        if (params[key]) url.searchParams.append(key, params[key]);
+        if (params[key] !== null && params[key] !== undefined) {
+          url.searchParams.append(key, params[key]);
+        }
       });
     }
 
@@ -24,7 +25,7 @@ class BackendService {
         throw new Error(errorData.error || `API Error: ${response.status}`);
       }
 
-      return response.json();
+      return await response.json();
     } catch (e: any) {
       console.error(`Milky Way Error [${path}]:`, e);
       throw e;
@@ -56,11 +57,11 @@ class BackendService {
   }
 
   async getOrders(tenantId: string): Promise<Order[]> {
-    return this.request('/orders', 'GET', null, { tenantId });
+    return this.request('/orders', 'GET', null, { tenantId }) || [];
   }
 
   async getAllOrders(): Promise<Order[]> {
-    return this.request('/orders', 'GET');
+    return this.request('/orders', 'GET') || [];
   }
 
   async updateOrder(order: Order): Promise<void> {
@@ -74,11 +75,11 @@ class BackendService {
   }
 
   async getProducts(tenantId: string): Promise<Product[]> {
-    return this.request('/products', 'GET', null, { tenantId });
+    return this.request('/products', 'GET', null, { tenantId }) || [];
   }
 
   async getAllProducts(): Promise<Product[]> {
-    return this.request('/products', 'GET');
+    return this.request('/products', 'GET') || [];
   }
 
   async updateProduct(product: Product): Promise<void> {
@@ -86,7 +87,7 @@ class BackendService {
   }
 
   async getTenants(): Promise<Tenant[]> {
-    return this.request('/tenants', 'GET');
+    return this.request('/tenants', 'GET') || [];
   }
   
   async getTenant(tenantId: string): Promise<Tenant | undefined> {
@@ -137,9 +138,6 @@ class BackendService {
   }
 
   async shipOrder(order: Order, tenantId: string): Promise<Order> {
-    const tenant = await this.getTenant(tenantId);
-    if (!tenant) throw new Error("Cloud sync failed: Tenant not found.");
-    
     const updated: Order = {
       ...order,
       status: OrderStatus.SHIPPED,
@@ -162,7 +160,7 @@ class BackendService {
   }
 
   async getAllUsers(): Promise<User[]> {
-    return this.request('/users', 'GET');
+    return this.request('/users', 'GET') || [];
   }
 
   async addTeamMember(tenantId: string, username: string, role: UserRole, email: string, password?: string): Promise<void> {
