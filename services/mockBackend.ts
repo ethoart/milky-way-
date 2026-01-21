@@ -4,7 +4,10 @@ const API_BASE = '/api';
 
 class BackendService {
   private async request(path: string, method: string = 'GET', body?: any, params: any = {}) {
-    const url = new URL(`${window.location.origin}${API_BASE}${path}`);
+    // Ensure path doesn't start with double slash
+    const sanitizedPath = path.startsWith('/') ? path : `/${path}`;
+    const url = new URL(`${window.location.origin}${API_BASE}${sanitizedPath}`);
+    
     Object.keys(params).forEach(key => {
       if (params[key] !== undefined && params[key] !== null) {
         url.searchParams.append(key, params[key]);
@@ -15,11 +18,13 @@ class BackendService {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
+    }).catch(err => {
+      throw new Error("Network Protocol Failure: Cluster Unreachable.");
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || err.details || `Server Error: ${response.status}`);
+      throw new Error(err.details || err.error || `Server Node Error: ${response.status}`);
     }
     return await response.json();
   }
@@ -31,7 +36,7 @@ class BackendService {
 
   // Users
   async getAllUsers(): Promise<User[]> {
-    return this.request('/users');
+    return this.request('/team');
   }
 
   async getTeamMembers(tenantId: string): Promise<User[]> {
@@ -39,7 +44,7 @@ class BackendService {
   }
 
   async addTeamMember(tenantId: string, username: string, role: UserRole, email?: string, password?: string): Promise<void> {
-    await this.request('/team', 'POST', { tenantId, username, role, email, password }, { tenantId });
+    await this.request('/team', 'POST', { id: `u-${Date.now()}`, tenantId, username, role, email, password });
   }
 
   async removeTeamMember(id: string): Promise<void> {
@@ -126,7 +131,10 @@ class BackendService {
   }
 
   async updateTenantSettings(tenantId: string, settings: TenantSettings): Promise<void> {
-    await this.request('/tenants/settings', 'POST', { tenantId, settings }, { tenantId });
+    const tenant = await this.getTenant(tenantId);
+    if (tenant) {
+      await this.updateTenant({ ...tenant, settings });
+    }
   }
 
   async getSecurityLogs(): Promise<any[]> {
@@ -134,8 +142,8 @@ class BackendService {
   }
 
   async getCustomerHistory(phone: string, tenantId: string): Promise<any> {
-    const orders = await this.getOrders(tenantId);
     if (!phone) return { status: CustomerStatus.NEW, count: 0, returns: 0 };
+    const orders = await this.getOrders(tenantId);
     const id = phone.replace(/\D/g, '').slice(-9);
     const co = orders.filter(o => o.customerPhone && o.customerPhone.replace(/\D/g, '').slice(-9) === id);
     const rc = co.filter(o => o.status === OrderStatus.RETURNED || o.status === OrderStatus.RETURN_COMPLETED).length;
