@@ -43,7 +43,8 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
 
   const loadOrder = async () => {
     setLoading(true);
-    const data = await db.getOrder(orderId);
+    // Fixed: Passed tenantId as the second argument to getOrder to match the service definition
+    const data = await db.getOrder(orderId, tenantId);
     if (data) {
       setOrder(data);
       const h = await db.getCustomerHistory(data.customerPhone, tenantId);
