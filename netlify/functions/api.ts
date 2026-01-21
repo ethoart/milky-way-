@@ -1,6 +1,6 @@
 
 import { Handler } from '@netlify/functions';
-import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
+import { MongoClient, ServerApiVersion } from 'mongodb';
 
 const CENTRAL_URI = process.env.MONGODB_URI;
 const CENTRAL_DB_NAME = 'milkyway_central'; 
@@ -81,9 +81,13 @@ export const handler: Handler = async (event, context) => {
 
     if (path === '/login' && method === 'POST') {
       const { username, password } = JSON.parse(event.body || '{}');
-      const user = await usersCol.findOne({ username, password });
+      // Search by username OR email for flexibility
+      const user = await usersCol.findOne({ 
+          $or: [{ username }, { email: username }], 
+          password 
+      });
       if (user) return { statusCode: 200, headers, body: JSON.stringify(user) };
-      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
+      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized Access' }) };
     }
 
     if (path === '/tenants') {
@@ -93,9 +97,12 @@ export const handler: Handler = async (event, context) => {
       }
       if (method === 'POST') {
         const { tenant, adminUser } = JSON.parse(event.body || '{}');
-        await tenantsCol.insertOne(tenant);
-        if (adminUser) await usersCol.insertOne(adminUser);
-        return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
+        // Ensure atomic injection
+        await tenantsCol.updateOne({ id: tenant.id }, { $set: tenant }, { upsert: true });
+        if (adminUser) {
+            await usersCol.updateOne({ username: adminUser.username }, { $set: adminUser }, { upsert: true });
+        }
+        return { statusCode: 200, headers, body: JSON.stringify({ success: true, message: "Cluster Deployed" }) };
       }
       if (method === 'PUT') {
         const { tenant } = JSON.parse(event.body || '{}');
@@ -104,7 +111,6 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    // FIX: Added /users endpoint for workforce management
     if (path === '/users') {
       if (method === 'GET') {
         const users = await usersCol.find({}).toArray();
@@ -134,7 +140,7 @@ export const handler: Handler = async (event, context) => {
     const tenantId = event.queryStringParameters?.tenantId || JSON.parse(event.body || '{}').tenantId;
 
     if (path === '/orders') {
-      if (!tenantId) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing tenantId' }) };
+      if (!tenantId) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing tenantId context' }) };
       const tDb = await getTenantDb(tenantId);
       const ordersCol = tDb.collection('orders');
       if (method === 'GET') {
@@ -149,7 +155,7 @@ export const handler: Handler = async (event, context) => {
     }
 
     if (path === '/products') {
-      if (!tenantId) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing tenantId' }) };
+      if (!tenantId) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing tenantId context' }) };
       const tDb = await getTenantDb(tenantId);
       const productsCol = tDb.collection('products');
       if (method === 'GET') {
@@ -163,10 +169,10 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    return { statusCode: 404, headers, body: JSON.stringify({ error: 'Not Found' }) };
+    return { statusCode: 404, headers, body: JSON.stringify({ error: 'Cluster Endpoint Not Found' }) };
 
   } catch (error: any) {
-    console.error("API Error", error);
+    console.error("MILKY WAY API CRITICAL FAILURE:", error);
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
   }
 };

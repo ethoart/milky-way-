@@ -10,18 +10,23 @@ class BackendService {
       Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
     }
 
-    const response = await fetch(url.toString(), {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    try {
+      const response = await fetch(url.toString(), {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `API Error: ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `API Error: ${response.status}`);
+      }
+
+      return response.json();
+    } catch (e: any) {
+      console.error(`Milky Way API Request Failed [${path}]:`, e);
+      throw e;
     }
-
-    return response.json();
   }
 
   async checkConnection(): Promise<boolean> {
@@ -37,7 +42,6 @@ class BackendService {
     try {
       const user = await this.request('/login', 'POST', { username, password });
       if (user) {
-        // Log secure entry (optional local record)
         const logs = JSON.parse(localStorage.getItem('mw_oms_security_logs') || '[]');
         logs.push({ timestamp: new Date().toISOString(), event: 'AUTH_SUCCESS', user: username, ip: 'Cloud' });
         localStorage.setItem('mw_oms_security_logs', JSON.stringify(logs.slice(-50)));
@@ -45,7 +49,6 @@ class BackendService {
       }
       return null;
     } catch (e) {
-      console.error("Login failed", e);
       return null;
     }
   }
@@ -55,14 +58,7 @@ class BackendService {
   }
 
   async getAllOrders(): Promise<Order[]> {
-    // This requires a special dev endpoint or loop, but for now we fetch via available context
     return this.request('/orders', 'GET');
-  }
-
-  async getOrder(orderId: string): Promise<Order | undefined> {
-    // Usually fetched within a specific context or via ID search
-    const all = await this.request('/orders', 'GET');
-    return all.find((o: Order) => o.id === orderId);
   }
 
   async updateOrder(order: Order): Promise<void> {
@@ -116,10 +112,11 @@ class BackendService {
 
     const adminUser = {
       id: `u-sa-${Date.now()}`,
-      username: data.adminEmail,
+      username: data.adminEmail, // Workforce ID for login
       password: data.adminPass,
       role: 'SUPER_ADMIN',
-      tenantId: tenantId
+      tenantId: tenantId,
+      email: data.adminEmail
     };
 
     await this.request('/tenants', 'POST', { tenant, adminUser });
@@ -138,12 +135,9 @@ class BackendService {
   }
 
   async shipOrder(order: Order, tenantId: string): Promise<Order> {
-    // Ship logic remains mostly the same but ensures state is synced to DB
     const tenant = await this.getTenant(tenantId);
     if (!tenant) throw new Error("Cloud sync failed: Tenant not found.");
     
-    // Attempt real API call to courier if configured
-    // For now, we update order status locally and sync to cloud
     const updated: Order = {
       ...order,
       status: OrderStatus.SHIPPED,
@@ -160,13 +154,11 @@ class BackendService {
     return updated;
   }
 
-  // FIX: Implemented getTeamMembers to fetch from the new /users endpoint
   async getTeamMembers(tenantId: string): Promise<User[]> {
     const all = await this.getAllUsers();
     return all.filter(u => u.tenantId === tenantId);
   }
 
-  // FIX: Added missing methods for DevAdmin and Team pages
   async getAllUsers(): Promise<User[]> {
     return this.request('/users', 'GET');
   }
@@ -215,6 +207,11 @@ class BackendService {
 
   async getSecurityLogs(): Promise<any[]> {
     return JSON.parse(localStorage.getItem('mw_oms_security_logs') || '[]');
+  }
+
+  async getOrder(orderId: string): Promise<Order | undefined> {
+    const all = await this.getAllOrders();
+    return all.find((o: Order) => o.id === orderId);
   }
 }
 
