@@ -88,15 +88,25 @@ export const handler: Handler = async (event, context) => {
       }
       if (method === 'PUT') {
         const { tenant, adminUser } = JSON.parse(event.body || '{}');
+        
+        // CRITICAL FIX: Sanitize the tenant object to remove immutable MongoDB _id
+        const { _id, ...tenantData } = tenant;
+        
         // Update Tenant Metadata
-        await tenantsCol.updateOne({ id: tenant.id }, { $set: tenant });
+        await tenantsCol.updateOne({ id: tenant.id }, { $set: tenantData });
         
         // Update Primary Super Admin credentials if provided
-        if (adminUser && adminUser.username && adminUser.password) {
-          await usersCol.updateOne(
-            { tenantId: tenant.id, role: 'SUPER_ADMIN' },
-            { $set: { username: adminUser.username, password: adminUser.password } }
-          );
+        if (adminUser) {
+          const updateFields: any = {};
+          if (adminUser.username) updateFields.username = adminUser.username;
+          if (adminUser.password) updateFields.password = adminUser.password;
+          
+          if (Object.keys(updateFields).length > 0) {
+            await usersCol.updateOne(
+              { tenantId: tenant.id, role: 'SUPER_ADMIN' },
+              { $set: updateFields }
+            );
+          }
         }
         return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
       }
@@ -128,7 +138,10 @@ export const handler: Handler = async (event, context) => {
       if (tenantConfig && tenantConfig.mongoUri) {
         try {
           const tenantClient = await getConnectedClient(tenantConfig.mongoUri);
-          const dbName = new URL(tenantConfig.mongoUri).pathname.slice(1) || `mw_cluster_${tenantId}`;
+          let dbName = `mw_cluster_${tenantId}`;
+          try {
+            dbName = new URL(tenantConfig.mongoUri).pathname.slice(1) || dbName;
+          } catch (e) { /* use default if URL is not valid mongo uri format */ }
           activeDb = tenantClient.db(dbName);
         } catch (e) {
           console.error(`Tenant DB Routing Error: ${tenantId}`, e);

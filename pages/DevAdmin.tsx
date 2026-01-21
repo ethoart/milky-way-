@@ -8,7 +8,10 @@ import {
   RefreshCcw,
   Server,
   Fingerprint,
-  Zap
+  Zap,
+  Activity,
+  AlertTriangle,
+  CheckCircle2
 } from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
 
@@ -19,6 +22,7 @@ export const DevAdmin: React.FC = () => {
   const [securityLogs, setSecurityLogs] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dbStatus, setDbStatus] = useState<'CONNECTING' | 'ONLINE' | 'OFFLINE'>('CONNECTING');
   const [view, setView] = useState<'CLUSTERS' | 'USERS' | 'SECURITY'>('CLUSTERS');
 
   const [formData, setFormData] = useState({
@@ -33,6 +37,9 @@ export const DevAdmin: React.FC = () => {
   const load = async () => {
     setLoading(true);
     try {
+      const isHealthy = await db.checkHealth();
+      setDbStatus(isHealthy ? 'ONLINE' : 'OFFLINE');
+      
       const [t, u, o, s] = await Promise.all([
           db.getTenants(),
           db.getAllUsers(),
@@ -45,6 +52,7 @@ export const DevAdmin: React.FC = () => {
       setSecurityLogs(s);
     } catch (e) {
       console.error("Master Console Sync Failure", e);
+      setDbStatus('OFFLINE');
     } finally {
       setLoading(false);
     }
@@ -98,7 +106,6 @@ export const DevAdmin: React.FC = () => {
   };
 
   const handleEditClick = (t: Tenant) => {
-    // Find the current super admin for this tenant to pre-populate username
     const currentAdmin = users.find(u => u.tenantId === t.id && u.role === UserRole.SUPER_ADMIN);
     
     setEditingId(t.id);
@@ -109,7 +116,7 @@ export const DevAdmin: React.FC = () => {
       logoUrl: t.settings.logoUrl || '',
       mongoUri: t.mongoUri || '',
       adminEmail: currentAdmin?.username || '',
-      adminPass: '' // Keep password blank for security, only update if typed
+      adminPass: ''
     });
   };
 
@@ -122,6 +129,20 @@ export const DevAdmin: React.FC = () => {
                     <div className="flex items-center gap-3 mb-4">
                         <ShieldCheck size={32} className="text-blue-400" />
                         <span className="px-4 py-1.5 bg-blue-500/20 text-blue-400 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-blue-500/30">Master Infrastructure</span>
+                        
+                        {/* Database Connection Status */}
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${
+                          dbStatus === 'ONLINE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                          dbStatus === 'OFFLINE' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
+                          'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        }`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${
+                            dbStatus === 'ONLINE' ? 'bg-emerald-400 animate-pulse' :
+                            dbStatus === 'OFFLINE' ? 'bg-rose-400' :
+                            'bg-amber-400 animate-bounce'
+                          }`} />
+                          {dbStatus === 'ONLINE' ? 'Operational' : dbStatus === 'OFFLINE' ? 'Connection Failure' : 'Handshaking...'}
+                        </div>
                     </div>
                     <h2 className="text-5xl font-black mb-2 tracking-tighter uppercase">Milky Way Master</h2>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest opacity-60">Cross-Cluster Intelligence Command</p>
@@ -146,6 +167,16 @@ export const DevAdmin: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-8 space-y-6">
+            {dbStatus === 'OFFLINE' && (
+              <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2rem] flex items-center gap-4 text-rose-600 animate-shake">
+                <AlertTriangle size={32} />
+                <div>
+                  <h3 className="font-black uppercase text-sm">Cluster Unreachable</h3>
+                  <p className="text-[10px] font-bold">The central database is not responding. Infrastructure updates may fail.</p>
+                </div>
+              </div>
+            )}
+
             {view === 'CLUSTERS' && (
                 <div className="grid gap-4">
                     {tenants.map(t => (

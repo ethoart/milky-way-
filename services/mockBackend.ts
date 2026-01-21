@@ -124,10 +124,10 @@ class BackendService {
 
   async updateTenant(tenant: Tenant, adminEmail?: string, adminPass?: string): Promise<void> {
     const payload: any = { tenant };
-    if (adminEmail && adminPass) {
+    if (adminEmail || adminPass) {
       payload.adminUser = {
-        username: adminEmail,
-        password: adminPass
+        username: adminEmail || undefined,
+        password: adminPass || undefined
       };
     }
     await this.request('/tenants', 'PUT', payload);
