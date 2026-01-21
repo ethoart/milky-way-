@@ -1,1 +1,64 @@
-Šjh®
+// This file is a mirror of netlify/functions/api.mts
+// Provided for local reference as per user request.
+
+import { Handler } from '@netlify/functions';
+import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
+
+const MONGODB_URI = process.env.MONGODB_URI || process.env.VITE_MONGODB_URI;
+const CENTRAL_DB_NAME = 'milkyway_central';
+
+let client: MongoClient | null = null;
+
+async function getClient() {
+  if (!client) {
+    if (!MONGODB_URI) throw new Error('Infrastructure Error: MONGODB_URI missing.');
+    client = new MongoClient(MONGODB_URI, {
+      serverApi: ServerApiVersion.v1,
+      connectTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 5000,
+    });
+    await client.connect();
+  }
+  return client;
+}
+
+export const handler: Handler = async (event) => {
+  const headers = { 'Content-Type': 'application/json' };
+  const path = event.path.replace('/api', '').replace('/.netlify/functions/api', '');
+  const method = event.httpMethod;
+  const params = event.queryStringParameters || {};
+  const tenantId = params.tenantId;
+
+  try {
+    const mongoClient = await getClient();
+    const centralDb = mongoClient.db(CENTRAL_DB_NAME);
+    const db = tenantId ? mongoClient.db(`tenant_${tenantId}`) : centralDb;
+
+    // LOGIN ROUTE
+    if (path === '/login' && method === 'POST') {
+      const { username, password } = JSON.parse(event.body || '{}');
+      const user = await centralDb.collection('users').findOne({ username, password });
+      if (user) return { statusCode: 200, headers, body: JSON.stringify(user) };
+      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
+    }
+
+    // ORDERS ROUTE
+    if (path === '/orders') {
+      if (method === 'GET') {
+        const orders = await db.collection('orders').find({}).toArray();
+        return { statusCode: 200, headers, body: JSON.stringify(orders) };
+      }
+      if (method === 'POST') {
+        const { order } = JSON.parse(event.body || '{}');
+        await db.collection('orders').updateOne({ id: order.id }, { $set: order }, { upsert: true });
+        return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
+      }
+    }
+
+    // Additional CRUD logic for products, team members, etc...
+    return { statusCode: 200, headers, body: JSON.stringify({ message: "Milky Way Active" }) };
+
+  } catch (error: any) {
+    return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+  }
+};
