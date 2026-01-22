@@ -1,32 +1,36 @@
 import { Handler } from '@netlify/functions';
 import { MongoClient, ServerApiVersion } from 'mongodb';
 
-// Constants
 const CENTRAL_URI = process.env.MONGODB_URI;
 const CENTRAL_DB_NAME = 'milkyway_central';
 
-// Connection Pooling
+// Connection pooling across lambda invocations
 let cachedCentralClient: MongoClient | null = null;
 const tenantClients = new Map<string, MongoClient>();
 
-async function getConnectedClient(uri: string = CENTRAL_URI!) {
-  const isCentral = uri === CENTRAL_URI;
-  if (isCentral && cachedCentralClient) return cachedCentralClient;
-  if (!isCentral && tenantClients.has(uri)) return tenantClients.get(uri)!;
+async function getConnectedClient(uri: string) {
+  if (uri === CENTRAL_URI && cachedCentralClient) return cachedCentralClient;
+  if (tenantClients.has(uri)) return tenantClients.get(uri)!;
 
   const client = new MongoClient(uri, {
     serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
-    connectTimeoutMS: 8000,
-    serverSelectionTimeoutMS: 8000,
+    maxPoolSize: 10,
+    minPoolSize: 2,
+    connectTimeoutMS: 5000,
   });
+
   await client.connect();
-  if (isCentral) cachedCentralClient = client;
+  
+  if (uri === CENTRAL_URI) cachedCentralClient = client;
   else tenantClients.set(uri, client);
+  
   return client;
 }
 
 export const handler: Handler = async (event, context) => {
+  // Allow the process to exit immediately after sending response
   context.callbackWaitsForEmptyEventLoop = false;
+
   const headers = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
@@ -42,7 +46,9 @@ export const handler: Handler = async (event, context) => {
   const method = event.httpMethod;
 
   try {
-    const centralClient = await getConnectedClient(CENTRAL_URI!);
+    if (!CENTRAL_URI) throw new Error('MONGODB_URI is not defined in environment.');
+    
+    const centralClient = await getConnectedClient(CENTRAL_URI);
     const centralDb = centralClient.db(CENTRAL_DB_NAME);
     const usersCol = centralDb.collection('users');
     const tenantsCol = centralDb.collection('tenants');
@@ -66,10 +72,7 @@ export const handler: Handler = async (event, context) => {
         const { _id, ...tenantData } = tenant;
         await tenantsCol.updateOne({ id: tenant.id }, { $set: tenantData }, { upsert: true });
         if (adminUser) {
-          const updateFields: any = {};
-          if (adminUser.username) updateFields.username = adminUser.username;
-          if (adminUser.password) updateFields.password = adminUser.password;
-          await usersCol.updateOne({ tenantId: tenant.id, role: 'SUPER_ADMIN' }, { $set: updateFields }, { upsert: true });
+          await usersCol.updateOne({ tenantId: tenant.id, role: 'SUPER_ADMIN' }, { $set: { username: adminUser.username, password: adminUser.password } }, { upsert: true });
         }
         return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
       }
@@ -77,17 +80,17 @@ export const handler: Handler = async (event, context) => {
 
     const tenantId = event.queryStringParameters?.tenantId || JSON.parse(event.body || '{}').tenantId;
     let activeDb = centralDb;
+    
     if (tenantId) {
       const tenantConfig = await tenantsCol.findOne({ id: tenantId });
       if (tenantConfig && tenantConfig.mongoUri) {
-        try {
-          const tenantClient = await getConnectedClient(tenantConfig.mongoUri);
-          const dbName = new URL(tenantConfig.mongoUri).pathname.slice(1) || `mw_cluster_${tenantId}`;
-          activeDb = tenantClient.db(dbName);
-        } catch (e) {}
+        const tenantClient = await getConnectedClient(tenantConfig.mongoUri);
+        const dbName = new URL(tenantConfig.mongoUri).pathname.slice(1) || `mw_cluster_${tenantId}`;
+        activeDb = tenantClient.db(dbName);
       }
     }
 
+    // Precise routing to avoid 404s
     if (path === '/orders') {
       const ordersCol = activeDb.collection('orders');
       if (method === 'GET') {
@@ -97,10 +100,8 @@ export const handler: Handler = async (event, context) => {
       }
       if (method === 'POST') {
         const { order, orders } = JSON.parse(event.body || '{}');
-        if (orders && Array.isArray(orders)) {
-          const ops = orders.map(o => ({
-            updateOne: { filter: { id: o.id }, update: { $set: { ...o, tenantId } }, upsert: true }
-          }));
+        if (orders) {
+          const ops = orders.map((o: any) => ({ updateOne: { filter: { id: o.id }, update: { $set: { ...o, tenantId } }, upsert: true } }));
           await ordersCol.bulkWrite(ops);
         } else if (order) {
           const { _id, ...orderData } = order;
@@ -109,15 +110,38 @@ export const handler: Handler = async (event, context) => {
         return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
       }
       if (method === 'DELETE') {
-        const id = event.queryStringParameters?.id;
-        await ordersCol.deleteOne({ id });
+        await ordersCol.deleteOne({ id: event.queryStringParameters?.id });
         return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
       }
     }
 
-    // Default 404
-    return { statusCode: 404, headers, body: JSON.stringify({ error: 'Endpoint Not Found' }) };
+    if (path === '/products') {
+      const productsCol = activeDb.collection('products');
+      if (method === 'GET') return { statusCode: 200, headers, body: JSON.stringify(await productsCol.find({ tenantId }).toArray()) };
+      if (method === 'POST') {
+        const { product } = JSON.parse(event.body || '{}');
+        const { _id, ...productData } = product;
+        await productsCol.updateOne({ id: product.id }, { $set: productData }, { upsert: true });
+        return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
+      }
+    }
+
+    if (path === '/users') {
+      if (method === 'GET') return { statusCode: 200, headers, body: JSON.stringify(await usersCol.find({ tenantId }).toArray()) };
+      if (method === 'POST') {
+        const userData = JSON.parse(event.body || '{}');
+        await usersCol.updateOne({ id: userData.id }, { $set: userData }, { upsert: true });
+        return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
+      }
+      if (method === 'DELETE') {
+        await usersCol.deleteOne({ id: event.queryStringParameters?.id });
+        return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
+      }
+    }
+
+    return { statusCode: 404, headers, body: JSON.stringify({ error: `Path Not Found: ${path}` }) };
   } catch (error: any) {
+    console.error('CRITICAL API ERROR:', error);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal Cluster Error', details: error.message }) };
   }
 };

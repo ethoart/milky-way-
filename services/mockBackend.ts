@@ -110,28 +110,32 @@ class BackendService {
 
   async shipOrder(order: Order, tenantId: string): Promise<Order> {
     const tenant = await this.getTenant(tenantId);
-    if (!tenant) throw new Error("Tenant configuration not found.");
+    if (!tenant) throw new Error("Tenant cluster configuration unreachable.");
 
-    // MOCK: Prepare JSON payload for the Courier Partner API
+    // PREPARE JSON CONVERTED DATA FOR COURIER PARTNER
     const courierPayload = {
-      api_key: tenant.settings.courierApiKey,
-      client_id: tenant.settings.courierClientId,
-      order_id: order.id,
-      customer_name: order.customerName,
-      customer_phone: order.customerPhone,
-      customer_address: order.customerAddress,
-      destination_city: order.customerCity,
-      weight: order.parcelWeight || '1.0',
-      cod_amount: order.totalAmount,
-      description: order.parcelDescription || 'Standard Parcel'
+      apiKey: tenant.settings.courierApiKey,
+      clientId: tenant.settings.courierClientId,
+      orderRef: order.id,
+      consignee: {
+        name: order.customerName,
+        phone: order.customerPhone,
+        address: order.customerAddress,
+        city: order.customerCity
+      },
+      parcel: {
+        weight: order.parcelWeight || '1.0',
+        cod: order.totalAmount,
+        description: order.parcelDescription || 'Milky Way Dispatch'
+      }
     };
 
-    console.log("MILKY WAY: Dispatching to Courier Partner...", courierPayload);
+    console.log("MILKY WAY: Handshaking with Courier...", JSON.stringify(courierPayload, null, 2));
 
-    // Simulate API request to external partner
-    await new Promise(resolve => setTimeout(resolve, 2000)); 
+    // Simulate high-fidelity courier API latency
+    await new Promise(resolve => setTimeout(resolve, 1500)); 
     
-    // Simulate receiving an 'apicode' (Tracking ID) from the courier
+    // Generate unique API Code (Waybill)
     const apiCode = `FDE-${Math.floor(10000000 + Math.random() * 90000000)}`;
     
     const updated: Order = {
@@ -141,7 +145,7 @@ class BackendService {
       shippedAt: new Date().toISOString(),
       logs: [...(order.logs || []), { 
         id: `l-${Date.now()}`, 
-        message: `Milky Way System: Courier Handshake Success. API Code: ${apiCode}`, 
+        message: `Milky Way: Courier Handshake Success. API Code generated: ${apiCode}`, 
         timestamp: new Date().toISOString(), 
         user: 'System' 
       }]
@@ -188,7 +192,7 @@ class BackendService {
     if (order) {
       const updatedOrder: Order = { 
         ...order, status: OrderStatus.RETURN_COMPLETED, 
-        logs: [...(order.logs || []), { id: `l-${Date.now()}`, message: 'Returns: Restocked via Milky Way Scanner', timestamp: new Date().toISOString(), user: 'System' }] 
+        logs: [...(order.logs || []), { id: `l-${Date.now()}`, message: 'Milky Way OMS: Return Restocked via Optical Scan', timestamp: new Date().toISOString(), user: 'System' }] 
       };
       await this.updateOrder(updatedOrder);
       return updatedOrder;
