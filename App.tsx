@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
@@ -85,9 +84,19 @@ export default function App() {
   useEffect(() => {
     const saved = localStorage.getItem('mw_user');
     if (saved) {
-        const u = JSON.parse(saved); setUser(u);
-        if (u.role === UserRole.DEV_ADMIN) setCurrentPage('dev_dashboard');
-        else if (u.tenantId) db.getTenant(u.tenantId).then(t => t && setTenant(t));
+        const u = JSON.parse(saved); 
+        setUser(u);
+        if (u.tenantId) db.getTenant(u.tenantId).then(t => t && setTenant(t));
+
+        // Deep Link Handling
+        const params = new URLSearchParams(window.location.search);
+        const orderId = params.get('orderId');
+        if (orderId) {
+            setSelectedOrderId(orderId);
+            setCurrentPage('order_detail');
+        } else if (u.role === UserRole.DEV_ADMIN) {
+            setCurrentPage('dev_dashboard');
+        }
     }
   }, []);
 
@@ -97,7 +106,15 @@ export default function App() {
       setUser(userObj);
       localStorage.setItem('mw_user', JSON.stringify(userObj));
       if (userObj.tenantId) db.getTenant(userObj.tenantId).then(t => t && setTenant(t));
-      setCurrentPage(userObj.role === UserRole.DEV_ADMIN ? 'dev_dashboard' : 'dashboard');
+      
+      const params = new URLSearchParams(window.location.search);
+      const orderId = params.get('orderId');
+      if (orderId) {
+          setSelectedOrderId(orderId);
+          setCurrentPage('order_detail');
+      } else {
+          setCurrentPage(userObj.role === UserRole.DEV_ADMIN ? 'dev_dashboard' : 'dashboard');
+      }
     } else {
         throw new Error("Invalid credentials");
     }
@@ -125,7 +142,7 @@ export default function App() {
     }
   };
 
-  const defaultTitle = user.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way default';
+  const defaultTitle = user.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way';
   const displayShopName = tenant?.settings.shopName || defaultTitle;
 
   return (
@@ -148,7 +165,6 @@ export default function App() {
          {renderPage()}
       </main>
       
-      {/* Dev Tools Trigger (Hidden by default, requires specific key sequence or hidden click) */}
       <div 
         className="fixed bottom-0 right-0 w-4 h-4 opacity-0 hover:opacity-10 cursor-help z-[9999]" 
         onClick={() => {

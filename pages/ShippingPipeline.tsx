@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { OrderList } from './OrderList';
 import { OrderStatus } from '../types';
@@ -54,11 +53,12 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, on
         </div>
       </div>
 
-      <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm min-h-[600px]">
+      <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm min-h-[600px] overflow-hidden">
         <OrderList 
           tenantId={tenantId} 
           onSelectOrder={onSelectOrder} 
-          defaultFilter={activeFilter as any} 
+          defaultFilter={activeFilter as any}
+          logisticsOnly={true} // Restricts to SHIPPED+ statuses
         />
       </div>
     </div>

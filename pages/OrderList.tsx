@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency } from '../utils/helpers';
-import { Search, Calendar, User, Package, ChevronRight, Layers, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Search, ChevronRight, Layers, AlertCircle, Zap, ExternalLink, Trash2 } from 'lucide-react';
 
 interface OrderListProps {
   tenantId: string;
@@ -11,9 +11,10 @@ interface OrderListProps {
   productId?: string | null;
   startDate?: string;
   endDate?: string;
+  logisticsOnly?: boolean; 
 }
 
-export const OrderList: React.FC<OrderListProps> = ({ tenantId, onSelectOrder, defaultFilter = 'ALL', productId, startDate, endDate }) => {
+export const OrderList: React.FC<OrderListProps> = ({ tenantId, onSelectOrder, defaultFilter = 'ALL', productId, startDate, endDate, logisticsOnly = false }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [customerHistories, setCustomerHistories] = useState<{[key: string]: any}>({});
   const [activeStatus, setActiveStatus] = useState<OrderStatus | 'ALL' | 'TODAY_SHIPPED'>(defaultFilter);
@@ -24,39 +25,78 @@ export const OrderList: React.FC<OrderListProps> = ({ tenantId, onSelectOrder, d
   const loadData = async () => {
     const fetchedOrders = await db.getOrders(tenantId);
     setOrders(fetchedOrders);
-    
-    // Simple lazy loading of history for current list
-    const uniquePhones = [...new Set(fetchedOrders.slice(0, 50).map(o => o.customerPhone))];
+    const uniquePhones = [...new Set(fetchedOrders.slice(0, 30).map(o => o.customerPhone))];
     const histories: any = {};
-    for (const phone of uniquePhones) {
-       const h = await db.getCustomerHistory(phone, tenantId);
-       histories[phone] = h;
-    }
+    for (const phone of uniquePhones) { histories[phone] = await db.getCustomerHistory(phone, tenantId); }
     setCustomerHistories(prev => ({ ...prev, ...histories }));
   };
 
   useEffect(() => { loadData(); }, [tenantId]);
 
+  const handleDelete = async (e: React.MouseEvent, orderId: string) => {
+    e.stopPropagation();
+    if (!confirm("Milky Way: Are you sure you want to permanently delete this lead?")) return;
+    await db.deleteOrder(orderId, tenantId);
+    loadData();
+  };
+
+  const handleAction = async (e: React.MouseEvent, order: Order) => {
+    e.stopPropagation();
+    
+    if (e.ctrlKey) {
+      window.open(`/?orderId=${order.id}`, '_blank');
+      return;
+    }
+
+    if (order.status === OrderStatus.PENDING) {
+      const updated = { 
+        ...order, 
+        status: OrderStatus.OPEN_LEAD, 
+        logs: [...(order.logs || []), { 
+          id: `l-${Date.now()}`, 
+          message: 'Milky Way: Activated Pending Lead', 
+          timestamp: new Date().toISOString(), 
+          user: 'System' 
+        }] 
+      };
+      await db.updateOrder(updated);
+      loadData();
+      return;
+    }
+    
+    onSelectOrder(order.id);
+  };
+
   const filteredOrders = useMemo(() => {
-    return [...orders]
-      .filter(o => {
-        let matchesStatus = activeStatus === 'ALL' || (activeStatus === 'TODAY_SHIPPED' ? (o.shippedAt && new Date(o.shippedAt).toDateString() === new Date().toDateString()) : o.status === activeStatus);
-        
-        // Product Filter
-        if (productId && !o.items.some(item => item.productId === productId)) return false;
+    let result = [...orders];
 
-        // Date Filtering
-        const orderDate = new Date(o.createdAt);
-        if (startDate && orderDate < new Date(startDate)) return false;
-        if (endDate && orderDate > new Date(endDate + 'T23:59:59')) return false;
+    // LOGISTIC ISOLATION: Only show orders with SHIPPED or later status
+    if (logisticsOnly) {
+      const logisticStatuses = [
+        OrderStatus.SHIPPED, 
+        OrderStatus.DELIVERY, 
+        OrderStatus.RESIDUAL, 
+        OrderStatus.RETURNED, 
+        OrderStatus.DELIVERED, 
+        OrderStatus.RETURN_COMPLETED
+      ];
+      result = result.filter(o => logisticStatuses.includes(o.status));
+    } else {
+      // If not in logistics mode, we might want to hide SHIPPED+ orders in the Selling Pipeline
+      // Depending on workflow preference. For now, we allow them in "ALL" but the user requested 
+      // logistics section only show after shipping status.
+    }
 
-        const normalizedSearch = search.toLowerCase();
-        const matchesSearch = o.customerName.toLowerCase().includes(normalizedSearch) || o.id.includes(normalizedSearch) || o.customerPhone.includes(normalizedSearch);
-        
-        return matchesStatus && matchesSearch;
-      })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [orders, activeStatus, search, startDate, endDate, productId]);
+    return result.filter(o => {
+      let matchesStatus = activeStatus === 'ALL' || (activeStatus === 'TODAY_SHIPPED' ? (o.shippedAt && new Date(o.shippedAt).toDateString() === new Date().toDateString()) : o.status === activeStatus);
+      if (productId && !o.items.some(item => item.productId === productId)) return false;
+      const orderDate = new Date(o.createdAt);
+      if (startDate && orderDate < new Date(startDate)) return false;
+      if (endDate && orderDate > new Date(endDate + 'T23:59:59')) return false;
+      const normalizedSearch = search.toLowerCase();
+      return matchesStatus && (o.customerName.toLowerCase().includes(normalizedSearch) || o.id.includes(normalizedSearch) || o.customerPhone.includes(normalizedSearch));
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [orders, activeStatus, search, startDate, endDate, productId, logisticsOnly]);
 
   return (
     <div className="flex flex-col h-full bg-white animate-slide-in">
@@ -67,7 +107,7 @@ export const OrderList: React.FC<OrderListProps> = ({ tenantId, onSelectOrder, d
         </div>
         <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-xl border border-blue-100">
             <Layers size={14} className="text-blue-600" />
-            <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{filteredOrders.length} Records In Grid</span>
+            <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{filteredOrders.length} Records</span>
         </div>
       </div>
 
@@ -75,10 +115,9 @@ export const OrderList: React.FC<OrderListProps> = ({ tenantId, onSelectOrder, d
         <table className="w-full text-left compact-table">
           <thead className="sticky top-0 bg-white/95 backdrop-blur-sm z-10 border-b border-slate-100">
             <tr>
-              <th className="w-24">Invoice</th>
+              <th className="w-24">Ref</th>
               <th>Client Profile</th>
               <th className="text-center">Intel</th>
-              <th className="text-center">Qty</th>
               <th>Total</th>
               <th className="text-center">Status</th>
               <th className="text-right">Action</th>
@@ -89,7 +128,7 @@ export const OrderList: React.FC<OrderListProps> = ({ tenantId, onSelectOrder, d
               const history = customerHistories[order.customerPhone];
               const isHighRisk = history?.returns > 0;
               return (
-                <tr key={order.id} className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isHighRisk ? 'bg-rose-50/20' : ''}`} onClick={() => onSelectOrder(order.id)}>
+                <tr key={order.id} className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isHighRisk ? 'bg-rose-50/20' : ''}`} onClick={(e) => handleAction(e, order)}>
                   <td><span className="font-mono text-[10px] font-bold text-slate-400">#{order.id.slice(-6)}</span></td>
                   <td>
                     <div className="flex flex-col">
@@ -98,24 +137,35 @@ export const OrderList: React.FC<OrderListProps> = ({ tenantId, onSelectOrder, d
                     </div>
                   </td>
                   <td className="text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        {isHighRisk && <div className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[8px] font-black uppercase"><AlertCircle size={10} /> {history.returns} REJ</div>}
-                        {history?.count > 3 && !isHighRisk && <div className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[8px] font-black uppercase">LOYAL</div>}
-                      </div>
+                      {isHighRisk ? <div className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[8px] font-black uppercase inline-flex items-center gap-1"><AlertCircle size={10} /> {history.returns} REJ</div> : <span className="text-[10px] font-bold text-slate-300">-</span>}
                   </td>
-                  <td className="text-center"><span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-[10px] font-black text-slate-600">{order.items.reduce((s, i) => s + i.quantity, 0)}</span></td>
                   <td><span className="text-sm font-black text-slate-900">{formatCurrency(order.totalAmount)}</span></td>
                   <td className="text-center">
                     <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
-                      order.status === OrderStatus.DELIVERED ? 'bg-emerald-600 text-white' :
-                      order.status === OrderStatus.CONFIRMED ? 'bg-emerald-600 text-white' :
-                      order.status === OrderStatus.PENDING ? 'bg-blue-600 text-white' :
-                      order.status === OrderStatus.OPEN_LEAD ? 'bg-sky-500 text-white' :
-                      order.status === OrderStatus.NO_ANSWER ? 'bg-amber-500 text-white' :
+                      order.status === OrderStatus.PENDING ? 'bg-slate-200 text-slate-600' :
+                      order.status === OrderStatus.OPEN_LEAD ? 'bg-sky-500 text-white shadow-sm' :
+                      order.status === OrderStatus.CONFIRMED ? 'bg-emerald-600 text-white shadow-sm border border-emerald-500' :
+                      order.status === OrderStatus.SHIPPED ? 'bg-indigo-600 text-white shadow-sm' :
                       'bg-slate-100 text-slate-600 border border-slate-200'
                     }`}>{order.status.replace('_', ' ')}</span>
                   </td>
-                  <td className="text-right text-slate-300 group-hover:text-blue-600"><ChevronRight size={18} /></td>
+                  <td className="text-right">
+                    <div className="flex items-center justify-end gap-2">
+                        <button 
+                            onClick={(e) => handleDelete(e, order.id)}
+                            className="p-2.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all opacity-0 group-hover:opacity-100"
+                            title="Delete Registry"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                        <button 
+                            onClick={(e) => handleAction(e, order)}
+                            className={`p-2.5 rounded-xl transition-all shadow-sm ${order.status === OrderStatus.PENDING ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-400 group-hover:text-blue-600 group-hover:bg-blue-50'}`}
+                        >
+                            {order.status === OrderStatus.PENDING ? <Zap size={16}/> : <ChevronRight size={16}/>}
+                        </button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}

@@ -19,19 +19,30 @@ export const getCustomerStatusColor = (status: CustomerStatus) => {
 export const parseCSV = (text: string) => {
   const lines = text.split('\n');
   const result = [];
-  // Skip header if present (simple check)
-  const start = lines[0].toLowerCase().includes('name') ? 1 : 0;
   
-  for (let i = start; i < lines.length; i++) {
+  // Find header indices to be format-agnostic
+  const header = lines[0].toLowerCase().split(',');
+  const nameIdx = header.indexOf('full_name');
+  const addrIdx = header.indexOf('street_address');
+  const phoneIdx = header.indexOf('phone');
+
+  // If headers don't match, fallback to 0, 1, 2
+  const finalNameIdx = nameIdx !== -1 ? nameIdx : 0;
+  const finalAddrIdx = addrIdx !== -1 ? addrIdx : 1;
+  const finalPhoneIdx = phoneIdx !== -1 ? phoneIdx : 2;
+
+  for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    // Assume CSV: Name,Phone,Address,Product,Price
-    const parts = line.split(',');
-    if (parts.length >= 3) {
+    
+    // Handle quoted values (common in addresses with commas)
+    const parts = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+    if (parts && parts.length >= 2) {
+      const clean = (val: string) => val.replace(/^"|"$/g, '').trim();
       result.push({
-        name: parts[0].trim(),
-        phone: parts[1].trim(),
-        address: parts.slice(2).join(',').trim() // Handle address with commas
+        name: clean(parts[finalNameIdx] || ''),
+        address: clean(parts[finalAddrIdx] || ''),
+        phone: clean(parts[finalPhoneIdx] || '').replace('p:', '')
       });
     }
   }
