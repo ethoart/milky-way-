@@ -37,7 +37,7 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, on
     const ordersToPrint = await Promise.all(ids.map(id => db.getOrder(id, tenantId)));
     
     root.render(
-      <div className="space-y-8">
+      <div className="space-y-10">
         {ordersToPrint.map(o => o ? <BillPrintView key={o.id} order={o} settings={tenant.settings} /> : null)}
       </div>
     );
@@ -57,8 +57,8 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, on
                 <Truck size={24} />
             </div>
             <div>
-                <h2 className="text-3xl font-black text-black tracking-tighter uppercase leading-none">Shipping Terminal</h2>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Logistics Intelligence Center</p>
+                <h2 className="text-3xl font-black text-black tracking-tighter uppercase leading-none">Logistics Hub</h2>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Shipment Tracking & Status Control</p>
             </div>
         </div>
 
