@@ -71,14 +71,14 @@ export const OrderList: React.FC<OrderListProps> = ({
   }, [orders, activeStatus, search, startDate, endDate, productId, logisticsOnly]);
 
   const handleOrderClick = async (order: Order) => {
-    // If the order is PENDING, move it to OPEN_LEAD status when viewed
+    // Lead Management: Transition PENDING leads to OPEN_LEAD when viewed
     if (order.status === OrderStatus.PENDING) {
         const currentUser = localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System';
         const updated: Order = {
             ...order,
             status: OrderStatus.OPEN_LEAD,
             openedBy: currentUser,
-            logs: [...(order.logs || []), { id: `log-open-${Date.now()}`, message: 'Node Opened by User', timestamp: new Date().toISOString(), user: currentUser }]
+            logs: [...(order.logs || []), { id: `log-view-${Date.now()}`, message: `Node Opened for Processing by ${currentUser}`, timestamp: new Date().toISOString(), user: currentUser }]
         };
         await db.updateOrder(updated);
     }
@@ -112,7 +112,7 @@ export const OrderList: React.FC<OrderListProps> = ({
             {onBulkAction && (
               <button 
                 onClick={() => { onBulkAction(selectedIds); setSelectedIds([]); }} 
-                className="bg-blue-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+                className="bg-blue-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg"
               >
                 {activeStatus === OrderStatus.CONFIRMED ? <Truck size={14} /> : <Printer size={14} />} 
                 {activeStatus === OrderStatus.CONFIRMED ? 'Dispatch Selection' : 'Print Selection'}
@@ -137,16 +137,12 @@ export const OrderList: React.FC<OrderListProps> = ({
       <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-50/20">
         <div className="relative flex-1 md:w-80">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input placeholder="Search node identifiers..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-white border border-slate-200 pl-11 pr-4 py-3 rounded-2xl outline-none text-[13px] font-bold focus:ring-2 focus:ring-blue-500 transition-all shadow-sm" />
+            <input placeholder="Search identifiers..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-white border border-slate-200 pl-11 pr-4 py-3 rounded-2xl outline-none text-[13px] font-bold focus:ring-2 focus:ring-blue-500 transition-all shadow-sm" />
         </div>
         <div className="flex items-center gap-3">
           <button onClick={toggleAll} className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-200 transition-all">
-            {selectedIds.length === filteredOrders.length ? <CheckSquare size={14}/> : <Square size={14}/>} {selectedIds.length === filteredOrders.length ? 'Deselect' : 'Select Page'}
+            {selectedIds.length === filteredOrders.length ? <CheckSquare size={14}/> : <Square size={14}/>} {selectedIds.length === filteredOrders.length ? 'Deselect' : 'Select All'}
           </button>
-          <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-xl border border-blue-100">
-              <Layers size={14} className="text-blue-600" />
-              <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{filteredOrders.length} Logs</span>
-          </div>
         </div>
       </div>
 

@@ -128,18 +128,21 @@ class BackendService {
 
     let waybillId = "";
     
+    // Fardar Express Domestic API Implementation
     if (tenant.settings.courierApiKey && tenant.settings.courierClientId) {
         const formData = new URLSearchParams();
         formData.append('api_key', tenant.settings.courierApiKey);
         formData.append('client_id', tenant.settings.courierClientId);
-        formData.append('consignee_name', order.customerName);
-        formData.append('consignee_phone', order.customerPhone);
-        formData.append('consignee_address', order.customerAddress);
-        formData.append('destination_city', order.customerCity || '');
-        formData.append('weight', order.parcelWeight || '1');
-        formData.append('cod_amount', order.totalAmount.toString());
-        formData.append('description', order.parcelDescription || 'E-commerce Item');
-        formData.append('ref_no', order.id);
+        formData.append('order_id', order.id);
+        formData.append('parcel_weight', order.parcelWeight || '1');
+        formData.append('parcel_description', order.parcelDescription || (order.items[0]?.name || 'E-commerce Item'));
+        formData.append('recipient_name', order.customerName);
+        formData.append('recipient_contact_1', order.customerPhone);
+        formData.append('recipient_contact_2', ''); 
+        formData.append('recipient_address', order.customerAddress);
+        formData.append('recipient_city', order.customerCity || 'Colombo');
+        formData.append('amount', order.totalAmount.toString());
+        formData.append('exchange', '0'); // 0 for Normal Parcel
 
         try {
             const response = await fetch(tenant.settings.courierApiUrl, {
@@ -149,12 +152,20 @@ class BackendService {
             });
 
             const result = await response.json();
-            if (result.status === 'success' && result.waybill_id) {
-                waybillId = result.waybill_id;
+            
+            // Fardar API returns status 200 for successful insert
+            if (Number(result.status) === 200 && result.waybill_no) {
+                waybillId = result.waybill_no;
             } else {
-                const errCode = result.error_code || response.status;
-                const errMsg = result.error || result.message || "Courier logic failure.";
-                throw new Error(`[Logistics ${errCode}]: ${errMsg}`);
+                const statusCodeMessages: {[key: number]: string} = {
+                    201: 'Inactive Client', 202: 'Invalid order id', 203: 'Invalid weight',
+                    204: 'Invalid parcel description', 205: 'Invalid name', 206: 'Contact number 1 is invalid',
+                    207: 'Contact number 2 is invalid', 208: 'Invalid address', 209: 'Invalid City',
+                    210: 'Unsuccessful insert', 211: 'Invalid API key', 212: 'Invalid or inactive client',
+                    213: 'Invalid exchange value', 214: 'System maintain mode'
+                };
+                const msg = statusCodeMessages[Number(result.status)] || result.message || "Unknown Logistics Error";
+                throw new Error(`[Logistics Error ${result.status}]: ${msg}`);
             }
         } catch (apiErr: any) {
             throw new Error(`Logistics Bridge Failure: ${apiErr.message}`);
@@ -163,6 +174,7 @@ class BackendService {
         throw new Error("Missing Courier API Credentials in settings.");
     }
 
+    // Deduct Stock via FIFO
     const allProducts = await this.getProducts(tenantId);
     for (const item of order.items) {
         const prod = allProducts.find(p => p.id === item.productId);

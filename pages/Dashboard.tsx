@@ -101,7 +101,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
         if (o.status === OrderStatus.OPEN_LEAD) teamStats[u].opened++;
     });
 
-    // Trends Data
+    // Trends Data (Last 14 days)
     const dailyMap: { [key: string]: { date: string; shipped: number; sales: number } } = {};
     for (let i = 13; i >= 0; i--) {
         const d = new Date();
@@ -164,7 +164,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
           <BigStat label="Delivered" value={dashboardData.stats.deliveredCount} color="bg-emerald-50 text-emerald-600" icon={<CheckCircle/>} />
           <BigStat label="Returned" value={dashboardData.stats.returnedCount} color="bg-orange-50 text-orange-600" icon={<RotateCcw/>} />
           <BigStat label="Restocked" value={dashboardData.stats.restockedCount} color="bg-rose-50 text-rose-600" icon={<Archive/>} />
-          <BigStat label="Total Settlement" value={formatCurrency(dashboardData.stats.totalRevenue)} color="bg-slate-900 text-white" icon={<DollarSign/>} />
+          <BigStat label="Settlement" value={formatCurrency(dashboardData.stats.totalRevenue)} color="bg-slate-900 text-white" icon={<DollarSign/>} />
       </div>
 
       {/* Charts */}
@@ -221,7 +221,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
               </div>
               <div className="flex-1 overflow-auto max-h-[400px] no-scrollbar">
                   <table className="w-full text-left compact-table">
-                      <thead><tr><th>SKU Identifier</th><th>Product Name</th><th className="text-right">Units Dispatched</th></tr></thead>
+                      <thead><tr><th>SKU Identifier</th><th>Product Name</th><th className="text-right">Units Shipped</th></tr></thead>
                       <tbody className="divide-y divide-slate-50">
                           {dashboardData.products.map((p, i) => (
                               <tr key={i} className="hover:bg-slate-50">
