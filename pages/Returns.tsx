@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { db } from '../services/mockBackend';
-import { CheckCircle, AlertOctagon, Camera, X, Scan, Upload, FileSpreadsheet, PackageSearch, AlertTriangle } from 'lucide-react';
+import { CheckCircle, AlertOctagon, Camera, X, Scan, Upload, FileSpreadsheet, Keyboard, ShieldCheck } from 'lucide-react';
 import { Order, OrderStatus } from '../types';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { parseCSV } from '../utils/helpers';
 
 interface ReturnsProps {
   tenantId: string;
@@ -20,14 +19,43 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
+  // Milky Way Logic: Always keep the input focused for hardware scanners
   useEffect(() => {
-    if (activeTab === 'SCAN') inputRef.current?.focus();
+    const handleGlobalClick = () => {
+        if (activeTab === 'SCAN' && !isCameraActive) {
+            inputRef.current?.focus();
+        }
+    };
+    
+    document.addEventListener('mousedown', handleGlobalClick);
+    inputRef.current?.focus();
+    
+    const focusInterval = setInterval(() => {
+        if (activeTab === 'SCAN' && !isCameraActive && document.activeElement !== inputRef.current) {
+            inputRef.current?.focus();
+        }
+    }, 1000);
+
+    return () => {
+        document.removeEventListener('mousedown', handleGlobalClick);
+        clearInterval(focusInterval);
+    };
+  }, [activeTab, isCameraActive]);
+
+  useEffect(() => {
+    if (activeTab === 'SCAN' && !isCameraActive) inputRef.current?.focus();
     return () => { if (scannerRef.current) scannerRef.current.clear().catch(() => {}); };
-  }, [activeTab]);
+  }, [activeTab, isCameraActive]);
 
   useEffect(() => {
       if (isCameraActive && activeTab === 'SCAN') {
-        const scanner = new Html5QrcodeScanner("reader", { fps: 15, qrbox: { width: 250, height: 250 } }, false);
+        // Milky Way Terminal: Support both QR and Barcode (1D/2D)
+        const scanner = new Html5QrcodeScanner("reader", { 
+            fps: 20, 
+            qrbox: { width: 280, height: 280 },
+            aspectRatio: 1.0
+        }, false);
+        
         scanner.render((text) => {
             setScanInput(text);
             setIsCameraActive(false);
@@ -43,12 +71,24 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
   const handleScanProcess = async (code: string) => {
     setError(null);
     setProcessedOrder(null);
-    if (!code.trim()) return;
+    const cleanCode = code.trim();
+    if (!cleanCode) return;
+    
     try {
-      const result = await db.processReturn(code, tenantId);
-      if (result) { setProcessedOrder(result); setScanInput(''); }
-      else { setError('Order not found or invalid cluster identifier.'); }
-    } catch (err) { setError('System failure while querying cluster.'); }
+      const result = await db.processReturn(cleanCode, tenantId);
+      if (result) { 
+          setProcessedOrder(result); 
+          setScanInput(''); 
+          // Haptic-style success flash could go here
+      }
+      else { 
+          setError('Order not found or invalid cluster identifier.'); 
+          setScanInput('');
+      }
+    } catch (err) { 
+        setError('System failure while querying cluster.'); 
+        setScanInput('');
+    }
   };
 
   const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,7 +98,7 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
     reader.onload = async (ev) => {
         const csvContent = ev.target?.result as string;
         const rows = csvContent.split('\n').map(r => r.trim()).filter(r => r);
-        const trackingList = rows.map(r => r.split(',')[0].trim()); // Assume 1st column is tracking
+        const trackingList = rows.map(r => r.split(',')[0].trim()); 
 
         const systemOrders = await db.getOrders(tenantId);
         const returnCompletedTracking = systemOrders
@@ -88,27 +128,74 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
 
       {activeTab === 'SCAN' ? (
         <div className="w-full bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
-          {isCameraActive ? (
-              <div className="mb-6 relative">
-                  <div id="reader" className="overflow-hidden rounded-[2rem] border-2 border-blue-500/20 bg-slate-50"></div>
-                   <button onClick={() => setIsCameraActive(false)} className="absolute top-4 right-4 bg-black text-white p-3 rounded-2xl z-10 hover:scale-110 transition-all"><X size={24} /></button>
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                    <Keyboard size={18} />
+                </div>
+                <div>
+                    <h3 className="text-xs font-black uppercase tracking-widest">Hardware Link Active</h3>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Connect Barcode Machine via USB/BT</p>
+                </div>
+            </div>
+            {!isCameraActive && (
+                <button onClick={() => setIsCameraActive(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-black transition-all">
+                    <Camera size={14} /> Optical Lens
+                </button>
+            )}
+          </div>
+
+          {isCameraActive && (
+              <div className="mb-8 relative animate-slide-in">
+                  <div id="reader" className="overflow-hidden rounded-[2rem] border-4 border-blue-500/20 bg-slate-50"></div>
+                   <button onClick={() => setIsCameraActive(false)} className="absolute top-4 right-4 bg-black text-white p-3 rounded-2xl z-10 hover:scale-110 transition-all shadow-xl"><X size={24} /></button>
+                   <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg">Dual-Mode Scan Engaged</div>
               </div>
-          ) : (
-            <button onClick={() => setIsCameraActive(true)} className="w-full flex items-center justify-center gap-3 py-6 bg-blue-600 text-white rounded-3xl font-black uppercase text-xs tracking-[0.2em] shadow-xl hover:bg-blue-700 transition-all mb-8"><Camera size={20} /> Activate Optical Scan</button>
           )}
+
           <form onSubmit={(e) => { e.preventDefault(); handleScanProcess(scanInput); }} className="space-y-4">
-            <input ref={inputRef} type="text" value={scanInput} onChange={(e) => setScanInput(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 text-slate-900 text-2xl font-black text-center py-6 rounded-3xl focus:border-blue-600 outline-none" placeholder="WAYBILL / ID" />
+            <div className="relative group">
+                <input 
+                    ref={inputRef} 
+                    type="text" 
+                    autoFocus
+                    value={scanInput} 
+                    onChange={(e) => setScanInput(e.target.value)} 
+                    className="w-full bg-slate-50 border-2 border-slate-100 text-slate-900 text-2xl font-black text-center py-8 rounded-[2rem] focus:border-blue-600 outline-none transition-all group-focus-within:shadow-2xl" 
+                    placeholder="WAITING FOR BEAM..." 
+                />
+                <div className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-200 group-focus-within:text-blue-200 transition-colors">
+                    <Scan size={32} />
+                </div>
+            </div>
+            <p className="text-center text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">Scanner focus locked to terminal input</p>
           </form>
+
           {processedOrder && (
-            <div className="mt-8 bg-emerald-50 border border-emerald-100 p-6 rounded-3xl flex items-center gap-4 text-emerald-700 animate-slide-in">
-                <CheckCircle size={32} />
-                <div><h3 className="font-black uppercase text-sm">Restocked: {processedOrder.customerName}</h3><p className="text-[10px] font-bold">Node #{processedOrder.id.slice(-6)} updated.</p></div>
+            <div className="mt-8 bg-emerald-50 border border-emerald-100 p-8 rounded-[2rem] flex items-center gap-6 text-emerald-700 animate-slide-in shadow-lg shadow-emerald-100">
+                <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-xl">
+                    <ShieldCheck size={32} />
+                </div>
+                <div className="flex-1">
+                    <h3 className="font-black uppercase text-lg tracking-tight">{processedOrder.customerName}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                        <span className="bg-emerald-600 text-white px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest">Restocked</span>
+                        <span className="text-[10px] font-bold opacity-60">System Registry ID: {processedOrder.id.slice(-8)}</span>
+                    </div>
+                </div>
+                <button onClick={() => setProcessedOrder(null)} className="p-2 hover:bg-emerald-100 rounded-xl"><X size={20}/></button>
             </div>
           )}
           {error && (
-            <div className="mt-8 bg-rose-50 border border-rose-100 p-6 rounded-3xl flex items-center gap-4 text-rose-600 animate-shake">
-                <AlertOctagon size={32} />
-                <div><h3 className="font-black uppercase text-sm">Error</h3><p className="text-[10px] font-bold">{error}</p></div>
+            <div className="mt-8 bg-rose-50 border border-rose-100 p-8 rounded-[2rem] flex items-center gap-6 text-rose-600 animate-shake shadow-lg shadow-rose-100">
+                <div className="w-16 h-16 bg-rose-600 text-white rounded-2xl flex items-center justify-center shadow-xl">
+                    <AlertOctagon size={32} />
+                </div>
+                <div className="flex-1">
+                    <h3 className="font-black uppercase text-lg tracking-tight">Access Denied</h3>
+                    <p className="text-[10px] font-bold opacity-70 uppercase mt-1">{error}</p>
+                </div>
+                <button onClick={() => setError(null)} className="p-2 hover:bg-rose-100 rounded-xl"><X size={20}/></button>
             </div>
           )}
         </div>
@@ -139,14 +226,6 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
                             <p className="text-3xl font-black text-rose-600">{reconcileResults.missing.length}</p>
                         </div>
                     </div>
-                    {reconcileResults.missing.length > 0 && (
-                        <div className="bg-slate-900 text-white p-8 rounded-[2rem] space-y-4">
-                            <div className="flex items-center gap-2 text-rose-400 text-[10px] font-black uppercase tracking-widest"><AlertTriangle size={14} /> Missing Records Identified</div>
-                            <div className="max-h-40 overflow-y-auto font-mono text-xs space-y-2 pr-4 custom-scrollbar">
-                                {reconcileResults.missing.map((id, i) => <div key={i} className="bg-white/5 px-4 py-2 rounded-lg flex justify-between"><span>{id}</span><span className="text-rose-500 font-black">NOT COMPLETED</span></div>)}
-                            </div>
-                        </div>
-                    )}
                 </div>
             )}
         </div>

@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createRoot } from 'react-dom/client';
 import { db } from '../services/mockBackend';
-import { Order, OrderStatus, OrderLog, Product } from '../types';
+import { Order, OrderStatus, OrderLog, Product, Tenant } from '../types';
 import { 
   ArrowLeft, Truck, Check, Clock, User as UserIcon, Save, 
-  Activity, AlertCircle, Pause, MapPin, Package, Trash2, Plus 
+  Activity, AlertCircle, Pause, MapPin, Package, Trash2, Plus, Printer, RefreshCcw
 } from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
+import { BillPrintView } from '../components/BillPrintView';
 
 const SRI_LANKA_CITIES = [
   "Colombo", "Gampaha", "Kalutara", "Kandy", "Matale", "Nuwara Eliya", "Galle", "Matara", "Hambantota", 
@@ -24,12 +26,13 @@ interface OrderDetailProps {
 export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onBack }) => {
   const [order, setOrder] = useState<Order | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [history, setHistory] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Form State
+  // Separate form state to prevent frequent re-renders of the whole component
   const [formData, setFormData] = useState({ 
     customerName: '', 
     customerPhone: '', 
@@ -39,24 +42,25 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     parcelDescription: ''
   });
   
-  // Items State (Editable Manifest)
   const [items, setItems] = useState<{ productId: string; quantity: number; price: number; name: string }[]>([]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
-    const [data, fetchedProducts] = await Promise.all([
+    const [data, fetchedProducts, fetchedTenant] = await Promise.all([
       db.getOrder(orderId, tenantId),
-      db.getProducts(tenantId)
+      db.getProducts(tenantId),
+      db.getTenant(tenantId)
     ]);
     
     if (data) {
       setOrder(data);
       setProducts(fetchedProducts);
+      setTenant(fetchedTenant || null);
       setHistory(await db.getCustomerHistory(data.customerPhone, tenantId));
       setFormData({ 
-        customerName: data.customerName, 
-        customerPhone: data.customerPhone, 
-        customerAddress: data.customerAddress, 
+        customerName: data.customerName || '', 
+        customerPhone: data.customerPhone || '', 
+        customerAddress: data.customerAddress || '', 
         customerCity: data.customerCity || '', 
         parcelWeight: data.parcelWeight || '1', 
         parcelDescription: data.parcelDescription || '' 
@@ -64,14 +68,27 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
       setItems(data.items || []);
     }
     setLoading(false);
-  };
+  }, [orderId, tenantId]);
 
-  useEffect(() => { loadData(); }, [orderId]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  // Derived Total Amount
   const totalAmount = useMemo(() => {
     return items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   }, [items]);
+
+  const handlePrintBill = () => {
+    if (!order || !tenant) return;
+    const printContainer = document.createElement('div');
+    printContainer.className = 'print-only';
+    document.body.appendChild(printContainer);
+    const root = createRoot(printContainer);
+    root.render(<BillPrintView order={order} settings={tenant.settings} />);
+    setTimeout(() => {
+        window.print();
+        root.unmount();
+        document.body.removeChild(printContainer);
+    }, 500);
+  };
 
   const handleUpdateItem = (index: number, field: string, value: any) => {
     const newItems = [...items];
@@ -93,48 +110,30 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     }
   };
 
-  const handleRemoveItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
-  };
-
   const updateStatus = async (newStatus: OrderStatus) => {
     if (!order) return;
     
-    // STRICT VALIDATION: Confirmation Guard
     if (newStatus === OrderStatus.CONFIRMED) {
-      if (!formData.customerPhone || formData.customerPhone.trim().length < 9) {
-        return alert("MILKY WAY PROTOCOL: A valid Mobile Number (min 9 digits) is required to confirm.");
-      }
-      if (!formData.customerCity) {
-        return alert("MILKY WAY PROTOCOL: Destination City must be selected from the geo-registry to confirm.");
-      }
-      if (items.length === 0) {
-        return alert("MILKY WAY PROTOCOL: Manifest is empty. Add at least one item.");
-      }
+      if (!formData.customerPhone || formData.customerPhone.trim().length < 9) return alert("Consignee Contact Required.");
+      if (!formData.customerCity) return alert("Logistics Node (City) Required.");
+      if (items.length === 0) return alert("Manifest Empty.");
     }
 
     if (newStatus === OrderStatus.SHIPPED) {
-      if (!formData.customerCity || !formData.parcelDescription) {
-        return alert("Courier API Error: Destination City and Parcel Description are mandatory.");
-      }
       setShippingLoading(true);
       try { 
-        const result = await db.shipOrder({ ...order, ...formData, items, totalAmount }, tenantId);
-        alert(`Handshake Successful: API CODE ${result.trackingNumber}`);
+        await db.shipOrder({ ...order, ...formData, items, totalAmount }, tenantId);
         loadData();
-      } catch (e: any) { 
-        alert(`API Failure: ${e.message}`); 
-      } finally { 
-        setShippingLoading(false); 
-      }
+      } catch (e: any) { alert(e.message); } 
+      finally { setShippingLoading(false); }
       return;
     }
 
     const log: OrderLog = { 
       id: `l-${Date.now()}`, 
-      message: `Status transitioned to ${newStatus}`, 
+      message: `Status Transition: ${newStatus}`, 
       timestamp: new Date().toISOString(), 
-      user: 'System' 
+      user: localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System'
     };
     
     setIsSaving(true);
@@ -143,195 +142,135 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     loadData();
   };
 
-  const handleMasterSync = async () => {
-    if (!order) return;
-    setIsSaving(true);
-    await db.updateOrder({ ...order, ...formData, items, totalAmount });
-    setIsSaving(false);
-    alert("MILKY WAY: Node synchronized with central cluster.");
-  };
-
-  if (loading || !order) return <div className="p-20 text-center font-black uppercase text-slate-300 text-xs tracking-widest">Accessing Node Identity...</div>;
+  if (loading || !order) return <div className="p-20 text-center font-black uppercase text-slate-300 text-xs">Awaiting Node Data...</div>;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-slide-in">
+    <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-slide-in no-print">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-                <button onClick={onBack} className="p-4 bg-white border border-slate-100 rounded-3xl text-black hover:scale-110 transition-all shadow-sm"><ArrowLeft size={20} /></button>
+                <button onClick={onBack} className="p-4 bg-white border border-slate-100 rounded-3xl text-black shadow-sm hover:bg-slate-50 transition-all"><ArrowLeft size={20} /></button>
                 <div>
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase leading-none">Registry {order.id.slice(-8)}</h1>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-blue-600 text-[10px] font-black uppercase tracking-widest">{order.status}</span>
-                      <span className="text-slate-300">•</span>
-                      <span className="text-slate-400 text-[10px] font-bold">VALUATION: {formatCurrency(totalAmount)}</span>
+                    <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Registry {order.id.slice(-8)}</h1>
+                    <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1 flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-blue-50 rounded-md">{order.status}</span>
+                      <span>•</span>
+                      <span>{formatCurrency(totalAmount)}</span>
                     </div>
                 </div>
             </div>
-            <div className="flex items-center gap-2">
-                {isSaving && <span className="text-[9px] font-black text-blue-600 animate-pulse uppercase tracking-widest mr-2">Syncing Grid...</span>}
-                <button onClick={handleMasterSync} className="bg-black text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl flex items-center gap-3 hover:scale-105 active:scale-95 transition-all"><Save size={16} /> Force Sync</button>
+            <div className="flex gap-2">
+                <button 
+                    onClick={handlePrintBill}
+                    className="bg-white border border-slate-200 text-slate-900 px-6 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-sm flex items-center gap-3 hover:bg-slate-50 transition-all"
+                >
+                    <Printer size={16} /> Print Courier Label
+                </button>
+                <button onClick={async () => {
+                    setIsSaving(true);
+                    await db.updateOrder({ ...order, ...formData, items, totalAmount });
+                    setIsSaving(false);
+                    alert("Node Synchronized.");
+                }} className="bg-black text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl flex items-center gap-3 active:scale-95 transition-all">
+                    {isSaving ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />} 
+                    Force Sync
+                </button>
             </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-8">
-                {/* Protocol Controls */}
+                {/* 1. Protocol Grid */}
                 <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={16}/> Protocol Action Grid</h3>
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={16}/> Protocol Action</h3>
                     <div className="flex flex-wrap gap-2">
-                        <button onClick={() => updateStatus(OrderStatus.OPEN_LEAD)} className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase transition-all shadow-sm ${order.status === OrderStatus.OPEN_LEAD ? 'bg-sky-500 text-white' : 'bg-slate-100 text-slate-500'}`}>Open Lead</button>
-                        <button onClick={() => updateStatus(OrderStatus.HOLD)} className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase transition-all shadow-sm ${order.status === OrderStatus.HOLD ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-500'}`}><Pause size={12} className="inline mr-1" /> Hold</button>
-                        <button onClick={() => updateStatus(OrderStatus.NO_ANSWER)} className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase transition-all shadow-sm ${order.status === OrderStatus.NO_ANSWER ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-500'}`}>No Answer</button>
-                        <button onClick={() => updateStatus(OrderStatus.REJECTED)} className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase transition-all shadow-sm ${order.status === OrderStatus.REJECTED ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-500'}`}>Reject</button>
-                        
-                        {order.status !== OrderStatus.SHIPPED && (
-                          <button onClick={() => updateStatus(OrderStatus.CONFIRMED)} className={`bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black text-[10px] uppercase shadow-xl hover:scale-105 transition-all ${order.status === OrderStatus.CONFIRMED ? 'ring-4 ring-emerald-100' : ''}`}>Confirm Node</button>
-                        )}
-
-                        {order.status === OrderStatus.CONFIRMED && (
-                             <button 
-                                onClick={() => updateStatus(OrderStatus.SHIPPED)} 
-                                disabled={shippingLoading} 
-                                className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase flex items-center gap-3 hover:bg-black hover:scale-105 transition-all shadow-2xl disabled:opacity-50"
-                             >
-                                <Truck size={20} className="text-blue-400" /> 
-                                {shippingLoading ? 'Handshaking...' : 'Execute Dispatch'}
+                        {[OrderStatus.OPEN_LEAD, OrderStatus.HOLD, OrderStatus.NO_ANSWER, OrderStatus.REJECTED].map(s => (
+                           <button key={s} onClick={() => updateStatus(s)} className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase transition-all ${order.status === s ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}>{s.replace('_', ' ')}</button>
+                        ))}
+                        <button onClick={() => updateStatus(OrderStatus.CONFIRMED)} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-emerald-700 transition-all">Confirm Registry</button>
+                        {(order.status === OrderStatus.CONFIRMED || order.status === OrderStatus.SHIPPED) && (
+                             <button onClick={() => updateStatus(OrderStatus.SHIPPED)} disabled={shippingLoading} className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase flex items-center gap-3 hover:bg-black transition-all shadow-2xl">
+                                <Truck size={20} className="text-blue-400" /> {shippingLoading ? 'API HANDSHAKE...' : 'DISPATCH TO COURIER'}
                              </button>
-                        )}
-                        {order.status === OrderStatus.SHIPPED && (
-                          <div className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-mono text-xs font-bold uppercase tracking-widest border border-white/10 shadow-lg">
-                            <Truck size={14} className="inline mr-2 text-indigo-200" />
-                            Waybill: {order.trackingNumber}
-                          </div>
                         )}
                     </div>
                 </div>
 
-                {/* Editable Manifest Section */}
+                {/* 2. Subject Info - Optimized for typing */}
+                <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><UserIcon size={16}/> Consignee Identity</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Full Name</label>
+                          <input className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-black outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.customerName} onChange={e => setFormData({...formData, customerName: e.target.value})} placeholder="Consignee Name" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Contact Phone</label>
+                          <input className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-black outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.customerPhone} onChange={e => setFormData({...formData, customerPhone: e.target.value})} placeholder="Phone Number" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Courier Node (City)</label>
+                          <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-black outline-none" value={formData.customerCity} onChange={e => setFormData({...formData, customerCity: e.target.value})}>
+                              <option value="">Select City Node...</option>
+                              {SRI_LANKA_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-1 md:col-span-2">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Delivery Address</label>
+                          <textarea className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-black outline-none min-h-[120px] focus:ring-2 focus:ring-blue-500 transition-all" value={formData.customerAddress} onChange={e => setFormData({...formData, customerAddress: e.target.value})} placeholder="Full Street Address" />
+                        </div>
+                    </div>
+                </div>
+
+                {/* 3. Manifest */}
                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Package size={16}/> Selected Lead Manifest</h3>
-                        <button onClick={handleAddItem} className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-100 transition-all"><Plus size={14}/> Add Sku</button>
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Package size={16}/> Manifest Inventory</h3>
+                        <button onClick={handleAddItem} className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase"><Plus size={14} className="inline mr-1"/> Add Item</button>
                     </div>
                     <div className="space-y-4">
                         {items.map((item, idx) => (
                             <div key={idx} className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 flex flex-col md:flex-row items-center gap-6 animate-slide-in">
-                                <div className="flex-1 w-full">
-                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Assigned SKU</label>
-                                    <select 
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                                        value={item.productId}
-                                        onChange={(e) => handleUpdateItem(idx, 'productId', e.target.value)}
-                                    >
-                                        {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
-                                    </select>
+                                <select className="flex-1 w-full bg-white rounded-xl px-4 py-3 text-sm font-bold border border-slate-100" value={item.productId} onChange={(e) => handleUpdateItem(idx, 'productId', e.target.value)}>
+                                    {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                                </select>
+                                <div className="flex items-center gap-3">
+                                  <input type="number" className="w-20 bg-white rounded-xl px-4 py-3 text-sm font-black text-center border border-slate-100" value={item.quantity} onChange={(e) => handleUpdateItem(idx, 'quantity', parseInt(e.target.value) || 0)} />
+                                  <input type="number" className="w-32 bg-white rounded-xl px-4 py-3 text-sm font-black border border-slate-100" value={item.price} onChange={(e) => handleUpdateItem(idx, 'price', parseFloat(e.target.value) || 0)} />
+                                  <button onClick={() => setItems(items.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={18} /></button>
                                 </div>
-                                <div className="w-full md:w-32">
-                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Quantity</label>
-                                    <input 
-                                        type="number" 
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                                        value={item.quantity}
-                                        onChange={(e) => handleUpdateItem(idx, 'quantity', parseInt(e.target.value) || 0)}
-                                    />
-                                </div>
-                                <div className="w-full md:w-40">
-                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Unit Price (LKR)</label>
-                                    <input 
-                                        type="number" 
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                                        value={item.price}
-                                        onChange={(e) => handleUpdateItem(idx, 'price', parseFloat(e.target.value) || 0)}
-                                    />
-                                </div>
-                                <button onClick={() => handleRemoveItem(idx)} className="mt-6 md:mt-0 p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all">
-                                    <Trash2 size={18} />
-                                </button>
                             </div>
                         ))}
-                        {items.length === 0 && (
-                            <div className="p-10 text-center border-2 border-dashed border-slate-100 rounded-[2rem] text-slate-300 font-black text-[10px] uppercase tracking-widest">
-                                Manifest is empty. Click "Add Sku" to initialize.
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><UserIcon size={16}/> Subject Info Identity</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Full Legal Name</label>
-                            <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-slate-900 font-black outline-none focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" value={formData.customerName} onChange={e => setFormData({...formData, customerName: e.target.value})} />
-                        </div>
-                        <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Contact Phone (Required)</label>
-                            <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-slate-900 font-black outline-none focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" value={formData.customerPhone} onChange={e => setFormData({...formData, customerPhone: e.target.value})} />
-                        </div>
-                        <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Sri Lanka City (Required)</label>
-                            <div className="relative">
-                                <select 
-                                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-slate-900 font-black outline-none focus:ring-2 focus:ring-slate-900 transition-all shadow-inner appearance-none" 
-                                    value={formData.customerCity} 
-                                    onChange={e => setFormData({...formData, customerCity: e.target.value})}
-                                >
-                                    <option value="">Select City Node...</option>
-                                    {SRI_LANKA_CITIES.map(city => <option key={city} value={city}>{city}</option>)}
-                                </select>
-                                <MapPin size={14} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300" />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Waybill Description</label>
-                            <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-slate-900 font-black outline-none focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" value={formData.parcelDescription} onChange={e => setFormData({...formData, parcelDescription: e.target.value})} placeholder="Label Content" />
-                        </div>
-                        <div className="md:col-span-2">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Deployment Address</label>
-                            <textarea className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-slate-900 font-black outline-none focus:ring-2 focus:ring-slate-900 transition-all shadow-inner min-h-[100px] resize-none" value={formData.customerAddress} onChange={e => setFormData({...formData, customerAddress: e.target.value})} />
-                        </div>
                     </div>
                 </div>
             </div>
 
             <div className="space-y-8">
-                 <div className="bg-slate-950 text-white p-10 rounded-[3rem] shadow-2xl relative overflow-hidden border border-white/5">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2">Registry Valuation</p>
+                 <div className="bg-slate-950 text-white p-10 rounded-[3rem] shadow-2xl border border-white/5">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Total Net Payable</p>
                     <h2 className="text-4xl font-black tracking-tighter">{formatCurrency(totalAmount)}</h2>
-                    <div className="mt-8 flex justify-between items-center text-[10px] font-black uppercase text-slate-500">
-                        <span>Cluster Link</span>
-                        <span className="text-blue-400 bg-white/5 border border-white/10 px-4 py-1.5 rounded-full">{order.status}</span>
-                    </div>
+                    {order.trackingNumber && (
+                      <div className="mt-6 pt-6 border-t border-white/10 space-y-2">
+                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Tracking Handshake</p>
+                        <p className="text-lg font-mono text-blue-400 font-black">{order.trackingNumber}</p>
+                      </div>
+                    )}
                  </div>
 
                  {history && history.count > 0 && (
                    <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-4">
-                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={16} className="text-blue-500"/> Intelligence Profile</h3>
+                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">Behavioral Intel</h3>
                       <div className="grid grid-cols-2 gap-3">
                           <div className="bg-slate-50 p-4 rounded-2xl text-center">
-                              <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Global Hits</p>
-                              <p className="text-xl font-black text-slate-900">{history.count}</p>
+                              <p className="text-[8px] font-black text-slate-400 uppercase">Hits</p>
+                              <p className="text-xl font-black">{history.count}</p>
                           </div>
-                          <div className={`p-4 rounded-2xl text-center ${history.returns > 0 ? 'bg-rose-50' : 'bg-emerald-50'}`}>
-                              <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Return Ratio</p>
-                              <p className={`text-xl font-black ${history.returns > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{history.returns}</p>
+                          <div className={`p-4 rounded-2xl text-center ${history.returns > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                              <p className="text-[8px] font-black text-slate-400 uppercase">Returns</p>
+                              <p className="text-xl font-black">{history.returns}</p>
                           </div>
                       </div>
                    </div>
                  )}
-
-                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm max-h-[400px] overflow-hidden flex flex-col">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2"><Clock size={16}/> Activity Stream</h3>
-                    <div className="flex-1 space-y-4 overflow-y-auto no-scrollbar pr-2 pb-4">
-                        {(order.logs || []).slice().reverse().map((log) => (
-                            <div key={log.id} className="relative pl-6 border-l-2 border-slate-100">
-                                <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-slate-300"></div>
-                                <p className="text-[11px] font-black text-slate-900 leading-tight uppercase">{log.message}</p>
-                                <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-widest">{new Date(log.timestamp).toLocaleTimeString()} | {log.user}</p>
-                            </div>
-                        ))}
-                    </div>
-                 </div>
             </div>
         </div>
     </div>

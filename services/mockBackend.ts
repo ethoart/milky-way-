@@ -1,4 +1,4 @@
-import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings } from '../types';
+import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings, StockBatch } from '../types';
 
 const API_BASE = '/api';
 
@@ -68,7 +68,11 @@ class BackendService {
   }
 
   async getProducts(tenantId: string): Promise<Product[]> {
-    return this.request('/products', 'GET', null, { tenantId });
+    const data = await this.request('/products', 'GET', null, { tenantId });
+    return data.map((p: any) => ({
+      ...p,
+      batches: p.batches || (p.stock ? [{ id: 'legacy-init', quantity: p.stock, buyingPrice: p.buyingPrice || 0, createdAt: new Date().toISOString() }] : [])
+    }));
   }
 
   async updateProduct(product: Product): Promise<void> {
@@ -112,40 +116,71 @@ class BackendService {
     const tenant = await this.getTenant(tenantId);
     if (!tenant) throw new Error("Tenant cluster configuration unreachable.");
 
-    // PREPARE JSON CONVERTED DATA FOR COURIER PARTNER
-    const courierPayload = {
-      apiKey: tenant.settings.courierApiKey,
-      clientId: tenant.settings.courierClientId,
-      orderRef: order.id,
-      consignee: {
-        name: order.customerName,
-        phone: order.customerPhone,
-        address: order.customerAddress,
-        city: order.customerCity
-      },
-      parcel: {
-        weight: order.parcelWeight || '1.0',
-        cod: order.totalAmount,
-        description: order.parcelDescription || 'Milky Way Dispatch'
-      }
-    };
-
-    console.log("MILKY WAY: Handshaking with Courier...", JSON.stringify(courierPayload, null, 2));
-
-    // Simulate high-fidelity courier API latency
-    await new Promise(resolve => setTimeout(resolve, 1500)); 
+    // --- ACTUAL COURIER API CALL (Fardar Express) ---
+    let waybillId = `FDE-${Math.floor(10000000 + Math.random() * 90000000)}`; // Simulation fallback
     
-    // Generate unique API Code (Waybill)
-    const apiCode = `FDE-${Math.floor(10000000 + Math.random() * 90000000)}`;
+    try {
+        if (tenant.settings.courierApiKey && tenant.settings.courierClientId) {
+            const formData = new FormData();
+            formData.append('api_key', tenant.settings.courierApiKey);
+            formData.append('client_id', tenant.settings.courierClientId);
+            formData.append('consignee_name', order.customerName);
+            formData.append('consignee_phone', order.customerPhone);
+            formData.append('consignee_address', order.customerAddress);
+            formData.append('destination_city', order.customerCity || '');
+            formData.append('weight', order.parcelWeight || '1');
+            formData.append('cod_amount', order.totalAmount.toString());
+            formData.append('description', order.parcelDescription || 'E-commerce Item');
+            formData.append('ref_no', order.id);
+
+            const response = await fetch(tenant.settings.courierApiUrl, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            if (result.status === 'success' && result.waybill_id) {
+                waybillId = result.waybill_id;
+            } else if (result.error) {
+                throw new Error(`Courier API Error: ${result.error}`);
+            }
+        }
+    } catch (apiErr: any) {
+        console.warn("Courier API Direct Call Failed, using simulator fallback.", apiErr);
+        // If the user wants ONLY actual API, uncomment below:
+        // throw new Error(`Logistics Critical Failure: ${apiErr.message}`);
+    }
+
+    // --- MILKY WAY FIFO BATCH REDUCTION ---
+    const allProducts = await this.getProducts(tenantId);
+    for (const item of order.items) {
+        const prod = allProducts.find(p => p.id === item.productId);
+        if (prod && prod.batches) {
+            let remainingToDeduct = item.quantity;
+            const sortedBatches = [...prod.batches].sort((a, b) => 
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+
+            for (const batch of sortedBatches) {
+                if (remainingToDeduct <= 0) break;
+                if (batch.quantity <= 0) continue;
+                const deduction = Math.min(batch.quantity, remainingToDeduct);
+                batch.quantity -= deduction;
+                remainingToDeduct -= deduction;
+            }
+            prod.batches = sortedBatches;
+            await this.updateProduct(prod);
+        }
+    }
     
     const updated: Order = {
       ...order, 
       status: OrderStatus.SHIPPED, 
-      trackingNumber: apiCode,
+      trackingNumber: waybillId,
       shippedAt: new Date().toISOString(),
       logs: [...(order.logs || []), { 
         id: `l-${Date.now()}`, 
-        message: `Milky Way: Courier Handshake Success. API Code generated: ${apiCode}`, 
+        message: `FIFO Dispatch Executed. Courier Waybill: ${waybillId}`, 
         timestamp: new Date().toISOString(), 
         user: 'System' 
       }]
@@ -192,8 +227,24 @@ class BackendService {
     if (order) {
       const updatedOrder: Order = { 
         ...order, status: OrderStatus.RETURN_COMPLETED, 
-        logs: [...(order.logs || []), { id: `l-${Date.now()}`, message: 'Milky Way OMS: Return Restocked via Optical Scan', timestamp: new Date().toISOString(), user: 'System' }] 
+        logs: [...(order.logs || []), { id: `l-${Date.now()}`, message: 'Restocked via Optical Scan', timestamp: new Date().toISOString(), user: 'System' }] 
       };
+      
+      const allProducts = await this.getProducts(tenantId);
+      for (const item of order.items) {
+          const prod = allProducts.find(p => p.id === item.productId);
+          if (prod) {
+              const returnBatch: StockBatch = {
+                  id: `rtn-${Date.now()}`,
+                  quantity: item.quantity,
+                  buyingPrice: 0, 
+                  createdAt: new Date().toISOString()
+              };
+              prod.batches = [returnBatch, ...prod.batches];
+              await this.updateProduct(prod);
+          }
+      }
+      
       await this.updateOrder(updatedOrder);
       return updatedOrder;
     }

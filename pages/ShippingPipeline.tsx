@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { db } from '../services/mockBackend';
 import { OrderList } from './OrderList';
 import { OrderStatus } from '../types';
-import { Truck, MapPin, RotateCw, Archive, CheckCircle, Calendar, ListFilter } from 'lucide-react';
+import { Truck, MapPin, RotateCw, Archive, CheckCircle, Calendar, ListFilter, Printer } from 'lucide-react';
+import { BillPrintView } from '../components/BillPrintView';
 
 interface ShippingPipelineProps {
   tenantId: string;
@@ -22,25 +25,49 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, on
     { label: 'RETURN COMPLETED', status: OrderStatus.RETURN_COMPLETED, icon: <CheckCircle size={14} /> },
   ];
 
+  const handleBulkPrint = async (ids: string[]) => {
+    const tenant = await db.getTenant(tenantId);
+    if (!tenant) return;
+    
+    const printContainer = document.createElement('div');
+    printContainer.className = 'print-only';
+    document.body.appendChild(printContainer);
+    const root = createRoot(printContainer);
+    
+    const ordersToPrint = await Promise.all(ids.map(id => db.getOrder(id, tenantId)));
+    
+    root.render(
+      <>
+        {ordersToPrint.map(o => o ? <BillPrintView key={o.id} order={o} settings={tenant.settings} /> : null)}
+      </>
+    );
+    
+    setTimeout(() => {
+        window.print();
+        root.unmount();
+        document.body.removeChild(printContainer);
+    }, 800);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-slide-in">
       <div className="flex flex-col gap-6">
-        <div className="flex items-center gap-3">
-            <div className="p-3 bg-black text-white rounded-2xl shadow-xl">
+        <div className="flex items-center gap-3 px-2">
+            <div className="p-3 bg-black text-white rounded-2xl shadow-xl rotate-3">
                 <Truck size={24} />
             </div>
             <div>
-                <h2 className="text-3xl font-black text-black tracking-tighter uppercase">Shipping Terminal</h2>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Courier & delivery logistics control</p>
+                <h2 className="text-3xl font-black text-black tracking-tighter uppercase leading-none">Shipping Terminal</h2>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Logistics Intelligence Center</p>
             </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 bg-white p-2 rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto no-scrollbar">
+        <div className="flex flex-wrap gap-2 bg-white p-2.5 rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto no-scrollbar">
           {filters.map((f) => (
             <button
               key={f.status}
               onClick={() => setActiveFilter(f.status as any)}
-              className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+              className={`flex items-center gap-2 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
                 activeFilter === f.status 
                 ? 'bg-black text-white shadow-lg scale-[1.05]' 
                 : 'text-slate-400 hover:bg-slate-50 hover:text-black'
@@ -58,7 +85,8 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, on
           tenantId={tenantId} 
           onSelectOrder={onSelectOrder} 
           defaultFilter={activeFilter as any}
-          logisticsOnly={true} // Restricts to SHIPPED+ statuses
+          logisticsOnly={true} 
+          onBulkAction={handleBulkPrint}
         />
       </div>
     </div>

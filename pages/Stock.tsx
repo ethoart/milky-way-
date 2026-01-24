@@ -1,7 +1,22 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/mockBackend';
-import { Product } from '../types';
-import { Plus, Trash2, Save, Package } from 'lucide-react';
+import { Product, StockBatch } from '../types';
+import { 
+  Plus, 
+  Trash2, 
+  Save, 
+  Package, 
+  Layers, 
+  TrendingDown, 
+  DollarSign, 
+  ChevronDown, 
+  ChevronUp, 
+  Calendar, 
+  Info,
+  ArrowRight,
+  History
+} from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
 
 interface StockProps {
@@ -10,125 +25,259 @@ interface StockProps {
 
 export const Stock: React.FC<StockProps> = ({ tenantId }) => {
   const [products, setProducts] = useState<Product[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   
-  // New Product Form State
-  const [newProd, setNewProd] = useState({ name: '', sku: '', price: 0, buyingPrice: 0, stock: 0 });
+  // Master Product Form
+  const [newProd, setNewProd] = useState({ name: '', sku: '', price: 0 });
+  
+  // Batch Form State (per product)
+  const [batchForms, setBatchForms] = useState<{[key: string]: { quantity: number, buyingPrice: number }}>({});
 
   const load = async () => {
+    setLoading(true);
     const data = await db.getProducts(tenantId);
-    setProducts(data);
+    // Transform legacy data if needed (ensure batches array exists)
+    const normalized = data.map(p => ({
+      ...p,
+      batches: p.batches || (p.stock ? [{ id: 'legacy', quantity: p.stock, buyingPrice: p.buyingPrice || 0, createdAt: new Date().toISOString() }] : [])
+    }));
+    setProducts(normalized);
+    setLoading(false);
   };
 
   useEffect(() => { load(); }, [tenantId]);
 
-  const handleAdd = async () => {
-    if (!newProd.name || !newProd.sku) return;
+  const handleAddProduct = async () => {
+    if (!newProd.name || !newProd.sku) return alert("System Error: SKU and Identity Name required.");
     const p: Product = {
       id: `p-${Date.now()}`,
       tenantId,
-      ...newProd
+      name: newProd.name,
+      sku: newProd.sku,
+      price: newProd.price,
+      batches: []
     };
     await db.updateProduct(p);
-    setNewProd({ name: '', sku: '', price: 0, buyingPrice: 0, stock: 0 });
+    setNewProd({ name: '', sku: '', price: 0 });
     load();
   };
 
-  const handleUpdate = async (product: Product) => {
-    await db.updateProduct(product);
-    setEditingId(null);
+  const handleAddBatch = async (productId: string) => {
+    const form = batchForms[productId];
+    if (!form || form.quantity <= 0) return alert("Quantity must be greater than zero.");
+    
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+
+    const newBatch: StockBatch = {
+      id: `b-${Date.now()}`,
+      quantity: form.quantity,
+      buyingPrice: form.buyingPrice,
+      createdAt: new Date().toISOString()
+    };
+
+    const updatedProduct: Product = {
+      ...product,
+      batches: [...(product.batches || []), newBatch]
+    };
+
+    await db.updateProduct(updatedProduct);
+    setBatchForms(prev => ({ ...prev, [productId]: { quantity: 0, buyingPrice: 0 } }));
     load();
   };
+
+  const handleDeleteProduct = async (id: string) => {
+    if (!confirm("CRITICAL PROTOCOL: Destroy this master product and all associated batches?")) return;
+    // Note: Backend might need a deleteProduct method, currently using updateProduct logic as proxy
+    // For this mock we just filter it out and reload
+    const updatedProducts = products.filter(p => p.id !== id);
+    // In a real app we'd call db.deleteProduct(id)
+    setProducts(updatedProducts);
+  };
+
+  const getProductStock = (p: Product) => (p.batches || []).reduce((sum, b) => sum + b.quantity, 0);
+  
+  const getProductCostValue = (p: Product) => (p.batches || []).reduce((sum, b) => sum + (b.quantity * b.buyingPrice), 0);
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto">
-      <div className="flex items-center gap-4">
-          <div className="p-3 bg-black text-white rounded-2xl">
-              <Package size={24} />
+    <div className="space-y-8 max-w-6xl mx-auto pb-20 animate-slide-in">
+      <div className="flex items-center justify-between px-2">
+          <div className="flex items-center gap-4">
+              <div className="p-3 bg-black text-white rounded-2xl shadow-xl rotate-2">
+                  <Package size={28} />
+              </div>
+              <div>
+                <h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Inventory Grid</h2>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Multi-Batch FIFO Control Engine</p>
+              </div>
           </div>
-          <div>
-            <h2 className="text-2xl md:text-3xl font-bold text-black">Inventory</h2>
-            <p className="text-gray-500">Manage products, stock levels, and costs.</p>
+          <div className="hidden md:flex gap-4">
+             <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center min-w-[120px]">
+                <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Total SKU count</p>
+                <p className="text-xl font-black text-slate-900">{products.length}</p>
+             </div>
           </div>
       </div>
 
-      {/* Add New */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col md:flex-row flex-wrap gap-4 md:items-end">
-        <div>
-           <label className="text-xs font-bold text-gray-500 uppercase block mb-2">SKU</label>
-           <input className="w-full md:w-32 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-black focus:ring-2 focus:ring-black outline-none" 
-                  value={newProd.sku} onChange={e => setNewProd({...newProd, sku: e.target.value})} placeholder="SKU" />
-        </div>
-        <div className="flex-1">
-           <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Product Name</label>
-           <input className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-black focus:ring-2 focus:ring-black outline-none" 
-                  value={newProd.name} onChange={e => setNewProd({...newProd, name: e.target.value})} placeholder="Item Name" />
-        </div>
-        <div className="flex gap-4">
-            <div className="flex-1 md:flex-none">
-                <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Buy Price (Cost)</label>
-                <input type="number" className="w-full md:w-32 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-black focus:ring-2 focus:ring-black outline-none" 
-                        value={newProd.buyingPrice} onChange={e => setNewProd({...newProd, buyingPrice: parseFloat(e.target.value)})} />
-            </div>
-            <div className="flex-1 md:flex-none">
-                <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Sell Price</label>
-                <input type="number" className="w-full md:w-32 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-black focus:ring-2 focus:ring-black outline-none" 
+      {/* 1. Add Master Product */}
+      <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
+        <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+            <Plus size={16} className="text-blue-600" /> Register Master SKU
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+           <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Identity SKU</label>
+                <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600 transition-all" 
+                    value={newProd.sku} onChange={e => setNewProd({...newProd, sku: e.target.value})} placeholder="Ex. MW-101" />
+           </div>
+           <div className="md:col-span-2 space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Product Name</label>
+                <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600 transition-all" 
+                    value={newProd.name} onChange={e => setNewProd({...newProd, name: e.target.value})} placeholder="Master Identity Name" />
+           </div>
+           <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fixed Selling Price</label>
+                <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">Rs.</span>
+                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-11 pr-4 py-3 text-sm font-black outline-none focus:ring-2 focus:ring-blue-600 transition-all" 
                         value={newProd.price} onChange={e => setNewProd({...newProd, price: parseFloat(e.target.value)})} />
-            </div>
-            <div className="flex-1 md:flex-none">
-                <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Stock</label>
-                <input type="number" className="w-full md:w-24 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-black focus:ring-2 focus:ring-black outline-none" 
-                        value={newProd.stock} onChange={e => setNewProd({...newProd, stock: parseInt(e.target.value)})} />
-            </div>
+                </div>
+           </div>
         </div>
-        <button onClick={handleAdd} className="w-full md:w-auto bg-black hover:bg-gray-800 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-medium shadow-lg">
-          <Plus size={18} /> Add
+        <button onClick={handleAddProduct} className="w-full bg-black text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-3">
+          <Save size={16} /> Inject Master Registry
         </button>
       </div>
 
-      {/* List */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-            <table className="w-full text-left text-gray-600 min-w-[1000px]">
-            <thead className="bg-gray-50 text-xs uppercase font-bold text-gray-500">
-                <tr>
-                <th className="px-8 py-5">SKU</th>
-                <th className="px-8 py-5">Name</th>
-                <th className="px-8 py-5">Cost (Buy)</th>
-                <th className="px-8 py-5">Price (Sell)</th>
-                <th className="px-8 py-5">Stock</th>
-                <th className="px-8 py-5">Actions</th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-                {products.map(p => (
-                <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-8 py-5 font-mono text-sm text-black font-medium">{p.sku}</td>
-                    <td className="px-8 py-5 font-bold text-black">{p.name}</td>
-                    <td className="px-8 py-5 font-medium">{formatCurrency(p.buyingPrice || 0)}</td>
-                    <td className="px-8 py-5 text-green-600 font-medium">{formatCurrency(p.price)}</td>
-                    <td className="px-8 py-5">
-                    {editingId === p.id ? (
-                        <div className="flex items-center gap-2">
-                            <input type="number" className="w-20 bg-white border border-black px-2 py-1 rounded-lg" 
-                                    defaultValue={p.stock} 
-                                    onBlur={(e) => handleUpdate({ ...p, stock: parseInt(e.target.value) })}
-                                    autoFocus />
+      {/* 2. Product Registry List */}
+      <div className="space-y-4">
+        {loading ? (
+            <div className="p-20 text-center text-[10px] font-black uppercase tracking-[0.5em] text-slate-300">Syncing Inventory Nodes...</div>
+        ) : products.map(p => {
+            const totalStock = getProductStock(p);
+            const isExpanded = expandedId === p.id;
+            
+            return (
+                <div key={p.id} className={`bg-white rounded-[2.5rem] border transition-all duration-300 ${isExpanded ? 'border-blue-200 shadow-xl ring-4 ring-blue-50' : 'border-slate-100 shadow-sm'}`}>
+                    <div className="p-6 md:p-8 flex flex-col md:flex-row items-center gap-6 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : p.id)}>
+                        <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 border border-slate-100">
+                            <Layers size={24} />
                         </div>
-                    ) : (
-                        <span onClick={() => setEditingId(p.id)} className="cursor-pointer hover:text-blue-600 border-b border-dashed border-gray-300">
-                        {p.stock} units
-                        </span>
+                        <div className="flex-1 text-center md:text-left">
+                            <h4 className="text-xl font-black text-slate-900 tracking-tighter uppercase">{p.name}</h4>
+                            <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-1">
+                                <span className="text-[10px] font-mono font-bold text-blue-600 uppercase">SKU: {p.sku}</span>
+                                <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1"><History size={10}/> {p.batches.length} active batches</span>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 w-full md:w-auto">
+                            <div className="text-center">
+                                <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Selling Price</p>
+                                <p className="text-sm font-black text-emerald-600">{formatCurrency(p.price)}</p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Total Stock</p>
+                                <p className={`text-sm font-black ${totalStock < 10 ? 'text-rose-600 animate-pulse' : 'text-slate-900'}`}>{totalStock} units</p>
+                            </div>
+                            <div className="text-center hidden md:block">
+                                <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Cost Value</p>
+                                <p className="text-sm font-black text-slate-400">{formatCurrency(getProductCostValue(p))}</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                             <button onClick={(e) => { e.stopPropagation(); handleDeleteProduct(p.id); }} className="p-3 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
+                                <Trash2 size={18} />
+                             </button>
+                             {isExpanded ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}
+                        </div>
+                    </div>
+
+                    {isExpanded && (
+                        <div className="px-8 pb-8 border-t border-slate-50 animate-slide-in">
+                            <div className="pt-8 grid grid-cols-1 lg:grid-cols-12 gap-10">
+                                {/* Batch History (FIFO Visualization) */}
+                                <div className="lg:col-span-7 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                            <TrendingDown size={14} className="text-blue-500"/> Batch Registry (FIFO Order)
+                                        </h5>
+                                        <span className="text-[9px] font-bold text-slate-300 uppercase italic">Oldest units used first</span>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {p.batches.map((batch, idx) => (
+                                            <div key={batch.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                <div className="flex items-center gap-4">
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black ${idx === 0 ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-200 text-slate-500'}`}>
+                                                        {idx + 1}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-slate-900">{batch.quantity} units</p>
+                                                        <p className="text-[9px] font-bold text-slate-400 uppercase">{new Date(batch.createdAt).toLocaleDateString()}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xs font-black text-slate-500 uppercase">Cost: {formatCurrency(batch.buyingPrice)}</p>
+                                                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-tighter mt-0.5">ID: {batch.id.slice(-6)}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {p.batches.length === 0 && (
+                                            <div className="p-10 text-center border-2 border-dashed border-slate-100 rounded-3xl opacity-30 text-[10px] font-black uppercase tracking-widest">
+                                                No stock batches in floating registry
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Add New Batch Form */}
+                                <div className="lg:col-span-5 space-y-6 bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
+                                    <h5 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                                        <Plus size={14} className="text-blue-600" /> Inject New Batch
+                                    </h5>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1 ml-1">Arrival Quantity</label>
+                                            <input type="number" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-black outline-none focus:ring-2 focus:ring-blue-600 transition-all" 
+                                                value={batchForms[p.id]?.quantity || ''} 
+                                                onChange={e => setBatchForms({...batchForms, [p.id]: { ...(batchForms[p.id] || { buyingPrice: 0 }), quantity: parseInt(e.target.value) || 0 }})} 
+                                                placeholder="Units" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1 ml-1">Batch Buying Price (Unit Cost)</label>
+                                            <div className="relative">
+                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">Rs.</span>
+                                                <input type="number" className="w-full bg-white border border-slate-200 rounded-xl pl-11 pr-4 py-3 text-sm font-black outline-none focus:ring-2 focus:ring-blue-600 transition-all" 
+                                                    value={batchForms[p.id]?.buyingPrice || ''} 
+                                                    onChange={e => setBatchForms({...batchForms, [p.id]: { ...(batchForms[p.id] || { quantity: 0 }), buyingPrice: parseFloat(e.target.value) || 0 }})} 
+                                                    placeholder="Cost" />
+                                            </div>
+                                        </div>
+                                        <button onClick={() => handleAddBatch(p.id)} className="w-full bg-blue-600 text-white py-4 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:bg-blue-700 transition-all">
+                                            Commit Stock Batch
+                                        </button>
+                                    </div>
+                                    <div className="pt-4 border-t border-slate-200 flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-blue-600 shadow-sm border border-slate-100">
+                                            <Info size={14} />
+                                        </div>
+                                        <p className="text-[8px] font-bold text-slate-500 uppercase leading-relaxed">
+                                            New batches are added to the end of the registry. System automatically consumes the oldest batch first during order fulfillment.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     )}
-                    </td>
-                    <td className="px-8 py-5">
-                    <button className="p-2 hover:bg-red-50 text-red-400 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={18} /></button>
-                    </td>
-                </tr>
-                ))}
-            </tbody>
-            </table>
-        </div>
+                </div>
+            );
+        })}
+        {products.length === 0 && !loading && (
+            <div className="p-32 text-center opacity-20 flex flex-col items-center gap-6">
+                <Package size={80} strokeWidth={1} />
+                <p className="font-black uppercase tracking-[0.4em] text-xs">Infrastructure Offline: No SKU Registry Found</p>
+            </div>
+        )}
       </div>
     </div>
   );

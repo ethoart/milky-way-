@@ -1,0 +1,21 @@
+# MILKY WAY OMS PRODUCTION DOCKERFILE (Optimized for t3.micro)
+# Stage 1: Build
+FROM node:20-alpine AS build-stage
+WORKDIR /app
+ENV NODE_OPTIONS="--max-old-space-size=768"
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+# Stage 2: Runtime
+FROM node:20-alpine AS production-stage
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm install --production
+COPY --from=build-stage /app/dist ./dist
+COPY server.js ./
+COPY types.ts ./
+EXPOSE 8080
+CMD ["node", "server.js"]

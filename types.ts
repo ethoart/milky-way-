@@ -56,14 +56,22 @@ export interface User {
   permissions?: string[];
 }
 
+export interface StockBatch {
+  id: string;
+  quantity: number;
+  buyingPrice: number;
+  createdAt: string;
+}
+
 export interface Product {
   id: string;
   tenantId: string;
   sku: string;
   name: string;
-  price: number;
-  buyingPrice: number;
-  stock: number;
+  price: number; // Selling Price (Global)
+  batches: StockBatch[];
+  buyingPrice?: number; // Deprecated but kept for backward compatibility if needed
+  stock?: number; // Calculated as sum of batches
 }
 
 export interface OrderLog {

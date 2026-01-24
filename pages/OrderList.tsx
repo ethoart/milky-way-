@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency } from '../utils/helpers';
-import { Search, ChevronRight, Layers, AlertCircle, Zap, Trash2, CheckSquare, Square, Truck, Loader2 } from 'lucide-react';
+import { Search, ChevronRight, Layers, AlertCircle, Zap, Trash2, CheckSquare, Square, Truck, Loader2, Printer } from 'lucide-react';
 
 interface OrderListProps {
   tenantId: string;
@@ -36,7 +36,6 @@ export const OrderList: React.FC<OrderListProps> = ({
       const fetchedOrders = await db.getOrders(tenantId);
       setOrders(fetchedOrders);
       
-      // OPTIMIZATION: Concurrent history lookup (Parallel Processing)
       const uniquePhones = [...new Set(fetchedOrders.slice(0, 30).map(o => o.customerPhone))];
       const historyPromises = uniquePhones.map(async (phone) => {
         const h = await db.getCustomerHistory(phone, tenantId);
@@ -100,28 +99,28 @@ export const OrderList: React.FC<OrderListProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-white animate-slide-in relative">
-      {/* Floating Action Bar for Bulk Selection */}
       {selectedIds.length > 0 && (
         <div className="absolute top-0 left-0 right-0 z-20 bg-slate-900 text-white p-4 flex items-center justify-between animate-slide-in shadow-2xl rounded-b-2xl">
-          <div className="flex items-center gap-4">
-            <span className="text-xs font-black uppercase tracking-widest">{selectedIds.length} Nodes Selected</span>
+          <div className="flex items-center gap-4 pl-4">
+            <span className="text-xs font-black uppercase tracking-widest">{selectedIds.length} Nodes Locked</span>
           </div>
           <div className="flex gap-2">
-            {activeStatus === OrderStatus.CONFIRMED && onBulkAction && (
+            {onBulkAction && (
               <button 
                 onClick={() => { onBulkAction(selectedIds); setSelectedIds([]); }} 
-                className="bg-blue-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-all"
+                className="bg-blue-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
               >
-                <Truck size={14} /> Bulk Ship Selected
+                {activeStatus === OrderStatus.CONFIRMED ? <Truck size={14} /> : <Printer size={14} />} 
+                {activeStatus === OrderStatus.CONFIRMED ? 'Bulk Ship Selected' : 'Bulk Print Labels'}
               </button>
             )}
             <button 
               onClick={handleBulkDelete}
               className="bg-rose-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-rose-700 transition-all"
             >
-              <Trash2 size={14} /> Bulk Delete
+              <Trash2 size={14} /> Purge
             </button>
-            <button onClick={() => setSelectedIds([])} className="bg-white/10 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/20 transition-all">Cancel</button>
+            <button onClick={() => setSelectedIds([])} className="bg-white/10 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/20 transition-all">Dismiss</button>
           </div>
         </div>
       )}
@@ -133,7 +132,7 @@ export const OrderList: React.FC<OrderListProps> = ({
         </div>
         <div className="flex items-center gap-3">
           <button onClick={toggleAll} className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-200 transition-all">
-            {selectedIds.length === filteredOrders.length ? <CheckSquare size={14}/> : <Square size={14}/>} Select All
+            {selectedIds.length === filteredOrders.length ? <CheckSquare size={14}/> : <Square size={14}/>} {selectedIds.length === filteredOrders.length ? 'Deselect All' : 'Select Visible'}
           </button>
           <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-xl border border-blue-100">
               {isLoading ? <Loader2 size={14} className="text-blue-600 animate-spin" /> : <Layers size={14} className="text-blue-600" />}
@@ -152,7 +151,7 @@ export const OrderList: React.FC<OrderListProps> = ({
               <th className="text-center">Intel</th>
               <th>Total</th>
               <th className="text-center">Status</th>
-              <th className="text-right">Action</th>
+              <th className="text-right pr-6">Action</th>
             </tr>
           </thead>
           <tbody className={`divide-y divide-slate-100 ${isLoading ? 'opacity-50' : ''}`}>
@@ -186,7 +185,7 @@ export const OrderList: React.FC<OrderListProps> = ({
                       'bg-slate-100 text-slate-600 border border-slate-200'
                     }`}>{order.status.replace('_', ' ')}</span>
                   </td>
-                  <td className="text-right">
+                  <td className="text-right pr-6">
                     <div className="flex items-center justify-end gap-2">
                         <button onClick={(e) => handleDelete(e, order.id)} className="p-2.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                         <button className="p-2.5 rounded-xl bg-slate-50 text-slate-400 group-hover:text-blue-600 group-hover:bg-blue-50 transition-all"><ChevronRight size={16}/></button>
@@ -198,7 +197,10 @@ export const OrderList: React.FC<OrderListProps> = ({
           </tbody>
         </table>
         {filteredOrders.length === 0 && !isLoading && (
-          <div className="p-20 text-center opacity-20 uppercase font-black text-xs tracking-widest">No matching registry nodes found.</div>
+          <div className="p-32 text-center opacity-20 uppercase font-black text-xs tracking-[0.5em] flex flex-col items-center gap-6">
+            <Zap size={60} strokeWidth={1} />
+            No records match the current filter
+          </div>
         )}
       </div>
     </div>
