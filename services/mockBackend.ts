@@ -131,17 +131,22 @@ class BackendService {
     // Fardar Express Domestic API Implementation
     if (tenant.settings.courierApiKey && tenant.settings.courierClientId) {
         const formData = new URLSearchParams();
+        
+        // Data Normalization for Fardar strict validation
+        const numericOrderId = order.id.replace(/\D/g, ''); // Fixes 202 Error
+        const numericPhone = order.customerPhone.replace(/\D/g, ''); // Ensures valid contact
+
         formData.append('api_key', tenant.settings.courierApiKey);
         formData.append('client_id', tenant.settings.courierClientId);
-        formData.append('order_id', order.id);
+        formData.append('order_id', numericOrderId); 
         formData.append('parcel_weight', order.parcelWeight || '1');
-        formData.append('parcel_description', order.parcelDescription || (order.items[0]?.name || 'E-commerce Item'));
+        formData.append('parcel_description', (order.parcelDescription || (order.items[0]?.name || 'Sample Item')).slice(0, 50));
         formData.append('recipient_name', order.customerName);
-        formData.append('recipient_contact_1', order.customerPhone);
+        formData.append('recipient_contact_1', numericPhone);
         formData.append('recipient_contact_2', ''); 
         formData.append('recipient_address', order.customerAddress);
         formData.append('recipient_city', order.customerCity || 'Colombo');
-        formData.append('amount', order.totalAmount.toString());
+        formData.append('amount', Math.round(order.totalAmount).toString());
         formData.append('exchange', '0'); // 0 for Normal Parcel
 
         try {
@@ -165,7 +170,7 @@ class BackendService {
                     213: 'Invalid exchange value', 214: 'System maintain mode'
                 };
                 const msg = statusCodeMessages[Number(result.status)] || result.message || "Unknown Logistics Error";
-                throw new Error(`[Logistics Error ${result.status}]: ${msg}`);
+                throw new Error(`[Fardar ${result.status}]: ${msg}`);
             }
         } catch (apiErr: any) {
             throw new Error(`Logistics Bridge Failure: ${apiErr.message}`);
