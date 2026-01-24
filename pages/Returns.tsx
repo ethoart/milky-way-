@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { db } from '../services/mockBackend';
-import { CheckCircle, AlertOctagon, Camera, X, Scan, Upload, FileSpreadsheet, Keyboard, ShieldCheck } from 'lucide-react';
+import { CheckCircle, AlertOctagon, Camera, X, Scan, Keyboard, ShieldCheck, Zap, Laptop } from 'lucide-react';
 import { Order, OrderStatus } from '../types';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
@@ -9,50 +9,37 @@ interface ReturnsProps {
 }
 
 export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
-  const [activeTab, setActiveTab] = useState<'SCAN' | 'RECONCILE'>('SCAN');
+  const [scanMode, setScanMode] = useState<'HARDWARE' | 'CAMERA'>('HARDWARE');
   const [scanInput, setScanInput] = useState('');
   const [processedOrder, setProcessedOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [reconcileResults, setReconcileResults] = useState<{ total: number, missing: string[], matched: number } | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
-  // Milky Way Logic: Always keep the input focused for hardware scanners
+  // Auto-focus lock for Hardware Scanners
   useEffect(() => {
-    const handleGlobalClick = () => {
-        if (activeTab === 'SCAN' && !isCameraActive) {
-            inputRef.current?.focus();
-        }
-    };
-    
-    document.addEventListener('mousedown', handleGlobalClick);
-    inputRef.current?.focus();
-    
-    const focusInterval = setInterval(() => {
-        if (activeTab === 'SCAN' && !isCameraActive && document.activeElement !== inputRef.current) {
-            inputRef.current?.focus();
-        }
-    }, 1000);
-
-    return () => {
-        document.removeEventListener('mousedown', handleGlobalClick);
-        clearInterval(focusInterval);
-    };
-  }, [activeTab, isCameraActive]);
+    if (scanMode === 'HARDWARE') {
+        const interval = setInterval(() => {
+            if (document.activeElement !== inputRef.current) {
+                inputRef.current?.focus();
+            }
+        }, 1000);
+        inputRef.current?.focus();
+        return () => clearInterval(interval);
+    }
+  }, [scanMode]);
 
   useEffect(() => {
-      if (isCameraActive && activeTab === 'SCAN') {
+      if (scanMode === 'CAMERA') {
         const scanner = new Html5QrcodeScanner("reader", { 
-            fps: 20, 
-            qrbox: { width: 280, height: 280 },
+            fps: 25, 
+            qrbox: { width: 300, height: 300 },
             aspectRatio: 1.0
         }, false);
         
         scanner.render((text) => {
-            setScanInput(text);
-            setIsCameraActive(false);
             handleScanProcess(text);
         }, () => {});
         scannerRef.current = scanner;
@@ -60,112 +47,137 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
          scannerRef.current.clear().catch(() => {});
          scannerRef.current = null;
       }
-  }, [isCameraActive, activeTab]);
+      return () => { if(scannerRef.current) scannerRef.current.clear().catch(() => {}); };
+  }, [scanMode]);
 
   const handleScanProcess = async (code: string) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     setError(null);
     setProcessedOrder(null);
+    
     const cleanCode = code.trim();
-    if (!cleanCode) return;
+    if (!cleanCode) { setIsProcessing(false); return; }
     
     try {
       const result = await db.processReturn(cleanCode, tenantId);
       if (result) { 
           setProcessedOrder(result); 
           setScanInput(''); 
-      }
-      else { 
-          setError('Invalid Hub Node identifier.'); 
+      } else { 
+          setError(`Node ID "${cleanCode}" not identified in local cluster.`); 
           setScanInput('');
       }
-    } catch (err) { 
-        setError('Cluster Query Timeout.'); 
+    } catch (err: any) { 
+        setError(err.message || 'Restock handshake timeout.'); 
         setScanInput('');
+    } finally {
+        setIsProcessing(false);
     }
   };
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto p-4 animate-slide-in">
       <div className="text-center space-y-4">
-        <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto shadow-xl rotate-3">
-            <Scan size={32} className="text-white" />
+        <div className="w-20 h-20 bg-blue-600 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl rotate-3 border-4 border-white">
+            <Scan size={40} className="text-white" />
         </div>
-        <h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Milky Way Scan</h2>
-        <div className="flex justify-center gap-2 mt-4">
-            <button onClick={() => setActiveTab('SCAN')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'SCAN' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>Terminal Scan</button>
-            <button onClick={() => setActiveTab('RECONCILE')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'RECONCILE' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>Audit Reconcile</button>
+        <div>
+            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Milky Way Scan</h2>
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] mt-2">Inventory Restocking Terminal</p>
+        </div>
+        
+        {/* Mode Selector */}
+        <div className="flex justify-center gap-3 mt-8">
+            <button 
+                onClick={() => setScanMode('HARDWARE')} 
+                className={`flex items-center gap-3 px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${scanMode === 'HARDWARE' ? 'bg-slate-900 text-white shadow-2xl scale-105' : 'bg-white text-slate-400 border border-slate-100'}`}
+            >
+                <Laptop size={18}/> Hardware Beam
+            </button>
+            <button 
+                onClick={() => setScanMode('CAMERA')} 
+                className={`flex items-center gap-3 px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${scanMode === 'CAMERA' ? 'bg-blue-600 text-white shadow-2xl scale-105' : 'bg-white text-slate-400 border border-slate-100'}`}
+            >
+                <Camera size={18}/> Optical Lens
+            </button>
         </div>
       </div>
 
-      {activeTab === 'SCAN' && (
-        <div className="w-full bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                    <Keyboard size={18} />
-                </div>
-                <div>
-                    <h3 className="text-xs font-black uppercase tracking-widest">Hardware Focus Engaged</h3>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Connect USB Barcode Machine</p>
+      <div className="w-full bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
+        {scanMode === 'CAMERA' ? (
+            <div className="animate-slide-in space-y-6">
+                <div id="reader" className="overflow-hidden rounded-[2.5rem] border-8 border-slate-50 bg-slate-50"></div>
+                <div className="text-center">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Scanning via browser lens...</p>
                 </div>
             </div>
-            {!isCameraActive && (
-                <button onClick={() => setIsCameraActive(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-black transition-all">
-                    <Camera size={14} /> Use Lens
-                </button>
+        ) : (
+            <div className="animate-slide-in space-y-8">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                            <Keyboard size={24} />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-black uppercase tracking-widest">Beam Ready</h3>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Input Focused automatically</p>
+                        </div>
+                    </div>
+                    {isProcessing && <Zap size={20} className="text-blue-500 animate-pulse" />}
+                </div>
+
+                <form onSubmit={(e) => { e.preventDefault(); handleScanProcess(scanInput); }} className="relative group">
+                    <input 
+                        ref={inputRef} 
+                        type="text" 
+                        autoFocus
+                        value={scanInput} 
+                        onChange={(e) => setScanInput(e.target.value)} 
+                        className="w-full bg-slate-50 border-4 border-slate-100 text-slate-900 text-3xl font-black text-center py-10 rounded-[3rem] focus:border-blue-600 outline-none transition-all placeholder:text-slate-200" 
+                        placeholder="READY TO BEAM..." 
+                    />
+                    <div className="absolute right-8 top-1/2 -translate-y-1/2 text-slate-200">
+                        <Scan size={40} />
+                    </div>
+                </form>
+            </div>
+        )}
+
+        {/* Feedback Section */}
+        <div className="mt-10 min-h-[120px]">
+            {processedOrder && (
+                <div className="bg-emerald-50 border-2 border-emerald-100 p-8 rounded-[2.5rem] flex items-center gap-6 text-emerald-700 animate-slide-in shadow-xl shadow-emerald-500/10">
+                    <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg">
+                        <ShieldCheck size={32} />
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="font-black uppercase text-xl tracking-tight leading-none mb-2">Restock Success</h3>
+                        <p className="text-[10px] font-black uppercase opacity-60">Identity: {processedOrder.customerName} (#{processedOrder.id.slice(-6)})</p>
+                    </div>
+                    <button onClick={() => setProcessedOrder(null)} className="p-2 hover:bg-emerald-100 rounded-xl transition-all"><X size={24}/></button>
+                </div>
             )}
-          </div>
-
-          {isCameraActive && (
-              <div className="mb-8 relative animate-slide-in">
-                  <div id="reader" className="overflow-hidden rounded-[2rem] border-4 border-blue-500/20 bg-slate-50"></div>
-                   <button onClick={() => setIsCameraActive(false)} className="absolute top-4 right-4 bg-black text-white p-3 rounded-2xl z-10 hover:scale-110 transition-all shadow-xl"><X size={24} /></button>
-              </div>
-          )}
-
-          <form onSubmit={(e) => { e.preventDefault(); handleScanProcess(scanInput); }} className="space-y-4">
-            <div className="relative group">
-                <input 
-                    ref={inputRef} 
-                    type="text" 
-                    autoFocus
-                    value={scanInput} 
-                    onChange={(e) => setScanInput(e.target.value)} 
-                    className="w-full bg-slate-50 border-2 border-slate-100 text-slate-900 text-2xl font-black text-center py-8 rounded-[2rem] focus:border-blue-600 outline-none transition-all" 
-                    placeholder="BEAM READY..." 
-                />
-                <div className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-200">
-                    <Scan size={32} />
+            {error && (
+                <div className="bg-rose-50 border-2 border-rose-100 p-8 rounded-[2.5rem] flex items-center gap-6 text-rose-600 animate-shake shadow-xl shadow-rose-500/10">
+                    <div className="w-16 h-16 bg-rose-600 text-white rounded-2xl flex items-center justify-center shadow-lg">
+                        <AlertOctagon size={32} />
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="font-black uppercase text-xl tracking-tight leading-none mb-2">Restock Blocked</h3>
+                        <p className="text-[10px] font-black opacity-70 uppercase leading-relaxed">{error}</p>
+                    </div>
+                    <button onClick={() => setError(null)} className="p-2 hover:bg-rose-100 rounded-xl transition-all"><X size={24}/></button>
                 </div>
-            </div>
-          </form>
-
-          {processedOrder && (
-            <div className="mt-8 bg-emerald-50 border border-emerald-100 p-8 rounded-[2rem] flex items-center gap-6 text-emerald-700 animate-slide-in shadow-lg">
-                <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-xl">
-                    <ShieldCheck size={32} />
+            )}
+            {!processedOrder && !error && (
+                <div className="h-full flex flex-col items-center justify-center text-slate-200 py-6">
+                    <Zap size={48} className="opacity-20 mb-4" />
+                    <p className="text-[10px] font-black uppercase tracking-[0.4em]">Awaiting handshake...</p>
                 </div>
-                <div className="flex-1">
-                    <h3 className="font-black uppercase text-lg tracking-tight">Return Processed: {processedOrder.customerName}</h3>
-                    <p className="text-[10px] font-bold uppercase opacity-60">Status: RETURN COMPLETED</p>
-                </div>
-                <button onClick={() => setProcessedOrder(null)} className="p-2 hover:bg-emerald-100 rounded-xl"><X size={20}/></button>
-            </div>
-          )}
-          {error && (
-            <div className="mt-8 bg-rose-50 border border-rose-100 p-8 rounded-[2rem] flex items-center gap-6 text-rose-600 animate-slide-in">
-                <div className="w-16 h-16 bg-rose-600 text-white rounded-2xl flex items-center justify-center shadow-xl">
-                    <AlertOctagon size={32} />
-                </div>
-                <div className="flex-1">
-                    <h3 className="font-black uppercase text-lg tracking-tight">Identity Mismatch</h3>
-                    <p className="text-[10px] font-bold opacity-70 uppercase">{error}</p>
-                </div>
-                <button onClick={() => setError(null)} className="p-2 hover:bg-rose-100 rounded-xl"><X size={20}/></button>
-            </div>
-          )}
+            )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

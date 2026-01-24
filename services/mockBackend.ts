@@ -1,4 +1,3 @@
-
 import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings, StockBatch } from '../types';
 
 const API_BASE = '/api';
@@ -100,7 +99,6 @@ class BackendService {
     await this.request('/tenants', 'PUT', payload);
   }
 
-  // Fix: Added createTenant to handle cluster provisioning from DevAdmin
   async createTenant(formData: any): Promise<void> {
     const tenant = {
       id: formData.name,
@@ -113,7 +111,7 @@ class BackendService {
         shopAddress: '',
         shopPhone: '',
         courierApiKey: '',
-        courierApiUrl: '',
+        courierApiUrl: 'https://www.fdedomestic.com/api/parcel/new_api_v1.php',
         courierClientId: ''
       }
     };
@@ -130,9 +128,8 @@ class BackendService {
 
     let waybillId = "";
     
-    // --- ACTUAL COURIER HANDSHAKE (Standard Form POST) ---
     if (tenant.settings.courierApiKey && tenant.settings.courierClientId) {
-        const formData = new URLSearchParams(); // Standard Form Data for PHP APIs
+        const formData = new URLSearchParams();
         formData.append('api_key', tenant.settings.courierApiKey);
         formData.append('client_id', tenant.settings.courierClientId);
         formData.append('consignee_name', order.customerName);
@@ -156,17 +153,16 @@ class BackendService {
                 waybillId = result.waybill_id;
             } else {
                 const errCode = result.error_code || response.status;
-                const errMsg = result.error || result.message || "Unknown Courier Failure";
-                throw new Error(`[Logistics Error ${errCode}]: ${errMsg}`);
+                const errMsg = result.error || result.message || "Courier logic failure.";
+                throw new Error(`[Logistics ${errCode}]: ${errMsg}`);
             }
         } catch (apiErr: any) {
-            throw new Error(`Courier Bridge Failure: ${apiErr.message}`);
+            throw new Error(`Logistics Bridge Failure: ${apiErr.message}`);
         }
     } else {
-        throw new Error("Missing Logistics Credentials in Cluster Settings.");
+        throw new Error("Missing Courier API Credentials in settings.");
     }
 
-    // --- FIFO INVENTORY DEDUCTION ---
     const allProducts = await this.getProducts(tenantId);
     for (const item of order.items) {
         const prod = allProducts.find(p => p.id === item.productId);
@@ -195,7 +191,7 @@ class BackendService {
       shippedAt: new Date().toISOString(),
       logs: [...(order.logs || []), { 
         id: `l-${Date.now()}`, 
-        message: `Dispatched to Courier. Waybill: ${waybillId}`, 
+        message: `Dispatched via Fardar Express. Waybill: ${waybillId}`, 
         timestamp: new Date().toISOString(), 
         user: 'System' 
       }]
@@ -205,7 +201,6 @@ class BackendService {
     return updated;
   }
 
-  // Fix: Added getAllUsers for cross-cluster identity reporting in DevAdmin
   async getAllUsers(): Promise<User[]> {
     return this.request('/users', 'GET');
   }
@@ -215,32 +210,21 @@ class BackendService {
     return all.filter((u: any) => u.tenantId === tenantId);
   }
 
-  // Fix: Added addTeamMember to facilitate team management
   async addTeamMember(tenantId: string, username: string, role: UserRole, email: string, password?: string): Promise<void> {
-    const user: any = {
-      id: `u-${Date.now()}`,
-      username,
-      email,
-      role,
-      tenantId
-    };
+    const user: any = { id: `u-${Date.now()}`, username, email, role, tenantId };
     if (password) user.password = password;
     await this.request('/users', 'POST', user);
   }
 
-  // Fix: Added removeTeamMember to facilitate team management
   async removeTeamMember(id: string): Promise<void> {
     await this.request('/users', 'DELETE', null, { id });
   }
 
-  // Fix: Added getSecurityLogs for DevAdmin master console
   async getSecurityLogs(): Promise<any[]> {
-    // Current backend doesn't have a specific logs endpoint, providing mock data for terminal visualization
     return [
       { event: 'Node Cluster Alpha Sync', timestamp: new Date().toISOString() },
       { event: 'Cross-Cluster Handshake', timestamp: new Date().toISOString() },
-      { event: 'Global Ledger Validated', timestamp: new Date().toISOString() },
-      { event: 'Security Protocol 7 Engage', timestamp: new Date().toISOString() }
+      { event: 'Global Ledger Validated', timestamp: new Date().toISOString() }
     ];
   }
 
