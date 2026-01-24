@@ -20,7 +20,7 @@ class BackendService {
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.details || `API Error: ${response.status}`);
+        throw new Error(errorData.error || errorData.details || `HTTP ${response.status}`);
       }
       return await response.json();
     } catch (e: any) {
@@ -114,11 +114,11 @@ class BackendService {
 
   async shipOrder(order: Order, tenantId: string): Promise<Order> {
     const tenant = await this.getTenant(tenantId);
-    if (!tenant) throw new Error("Tenant cluster configuration unreachable.");
+    if (!tenant) throw new Error("Infrastructure Sync Error: Cluster unavailable.");
 
     let waybillId = "";
     
-    // --- ACTUAL COURIER API CALL (Fardar Express) ---
+    // --- ACTUAL COURIER API HANDSHAKE ---
     if (tenant.settings.courierApiKey && tenant.settings.courierClientId) {
         const formData = new FormData();
         formData.append('api_key', tenant.settings.courierApiKey);
@@ -129,7 +129,7 @@ class BackendService {
         formData.append('destination_city', order.customerCity || '');
         formData.append('weight', order.parcelWeight || '1');
         formData.append('cod_amount', order.totalAmount.toString());
-        formData.append('description', order.parcelDescription || 'E-commerce Item');
+        formData.append('description', order.parcelDescription || 'E-commerce Goods');
         formData.append('ref_no', order.id);
 
         try {
@@ -142,16 +142,19 @@ class BackendService {
             if (result.status === 'success' && result.waybill_id) {
                 waybillId = result.waybill_id;
             } else {
-                throw new Error(result.error || result.message || "Logistics API returned an error status.");
+                // Return exact error message from logistics provider
+                const errorMsg = result.error || result.message || "Logistics API handshake failed.";
+                const errorCode = result.error_code ? `[Code: ${result.error_code}]` : "";
+                throw new Error(`${errorCode} ${errorMsg}`);
             }
         } catch (apiErr: any) {
             throw new Error(`Logistics Critical Failure: ${apiErr.message}`);
         }
     } else {
-        throw new Error("Courier Credentials Missing. Configure Cluster Settings.");
+        throw new Error("Logistics Bridge Failure: Credentials missing in settings.");
     }
 
-    // --- MILKY WAY FIFO BATCH REDUCTION ---
+    // --- FIFO INVENTORY DECAY ---
     const allProducts = await this.getProducts(tenantId);
     for (const item of order.items) {
         const prod = allProducts.find(p => p.id === item.productId);
@@ -174,16 +177,8 @@ class BackendService {
     }
     
     const updated: Order = {
-      ...order, 
-      status: OrderStatus.SHIPPED, 
-      trackingNumber: waybillId,
-      shippedAt: new Date().toISOString(),
-      logs: [...(order.logs || []), { 
-        id: `l-${Date.now()}`, 
-        message: `FIFO Dispatch Executed. Courier Waybill: ${waybillId}`, 
-        timestamp: new Date().toISOString(), 
-        user: 'System' 
-      }]
+      ...order, status: OrderStatus.SHIPPED, trackingNumber: waybillId, shippedAt: new Date().toISOString(),
+      logs: [...(order.logs || []), { id: `l-${Date.now()}`, message: `Logistics Dispatch: ${waybillId}`, timestamp: new Date().toISOString(), user: 'System' }]
     };
     
     await this.updateOrder(updated);
@@ -234,12 +229,7 @@ class BackendService {
       for (const item of order.items) {
           const prod = allProducts.find(p => p.id === item.productId);
           if (prod) {
-              const returnBatch: StockBatch = {
-                  id: `rtn-${Date.now()}`,
-                  quantity: item.quantity,
-                  buyingPrice: 0, 
-                  createdAt: new Date().toISOString()
-              };
+              const returnBatch: StockBatch = { id: `rtn-${Date.now()}`, quantity: item.quantity, buyingPrice: 0, createdAt: new Date().toISOString() };
               prod.batches = [returnBatch, ...prod.batches];
               await this.updateProduct(prod);
           }
