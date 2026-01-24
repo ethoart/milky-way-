@@ -82,14 +82,13 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId }) => {
         </div>
 
         <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-12">
-            {/* Courier Callback API Link Section */}
             <div>
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
                     <Link size={16} className="text-emerald-600"/> Courier Callback (Webhook)
                 </h3>
                 <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 space-y-4">
                     <p className="text-[11px] font-bold text-emerald-800 leading-relaxed uppercase tracking-tight">
-                        Provide this URL to your courier partner (Fardar Express). They will use this endpoint to send automated status updates to your system.
+                        Provide this URL to your courier partner. They will use this endpoint to send automated status updates to your system.
                     </p>
                     <div className="flex items-center gap-2">
                         <div className="flex-1 bg-white border border-emerald-200 rounded-xl px-4 py-3 font-mono text-[11px] text-emerald-700 truncate shadow-inner">

@@ -1,128 +1,86 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../services/mockBackend';
-import { Tenant, User, Order, OrderStatus, Product, UserRole } from '../types';
+import { Tenant, User, Order, OrderStatus, Product, UserRole, DomainRecord } from '../types';
 import { 
   Database, 
   ShieldCheck, 
   Edit, 
   RefreshCcw,
-  Server,
-  Fingerprint,
-  Zap,
-  Activity,
-  AlertTriangle,
+  Globe,
+  Plus,
+  Trash2,
+  ExternalLink,
+  Cloud,
+  Copy,
   CheckCircle2,
-  Globe
+  Info,
+  Fingerprint
 } from 'lucide-react';
-import { formatCurrency } from '../utils/helpers';
 
 export const DevAdmin: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
   const [securityLogs, setSecurityLogs] = useState<any[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dbStatus, setDbStatus] = useState<'CONNECTING' | 'ONLINE' | 'OFFLINE'>('CONNECTING');
-  const [view, setView] = useState<'CLUSTERS' | 'USERS' | 'SECURITY'>('CLUSTERS');
+  const [view, setView] = useState<'CLUSTERS' | 'DOMAINS' | 'SECURITY'>('CLUSTERS');
+  const [copied, setCopied] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState({
-      name: '',
-      shopName: '',
-      logoUrl: '',
-      mongoUri: '',
-      domain: '',
-      adminEmail: '',
-      adminPass: ''
-  });
+  // The system's target for DNS records
+  const dnsTarget = window.location.hostname; 
+  const staticIp = "76.76.21.21"; // Vercel/Netlify/Custom IP target
 
   const load = async () => {
     setLoading(true);
     try {
-      const isHealthy = await db.checkHealth();
-      setDbStatus(isHealthy ? 'ONLINE' : 'OFFLINE');
-      
-      const [t, u, o, s] = await Promise.all([
+      const [t, u, s] = await Promise.all([
           db.getTenants(),
           db.getAllUsers(),
-          db.getAllOrders(),
           db.getSecurityLogs()
       ]);
       setTenants(t);
       setUsers(u);
-      setOrders(o);
       setSecurityLogs(s);
-    } catch (e) {
-      console.error("Master Console Sync Failure", e);
-      setDbStatus('OFFLINE');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { 
-    load();
-    const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  const metrics = useMemo(() => {
-    const todayStr = new Date().toDateString();
-    const totalGlobalDelivered = orders.filter(o => o.status === OrderStatus.DELIVERED).reduce((s, o) => s + o.totalAmount, 0);
-    const userStats = users.map(u => ({ ...u, tenantName: tenants.find(t => t.id === u.tenantId)?.settings.shopName || 'Unknown' }));
-    return { userStats, totalGlobalDelivered };
-  }, [users, orders, tenants]);
-
-  const handleCreate = async () => {
-    if (!formData.name || !formData.adminEmail || !formData.adminPass) {
-        alert("Provision Error: Required fields missing.");
-        return;
-    }
-    await db.createTenant(formData);
-    setFormData({ name: '', shopName: '', logoUrl: '', mongoUri: '', domain: '', adminEmail: '', adminPass: '' });
+  const handleUpdateTenant = async (t: Tenant) => {
+    await db.updateTenant(t);
     load();
-    alert("System: Infrastructure deployed successfully.");
   };
 
-  const handleUpdate = async () => {
-      if(!editingId) return;
-      const t = tenants.find(x => x.id === editingId);
-      if(!t) return;
-      
-      const updatedTenant: Tenant = {
-          ...t,
-          name: formData.name,
-          mongoUri: formData.mongoUri,
-          domain: formData.domain,
-          settings: { ...t.settings, shopName: formData.shopName, logoUrl: formData.logoUrl }
+  const addDomain = async (tenantId: string) => {
+    const host = prompt("Enter the custom domain (e.g., store.arobazzar.com):");
+    if (!host) return;
+    const t = tenants.find(x => x.id === tenantId);
+    if (t) {
+      const records = t.domainRecords || [];
+      const updated: Tenant = { 
+        ...t, 
+        domainRecords: [...records, { host, type: 'CNAME', isActive: true }] 
       };
-      
-      try {
-        await db.updateTenant(updatedTenant, formData.adminEmail, formData.adminPass);
-        setEditingId(null);
-        setFormData({ name: '', shopName: '', logoUrl: '', mongoUri: '', domain: '', adminEmail: '', adminPass: '' });
-        load();
-        alert("System: Cluster and Super Admin identity updated successfully.");
-      } catch (e: any) {
-        alert(`Update Failed: ${e.message}`);
-      }
+      await handleUpdateTenant(updated);
+    }
   };
 
-  const handleEditClick = (t: Tenant) => {
-    const currentAdmin = users.find(u => u.tenantId === t.id && u.role === UserRole.SUPER_ADMIN);
-    
-    setEditingId(t.id);
-    setFormData({
-      ...formData,
-      name: t.name,
-      shopName: t.settings.shopName || '',
-      logoUrl: t.settings.logoUrl || '',
-      mongoUri: t.mongoUri || '',
-      domain: t.domain || '',
-      adminEmail: currentAdmin?.username || '',
-      adminPass: ''
-    });
+  const removeDomain = async (tenantId: string, host: string) => {
+    if (!confirm("Are you sure you want to delete this domain mapping?")) return;
+    const t = tenants.find(x => x.id === tenantId);
+    if (t) {
+      const records = (t.domainRecords || []).filter(r => r.host !== host);
+      const updated: Tenant = { ...t, domainRecords: records };
+      await handleUpdateTenant(updated);
+    }
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(id);
+    setTimeout(() => setCopied(null), 2000);
   };
 
   return (
@@ -133,146 +91,147 @@ export const DevAdmin: React.FC = () => {
                 <div>
                     <div className="flex items-center gap-3 mb-4">
                         <ShieldCheck size={32} className="text-blue-400" />
-                        <span className="px-4 py-1.5 bg-blue-500/20 text-blue-400 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-blue-500/30">Master Infrastructure</span>
-                        
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${
-                          dbStatus === 'ONLINE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
-                          dbStatus === 'OFFLINE' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
-                          'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                        }`}>
-                          <div className={`w-1.5 h-1.5 rounded-full ${
-                            dbStatus === 'ONLINE' ? 'bg-emerald-400 animate-pulse' :
-                            dbStatus === 'OFFLINE' ? 'bg-rose-400' :
-                            'bg-amber-400 animate-bounce'
-                          }`} />
-                          {dbStatus === 'ONLINE' ? 'Operational' : dbStatus === 'OFFLINE' ? 'Connection Failure' : 'Handshaking...'}
-                        </div>
+                        <span className="px-4 py-1.5 bg-blue-500/20 text-blue-400 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-blue-500/30">Milky Way OMS Master</span>
                     </div>
-                    <h2 className="text-5xl font-black mb-2 tracking-tighter uppercase">Milky Way Master</h2>
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest opacity-60">Cross-Cluster Intelligence Command</p>
+                    <h2 className="text-5xl font-black mb-2 tracking-tighter uppercase leading-none">Global Infrastructure</h2>
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest opacity-60">Multi-Domain & Cluster Control</p>
                 </div>
-                <div className="flex gap-4">
-                   <div className="bg-white/5 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/10 text-center min-w-[160px]">
-                      <p className="text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Global Settle</p>
-                      <p className="text-2xl font-black text-blue-400">{formatCurrency(metrics.totalGlobalDelivered)}</p>
-                   </div>
-                   <button onClick={load} className="p-4 bg-white/10 rounded-full hover:bg-white/20 transition-all">
-                      <RefreshCcw size={20} className={loading ? 'animate-spin' : ''} />
-                   </button>
-                </div>
+                <button onClick={load} className="p-4 bg-white/10 rounded-full hover:bg-white/20 transition-all">
+                  <RefreshCcw size={20} className={loading ? 'animate-spin' : ''} />
+                </button>
             </div>
             <div className="flex gap-2 p-1.5 bg-white/5 rounded-2xl w-fit border border-white/10">
-                <button onClick={() => setView('CLUSTERS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'CLUSTERS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Active Clusters</button>
-                <button onClick={() => setView('USERS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'USERS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Identity Registry</button>
-                <button onClick={() => setView('SECURITY')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'SECURITY' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Security Grid</button>
+                <button onClick={() => setView('CLUSTERS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'CLUSTERS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Tenant Clusters</button>
+                <button onClick={() => setView('DOMAINS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'DOMAINS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Domain Registry</button>
+                <button onClick={() => setView('SECURITY')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'SECURITY' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Audit Logs</button>
             </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        <div className="lg:col-span-8 space-y-6">
-            {dbStatus === 'OFFLINE' && (
-              <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2rem] flex items-center gap-4 text-rose-600 animate-shake">
-                <AlertTriangle size={32} />
-                <div>
-                  <h3 className="font-black uppercase text-sm">Cluster Unreachable</h3>
-                  <p className="text-[10px] font-bold">The central database is not responding. Infrastructure updates may fail.</p>
-                </div>
-              </div>
-            )}
-
-            {view === 'CLUSTERS' && (
-                <div className="grid gap-4">
-                    {tenants.map(t => (
-                        <div key={t.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex items-center justify-between shadow-sm hover:shadow-xl transition-all">
-                            <div className="flex items-center gap-6">
-                                <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 border border-slate-100 overflow-hidden">
-                                    {t.settings.logoUrl ? <img src={t.settings.logoUrl} className="w-full h-full object-cover" /> : <Database size={24} />}
-                                </div>
-                                <div>
-                                    <h4 className="text-xl font-black text-slate-900 tracking-tighter uppercase">{t.settings.shopName || t.name}</h4>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Node Identifier: {t.id}</p>
-                                    <p className="text-[9px] font-mono text-blue-500 mt-1 truncate max-w-[300px]">{t.mongoUri || 'Using Central Milky Way Pool'}</p>
-                                    {t.domain && <p className="text-[9px] font-black text-emerald-600 mt-1 uppercase">Bound Domain: {t.domain}</p>}
-                                </div>
+      <div className="space-y-6">
+        {view === 'CLUSTERS' && (
+            <div className="grid gap-4">
+                {tenants.map(t => (
+                    <div key={t.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex items-center justify-between shadow-sm hover:shadow-lg transition-all">
+                        <div className="flex items-center gap-6">
+                            <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100 overflow-hidden">
+                                {t.settings.logoUrl ? <img src={t.settings.logoUrl} className="w-full h-full object-cover" /> : <Database size={24} className="text-slate-300" />}
                             </div>
-                            <div className="flex items-center gap-2">
-                                <button onClick={() => handleEditClick(t)} className="p-3 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all"><Edit size={16} /></button>
+                            <div>
+                                <h4 className="text-xl font-black text-slate-900 tracking-tighter uppercase">{t.settings.shopName || t.name}</h4>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Node ID: {t.id} • Domains: {(t.domainRecords || []).length}</p>
+                                <p className="text-[9px] font-mono text-blue-500 mt-1 truncate max-w-[400px]">{t.mongoUri}</p>
+                            </div>
+                        </div>
+                        <button className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Edit Node</button>
+                    </div>
+                ))}
+            </div>
+        )}
+
+        {view === 'DOMAINS' && (
+          <div className="space-y-10">
+            {/* Cloudflare Setup Instructions Box (Visibility for Super Admin via Dev Admin) */}
+            <div className="bg-blue-600 text-white p-8 rounded-[3.5rem] shadow-xl flex flex-col lg:flex-row items-center gap-10">
+                <div className="w-20 h-20 bg-white/20 rounded-[2rem] flex items-center justify-center shrink-0">
+                    <Cloud size={40} />
+                </div>
+                <div className="flex-1 space-y-4">
+                    <h3 className="text-2xl font-black uppercase tracking-tight">Cloudflare DNS Instructions</h3>
+                    <p className="text-[11px] font-bold opacity-80 uppercase tracking-widest leading-relaxed">
+                        To point a custom domain to this Milky Way Cluster, provide these details to the Super Admin for their Cloudflare dashboard:
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-white/10 p-5 rounded-2xl border border-white/20">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[9px] font-black uppercase opacity-60">Record Type: CNAME</span>
+                                <button onClick={() => copyToClipboard(dnsTarget, 'cname')} className="text-white/40 hover:text-white">
+                                    {copied === 'cname' ? <CheckCircle2 size={14}/> : <Copy size={14}/>}
+                                </button>
+                            </div>
+                            <span className="text-sm font-mono font-black">{dnsTarget}</span>
+                        </div>
+                        <div className="bg-white/10 p-5 rounded-2xl border border-white/20">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[9px] font-black uppercase opacity-60">Record Type: A (Static)</span>
+                                <button onClick={() => copyToClipboard(staticIp, 'a')} className="text-white/40 hover:text-white">
+                                    {copied === 'a' ? <CheckCircle2 size={14}/> : <Copy size={14}/>}
+                                </button>
+                            </div>
+                            <span className="text-sm font-mono font-black">{staticIp}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {tenants.map(t => (
+              <div key={t.id} className="bg-white p-8 rounded-[3.5rem] border border-slate-100 shadow-sm space-y-8">
+                <div className="flex items-center justify-between border-b border-slate-50 pb-6">
+                    <div className="flex items-center gap-5">
+                        <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100">
+                             {t.settings.logoUrl ? <img src={t.settings.logoUrl} className="w-full h-full object-cover rounded-xl" /> : <Globe size={24} className="text-slate-300"/>}
+                        </div>
+                        <div>
+                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight leading-none">{t.settings.shopName}</h3>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Tenant Cluster Binding</p>
+                        </div>
+                    </div>
+                    <button onClick={() => addDomain(t.id)} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg flex items-center gap-2 hover:bg-blue-700 transition-all">
+                        <Plus size={16} /> Add Domain
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {(t.domainRecords || []).map(r => (
+                        <div key={r.host} className="group relative bg-slate-50 border border-slate-100 p-6 rounded-3xl transition-all hover:bg-white hover:shadow-2xl hover:border-blue-100">
+                            <div className="flex justify-between items-start mb-6">
+                                <div className="px-3 py-1 bg-blue-100 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest">{r.type} Record</div>
+                                <button onClick={() => removeDomain(t.id, r.host)} className="p-2 text-slate-300 hover:text-rose-500 bg-white rounded-xl shadow-sm opacity-0 group-hover:opacity-100 transition-all">
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                            <h4 className="text-lg font-black text-slate-900 truncate tracking-tight">{r.host}</h4>
+                            <div className="mt-4 flex items-center gap-4">
+                                <a href={`https://${r.host}`} target="_blank" className="text-[9px] font-black text-blue-500 uppercase flex items-center gap-1.5 hover:underline">
+                                    <ExternalLink size={12} /> Test Handshake
+                                </a>
+                                <div className="flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase">
+                                    <ShieldCheck size={12} /> Live
+                                </div>
                             </div>
                         </div>
                     ))}
-                </div>
-            )}
-            {view === 'USERS' && (
-                <div className="modern-card overflow-hidden">
-                    <table className="w-full text-left compact-table">
-                        <thead><tr className="bg-slate-50/50"><th>Identity</th><th>Cluster</th><th>Role</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {metrics.userStats.map((u: any) => (
-                                <tr key={u.id} className="hover:bg-slate-50">
-                                    <td><span className="font-black text-slate-900 text-sm uppercase">{u.username}</span></td>
-                                    <td><span className="text-[10px] font-black text-slate-500 uppercase bg-slate-100 px-2 py-1 rounded-md">{u.tenantName}</span></td>
-                                    <td><span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">{u.role}</span></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-            {view === 'SECURITY' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="modern-card p-6 bg-slate-900 text-white border-none h-[400px] flex flex-col">
-                        <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4"><Fingerprint size={16}/> Protocol Logs</h4>
-                        <div className="flex-1 overflow-auto space-y-3 pr-2">
-                            {securityLogs.slice().reverse().map((log, i) => (
-                                <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-3 flex justify-between items-center">
-                                    <span className="text-[10px] font-black text-blue-400 uppercase">{log.event}</span>
-                                    <span className="text-[9px] font-mono text-slate-500">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                                </div>
-                            ))}
+                    {(!t.domainRecords || t.domainRecords.length === 0) && (
+                        <div className="col-span-full py-16 text-center border-4 border-dashed border-slate-50 rounded-[3rem] text-slate-300">
+                            <Globe size={48} className="mx-auto mb-4 opacity-10" />
+                            <p className="text-[10px] font-black uppercase tracking-[0.4em]">No custom domains assigned</p>
                         </div>
-                    </div>
-                    <div className="modern-card p-8 flex flex-col items-center justify-center text-center space-y-6">
-                        <Zap size={48} className="text-blue-500 animate-pulse" />
-                        <h4 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Cluster Protection Active</h4>
-                    </div>
-                </div>
-            )}
-        </div>
-        <div className="lg:col-span-4">
-            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-8 sticky top-10">
-                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{editingId ? 'Edit Cluster' : 'Provision Cluster'}</h3>
-                <div className="space-y-4">
-                    <div>
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">System Identifier</label>
-                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="t-xyz" disabled={!!editingId} />
-                    </div>
-                    <div>
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">Branding Name</label>
-                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" value={formData.shopName} onChange={e => setFormData({...formData, shopName: e.target.value})} placeholder="Shop Name" />
-                    </div>
-                    <div>
-                        <label className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-1.5 ml-1 flex items-center gap-1.5"><Globe size={10}/> Custom Domain</label>
-                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[11px] font-bold outline-none" value={formData.domain} onChange={e => setFormData({...formData, domain: e.target.value})} placeholder="oms.yourbrand.com" />
-                    </div>
-                    <div>
-                        <label className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-1.5 ml-1 flex items-center gap-1.5"><Server size={10}/> Dedicated Mongo URI</label>
-                        <input className="w-full bg-blue-50 border border-blue-100 rounded-2xl px-5 py-4 text-[10px] font-mono font-bold outline-none text-blue-600" value={formData.mongoUri} onChange={e => setFormData({...formData, mongoUri: e.target.value})} placeholder="mongodb+srv://..." />
-                    </div>
-                    <div className="pt-4 border-t border-slate-100">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">Super Admin Account</label>
-                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none mb-2" value={formData.adminEmail} onChange={e => setFormData({...formData, adminEmail: e.target.value})} placeholder="Email/Username" />
-                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" type="password" value={formData.adminPass} onChange={e => setFormData({...formData, adminPass: e.target.value})} placeholder={editingId ? "New Key (leave blank to keep)" : "Security Key"} />
-                    </div>
-                    <button onClick={editingId ? handleUpdate : handleCreate} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-blue-700 transition-all mt-4">
-                        {editingId ? 'Update Identity' : 'Inject Infrastructure'}
-                    </button>
-                    {editingId && (
-                      <button onClick={() => { setEditingId(null); setFormData({name: '', shopName: '', logoUrl: '', mongoUri: '', domain: '', adminEmail: '', adminPass: ''}); }} className="w-full text-slate-400 font-bold text-[10px] uppercase tracking-widest py-2">Cancel Edit</button>
                     )}
                 </div>
-            </div>
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {view === 'SECURITY' && (
+          <div className="bg-slate-950 p-10 rounded-[3rem] h-[600px] flex flex-col border border-white/5">
+              <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] flex items-center gap-3 mb-8">
+                  {/* Fixed Fingerprint component usage by importing it from lucide-react */}
+                  <Fingerprint size={20} className="text-blue-500" /> Infrastructure Audit Trail
+              </h4>
+              <div className="flex-1 overflow-auto space-y-3 pr-4">
+                  {securityLogs.slice().reverse().map((log, i) => (
+                      <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl flex justify-between items-center group">
+                          <div className="flex items-center gap-4">
+                              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 group-hover:animate-ping"></div>
+                              <span className="text-[11px] font-black text-white uppercase tracking-tight">{log.event}</span>
+                          </div>
+                          <span className="text-[9px] font-mono text-slate-500">{new Date(log.timestamp).toLocaleString()}</span>
+                      </div>
+                  ))}
+              </div>
+          </div>
+        )}
       </div>
     </div>
   );

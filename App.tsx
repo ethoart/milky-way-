@@ -94,7 +94,13 @@ export default function App() {
     const checkDomain = async () => {
         const tenants = await db.getTenants();
         const currentDomain = window.location.hostname;
-        const match = tenants.find(t => t.domain === currentDomain);
+        
+        // Advanced lookup: check multiple domain records per tenant
+        const match = tenants.find(t => 
+            t.domain === currentDomain || 
+            (t.domainRecords || []).some(r => r.host === currentDomain && r.isActive)
+        );
+        
         if (match) setBrandedTenant(match);
     };
     checkDomain();
@@ -104,16 +110,7 @@ export default function App() {
         const u = JSON.parse(saved); 
         setUser(u);
         if (u.tenantId) db.getTenant(u.tenantId).then(t => t && setTenant(t));
-
-        // Deep Link Handling
-        const params = new URLSearchParams(window.location.search);
-        const orderId = params.get('orderId');
-        if (orderId) {
-            setSelectedOrderId(orderId);
-            setCurrentPage('order_detail');
-        } else if (u.role === UserRole.DEV_ADMIN) {
-            setCurrentPage('dev_dashboard');
-        }
+        if (u.role === UserRole.DEV_ADMIN) setCurrentPage('dev_dashboard');
     }
   }, []);
 
@@ -123,15 +120,7 @@ export default function App() {
       setUser(userObj);
       localStorage.setItem('mw_user', JSON.stringify(userObj));
       if (userObj.tenantId) db.getTenant(userObj.tenantId).then(t => t && setTenant(t));
-      
-      const params = new URLSearchParams(window.location.search);
-      const orderId = params.get('orderId');
-      if (orderId) {
-          setSelectedOrderId(orderId);
-          setCurrentPage('order_detail');
-      } else {
-          setCurrentPage(userObj.role === UserRole.DEV_ADMIN ? 'dev_dashboard' : 'dashboard');
-      }
+      setCurrentPage(userObj.role === UserRole.DEV_ADMIN ? 'dev_dashboard' : 'dashboard');
     } else {
         throw new Error("Invalid credentials");
     }
@@ -160,20 +149,22 @@ export default function App() {
   };
 
   const defaultTitle = user.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way';
-  const displayShopName = tenant?.settings.shopName || defaultTitle;
+  const displayShopName = tenant?.settings.shopName || brandedTenant?.settings.shopName || defaultTitle;
 
   return (
     <div className="flex h-screen bg-[#f1f5f9] text-slate-900 overflow-hidden">
-      <Sidebar 
-        user={user} 
-        shopName={displayShopName} 
-        logoUrl={tenant?.settings.logoUrl} 
-        activePage={currentPage} 
-        onNavigate={setCurrentPage}
-        onLogout={() => { setUser(null); setTenant(null); localStorage.removeItem('mw_user'); }}
-        isOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)}
-      />
-      <main className="flex-1 overflow-auto relative p-4 no-scrollbar">
+      <div className="no-print">
+        <Sidebar 
+            user={user} 
+            shopName={displayShopName} 
+            logoUrl={tenant?.settings.logoUrl || brandedTenant?.settings.logoUrl} 
+            activePage={currentPage} 
+            onNavigate={setCurrentPage}
+            onLogout={() => { setUser(null); setTenant(null); localStorage.removeItem('mw_user'); }}
+            isOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)}
+        />
+      </div>
+      <main className="flex-1 overflow-auto relative p-4 no-scrollbar no-print">
          <div className="md:hidden flex items-center justify-between mb-4 px-2 py-3 bg-white rounded-2xl shadow-sm border border-slate-100">
             <button onClick={() => setMobileMenuOpen(true)} className="p-2 bg-slate-50 rounded-xl text-slate-600"><Menu size={18} /></button>
             <span className="font-black text-sm uppercase tracking-tighter">{displayShopName}</span>
@@ -181,17 +172,6 @@ export default function App() {
          </div>
          {renderPage()}
       </main>
-      
-      <div 
-        className="fixed bottom-0 right-0 w-4 h-4 opacity-0 hover:opacity-10 cursor-help z-[9999]" 
-        onClick={() => {
-            const key = prompt('Protocol Identity:');
-            if (key === 'mw_dev_access_777') {
-                localStorage.setItem('mw_dev_token', key);
-                window.location.reload();
-            }
-        }}
-      ></div>
     </div>
   );
 }

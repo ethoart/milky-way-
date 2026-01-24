@@ -6,14 +6,12 @@ export enum UserRole {
 }
 
 export enum OrderStatus {
-  // Selling (Before Ship)
   PENDING = 'PENDING',
   OPEN_LEAD = 'OPEN_LEAD',
   NO_ANSWER = 'NO_ANSWER',
   REJECTED = 'REJECTED',
   HOLD = 'HOLD',
   CONFIRMED = 'CONFIRMED',
-  // Shipping (After Ship)
   SHIPPED = 'SHIPPED',
   DELIVERY = 'DELIVERY',
   RESIDUAL = 'RESIDUAL',
@@ -25,8 +23,14 @@ export enum OrderStatus {
 export enum CustomerStatus {
   NEW = 'NEW',
   REGULAR = 'REGULAR',
-  RISK_ORANGE = 'RISK_ORANGE', // 1 return
-  RISK_RED = 'RISK_RED' // 2+ returns
+  RISK_ORANGE = 'RISK_ORANGE',
+  RISK_RED = 'RISK_RED'
+}
+
+export interface DomainRecord {
+  host: string;
+  type: 'CNAME' | 'A';
+  isActive: boolean;
 }
 
 export interface Tenant {
@@ -34,7 +38,8 @@ export interface Tenant {
   name: string;
   mongoUri: string;
   isActive: boolean;
-  domain?: string; // Custom domain for branding
+  domain?: string; 
+  domainRecords?: DomainRecord[]; // Advanced domain management
   settings: TenantSettings;
 }
 
@@ -45,8 +50,8 @@ export interface TenantSettings {
   shopPhone: string;
   courierApiKey: string;
   courierApiUrl: string;
-  courierClientId: string; // Fardar Express Client ID
-  showBillQr: boolean; // Toggle for QR on bills/labels
+  courierClientId: string;
+  showBillQr: boolean;
 }
 
 export interface User {
@@ -70,10 +75,9 @@ export interface Product {
   tenantId: string;
   sku: string;
   name: string;
-  price: number; // Selling Price (Global)
+  price: number;
   batches: StockBatch[];
-  buyingPrice?: number; // Deprecated but kept for backward compatibility if needed
-  stock?: number; // Calculated as sum of batches
+  stock?: number;
 }
 
 export interface OrderLog {
@@ -89,9 +93,9 @@ export interface Order {
   customerName: string;
   customerPhone: string;
   customerAddress: string;
-  customerCity?: string; // For Courier API
-  parcelWeight?: string; // For Courier API
-  parcelDescription?: string; // For Courier API
+  customerCity?: string;
+  parcelWeight?: string;
+  parcelDescription?: string;
   items: { productId: string; quantity: number; price: number; name: string }[];
   totalAmount: number;
   status: OrderStatus;

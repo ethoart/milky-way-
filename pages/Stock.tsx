@@ -34,15 +34,12 @@ export const Stock: React.FC<StockProps> = ({ tenantId }) => {
   // Batch Form State (per product)
   const [batchForms, setBatchForms] = useState<{[key: string]: { quantity: number, buyingPrice: number }}>({});
 
+  // Fix: Removed redundant legacy data transformation that was incorrectly accessing 'buyingPrice' on the Product type.
+  // The 'db.getProducts' service already handles this normalization.
   const load = async () => {
     setLoading(true);
     const data = await db.getProducts(tenantId);
-    // Transform legacy data if needed (ensure batches array exists)
-    const normalized = data.map(p => ({
-      ...p,
-      batches: p.batches || (p.stock ? [{ id: 'legacy', quantity: p.stock, buyingPrice: p.buyingPrice || 0, createdAt: new Date().toISOString() }] : [])
-    }));
-    setProducts(normalized);
+    setProducts(data);
     setLoading(false);
   };
 
