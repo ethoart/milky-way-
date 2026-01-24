@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus, OrderLog, Product, Tenant } from '../types';
@@ -32,7 +32,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const [history, setHistory] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Separate form state to prevent frequent re-renders of the whole component
   const [formData, setFormData] = useState({ 
     customerName: '', 
     customerPhone: '', 
@@ -179,7 +178,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-8">
-                {/* 1. Protocol Grid */}
                 <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={16}/> Protocol Action</h3>
                     <div className="flex flex-wrap gap-2">
@@ -195,7 +193,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                     </div>
                 </div>
 
-                {/* 2. Subject Info - Optimized for typing */}
                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><UserIcon size={16}/> Consignee Identity</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -221,7 +218,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                     </div>
                 </div>
 
-                {/* 3. Manifest */}
                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
                     <div className="flex items-center justify-between">
                         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Package size={16}/> Manifest Inventory</h3>
@@ -255,22 +251,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                       </div>
                     )}
                  </div>
-
-                 {history && history.count > 0 && (
-                   <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-4">
-                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">Behavioral Intel</h3>
-                      <div className="grid grid-cols-2 gap-3">
-                          <div className="bg-slate-50 p-4 rounded-2xl text-center">
-                              <p className="text-[8px] font-black text-slate-400 uppercase">Hits</p>
-                              <p className="text-xl font-black">{history.count}</p>
-                          </div>
-                          <div className={`p-4 rounded-2xl text-center ${history.returns > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                              <p className="text-[8px] font-black text-slate-400 uppercase">Returns</p>
-                              <p className="text-xl font-black">{history.returns}</p>
-                          </div>
-                      </div>
-                   </div>
-                 )}
             </div>
         </div>
     </div>

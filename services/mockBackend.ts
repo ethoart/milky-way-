@@ -116,23 +116,23 @@ class BackendService {
     const tenant = await this.getTenant(tenantId);
     if (!tenant) throw new Error("Tenant cluster configuration unreachable.");
 
-    // --- ACTUAL COURIER API CALL (Fardar Express) ---
-    let waybillId = `FDE-${Math.floor(10000000 + Math.random() * 90000000)}`; // Simulation fallback
+    let waybillId = "";
     
-    try {
-        if (tenant.settings.courierApiKey && tenant.settings.courierClientId) {
-            const formData = new FormData();
-            formData.append('api_key', tenant.settings.courierApiKey);
-            formData.append('client_id', tenant.settings.courierClientId);
-            formData.append('consignee_name', order.customerName);
-            formData.append('consignee_phone', order.customerPhone);
-            formData.append('consignee_address', order.customerAddress);
-            formData.append('destination_city', order.customerCity || '');
-            formData.append('weight', order.parcelWeight || '1');
-            formData.append('cod_amount', order.totalAmount.toString());
-            formData.append('description', order.parcelDescription || 'E-commerce Item');
-            formData.append('ref_no', order.id);
+    // --- ACTUAL COURIER API CALL (Fardar Express) ---
+    if (tenant.settings.courierApiKey && tenant.settings.courierClientId) {
+        const formData = new FormData();
+        formData.append('api_key', tenant.settings.courierApiKey);
+        formData.append('client_id', tenant.settings.courierClientId);
+        formData.append('consignee_name', order.customerName);
+        formData.append('consignee_phone', order.customerPhone);
+        formData.append('consignee_address', order.customerAddress);
+        formData.append('destination_city', order.customerCity || '');
+        formData.append('weight', order.parcelWeight || '1');
+        formData.append('cod_amount', order.totalAmount.toString());
+        formData.append('description', order.parcelDescription || 'E-commerce Item');
+        formData.append('ref_no', order.id);
 
+        try {
             const response = await fetch(tenant.settings.courierApiUrl, {
                 method: 'POST',
                 body: formData
@@ -141,14 +141,14 @@ class BackendService {
             const result = await response.json();
             if (result.status === 'success' && result.waybill_id) {
                 waybillId = result.waybill_id;
-            } else if (result.error) {
-                throw new Error(`Courier API Error: ${result.error}`);
+            } else {
+                throw new Error(result.error || result.message || "Logistics API returned an error status.");
             }
+        } catch (apiErr: any) {
+            throw new Error(`Logistics Critical Failure: ${apiErr.message}`);
         }
-    } catch (apiErr: any) {
-        console.warn("Courier API Direct Call Failed, using simulator fallback.", apiErr);
-        // If the user wants ONLY actual API, uncomment below:
-        // throw new Error(`Logistics Critical Failure: ${apiErr.message}`);
+    } else {
+        throw new Error("Courier Credentials Missing. Configure Cluster Settings.");
     }
 
     // --- MILKY WAY FIFO BATCH REDUCTION ---

@@ -16,6 +16,7 @@
     "lucide-react": "0.263.1",
     "react": "^18.2.0",
     "react-barcode": "^1.4.6",
+    "react-qr-code": "^2.0.12",
     "react-dom": "^18.2.0",
     "recharts": "^2.12.7",
     "mongodb": "^6.3.0",

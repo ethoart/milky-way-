@@ -37,9 +37,9 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, on
     const ordersToPrint = await Promise.all(ids.map(id => db.getOrder(id, tenantId)));
     
     root.render(
-      <>
+      <div className="space-y-8">
         {ordersToPrint.map(o => o ? <BillPrintView key={o.id} order={o} settings={tenant.settings} /> : null)}
-      </>
+      </div>
     );
     
     setTimeout(() => {

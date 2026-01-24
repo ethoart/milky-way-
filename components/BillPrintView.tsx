@@ -13,7 +13,7 @@ export const BillPrintView: React.FC<BillPrintViewProps> = ({ order, settings })
   const displayId = order.trackingNumber || order.id;
   
   return (
-    <div className="print-only w-[100mm] min-h-[150mm] p-6 bg-white text-black font-sans mx-auto border-2 border-black">
+    <div className="print-only w-[100mm] min-h-[150mm] p-6 bg-white text-black font-sans mx-auto border-2 border-black mb-4">
       {/* "To" Section */}
       <div className="mb-4">
         <p className="text-sm font-bold text-gray-700">To:</p>
