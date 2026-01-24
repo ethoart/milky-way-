@@ -15,31 +15,44 @@ import {
   Copy,
   CheckCircle2,
   Info,
-  Fingerprint
+  Fingerprint,
+  X,
+  Save,
+  Server,
+  Key
 } from 'lucide-react';
 
 export const DevAdmin: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [securityLogs, setSecurityLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'CLUSTERS' | 'DOMAINS' | 'SECURITY'>('CLUSTERS');
   const [copied, setCopied] = useState<string | null>(null);
+  
+  // Modal States
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    shopName: '',
+    logoUrl: '',
+    mongoUri: '',
+    domain: '',
+    adminEmail: '',
+    adminPass: ''
+  });
 
-  // The system's target for DNS records
   const dnsTarget = window.location.hostname; 
-  const staticIp = "76.76.21.21"; // Vercel/Netlify/Custom IP target
+  const staticIp = "76.76.21.21"; 
 
   const load = async () => {
     setLoading(true);
     try {
-      const [t, u, s] = await Promise.all([
+      const [t, s] = await Promise.all([
           db.getTenants(),
-          db.getAllUsers(),
           db.getSecurityLogs()
       ]);
       setTenants(t);
-      setUsers(u);
       setSecurityLogs(s);
     } finally {
       setLoading(false);
@@ -48,13 +61,66 @@ export const DevAdmin: React.FC = () => {
 
   useEffect(() => { load(); }, []);
 
-  const handleUpdateTenant = async (t: Tenant) => {
-    await db.updateTenant(t);
-    load();
+  const openCreateModal = () => {
+    setEditingTenant(null);
+    setFormData({
+      name: '',
+      shopName: '',
+      logoUrl: '',
+      mongoUri: '',
+      domain: '',
+      adminEmail: '',
+      adminPass: ''
+    });
+    setIsModalOpen(true);
   };
 
-  const addDomain = async (tenantId: string) => {
-    const host = prompt("Enter the custom domain (e.g., store.arobazzar.com):");
+  const openEditModal = (t: Tenant) => {
+    setEditingTenant(t);
+    setFormData({
+      name: t.name,
+      shopName: t.settings.shopName,
+      logoUrl: t.settings.logoUrl || '',
+      mongoUri: t.mongoUri,
+      domain: t.domain || '',
+      adminEmail: '', // Passwords/Emails are updated separately or via this form
+      adminPass: ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSaveCluster = async () => {
+    if (!formData.name || !formData.mongoUri) return alert("Node Name and Database URI are required.");
+    
+    setLoading(true);
+    try {
+      if (editingTenant) {
+        const updated: Tenant = {
+          ...editingTenant,
+          name: formData.name,
+          mongoUri: formData.mongoUri,
+          domain: formData.domain,
+          settings: {
+            ...editingTenant.settings,
+            shopName: formData.shopName,
+            logoUrl: formData.logoUrl
+          }
+        };
+        await db.updateTenant(updated, formData.adminEmail || undefined, formData.adminPass || undefined);
+      } else {
+        await db.createTenant(formData);
+      }
+      setIsModalOpen(false);
+      load();
+    } catch (e: any) {
+      alert("Sync Error: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addDomainRecord = async (tenantId: string) => {
+    const host = prompt("Enter the custom domain (e.g., dashboard.brand.com):");
     if (!host) return;
     const t = tenants.find(x => x.id === tenantId);
     if (t) {
@@ -63,17 +129,19 @@ export const DevAdmin: React.FC = () => {
         ...t, 
         domainRecords: [...records, { host, type: 'CNAME', isActive: true }] 
       };
-      await handleUpdateTenant(updated);
+      await db.updateTenant(updated);
+      load();
     }
   };
 
-  const removeDomain = async (tenantId: string, host: string) => {
+  const removeDomainRecord = async (tenantId: string, host: string) => {
     if (!confirm("Are you sure you want to delete this domain mapping?")) return;
     const t = tenants.find(x => x.id === tenantId);
     if (t) {
       const records = (t.domainRecords || []).filter(r => r.host !== host);
       const updated: Tenant = { ...t, domainRecords: records };
-      await handleUpdateTenant(updated);
+      await db.updateTenant(updated);
+      load();
     }
   };
 
@@ -85,6 +153,7 @@ export const DevAdmin: React.FC = () => {
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-20 animate-slide-in">
+      {/* Top Console */}
       <div className="bg-slate-950 text-white p-10 rounded-[3rem] shadow-2xl relative overflow-hidden border border-white/5">
         <div className="relative z-10">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
@@ -96,9 +165,14 @@ export const DevAdmin: React.FC = () => {
                     <h2 className="text-5xl font-black mb-2 tracking-tighter uppercase leading-none">Global Infrastructure</h2>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest opacity-60">Multi-Domain & Cluster Control</p>
                 </div>
-                <button onClick={load} className="p-4 bg-white/10 rounded-full hover:bg-white/20 transition-all">
-                  <RefreshCcw size={20} className={loading ? 'animate-spin' : ''} />
-                </button>
+                <div className="flex gap-4">
+                  <button onClick={openCreateModal} className="px-8 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 hover:bg-blue-700 shadow-xl transition-all active:scale-95">
+                    <Plus size={18} /> New Dashboard
+                  </button>
+                  <button onClick={load} className="p-4 bg-white/10 rounded-full hover:bg-white/20 transition-all">
+                    <RefreshCcw size={20} className={loading ? 'animate-spin' : ''} />
+                  </button>
+                </div>
             </div>
             <div className="flex gap-2 p-1.5 bg-white/5 rounded-2xl w-fit border border-white/10">
                 <button onClick={() => setView('CLUSTERS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'CLUSTERS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Tenant Clusters</button>
@@ -123,7 +197,9 @@ export const DevAdmin: React.FC = () => {
                                 <p className="text-[9px] font-mono text-blue-500 mt-1 truncate max-w-[400px]">{t.mongoUri}</p>
                             </div>
                         </div>
-                        <button className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Edit Node</button>
+                        <button onClick={() => openEditModal(t)} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-black">
+                          <Edit size={14} /> Edit Node
+                        </button>
                     </div>
                 ))}
             </div>
@@ -131,7 +207,7 @@ export const DevAdmin: React.FC = () => {
 
         {view === 'DOMAINS' && (
           <div className="space-y-10">
-            {/* Cloudflare Setup Instructions Box (Visibility for Super Admin via Dev Admin) */}
+            {/* Cloudflare Setup Instructions */}
             <div className="bg-blue-600 text-white p-8 rounded-[3.5rem] shadow-xl flex flex-col lg:flex-row items-center gap-10">
                 <div className="w-20 h-20 bg-white/20 rounded-[2rem] flex items-center justify-center shrink-0">
                     <Cloud size={40} />
@@ -173,11 +249,11 @@ export const DevAdmin: React.FC = () => {
                         </div>
                         <div>
                             <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight leading-none">{t.settings.shopName}</h3>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Tenant Cluster Binding</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Bound to Cluster Host: {t.id}</p>
                         </div>
                     </div>
-                    <button onClick={() => addDomain(t.id)} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg flex items-center gap-2 hover:bg-blue-700 transition-all">
-                        <Plus size={16} /> Add Domain
+                    <button onClick={() => addDomainRecord(t.id)} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg flex items-center gap-2 hover:bg-blue-700 transition-all">
+                        <Plus size={16} /> Bind New Host
                     </button>
                 </div>
 
@@ -186,7 +262,7 @@ export const DevAdmin: React.FC = () => {
                         <div key={r.host} className="group relative bg-slate-50 border border-slate-100 p-6 rounded-3xl transition-all hover:bg-white hover:shadow-2xl hover:border-blue-100">
                             <div className="flex justify-between items-start mb-6">
                                 <div className="px-3 py-1 bg-blue-100 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest">{r.type} Record</div>
-                                <button onClick={() => removeDomain(t.id, r.host)} className="p-2 text-slate-300 hover:text-rose-500 bg-white rounded-xl shadow-sm opacity-0 group-hover:opacity-100 transition-all">
+                                <button onClick={() => removeDomainRecord(t.id, r.host)} className="p-2 text-slate-300 hover:text-rose-500 bg-white rounded-xl shadow-sm opacity-0 group-hover:opacity-100 transition-all">
                                     <Trash2 size={16} />
                                 </button>
                             </div>
@@ -216,7 +292,6 @@ export const DevAdmin: React.FC = () => {
         {view === 'SECURITY' && (
           <div className="bg-slate-950 p-10 rounded-[3rem] h-[600px] flex flex-col border border-white/5">
               <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] flex items-center gap-3 mb-8">
-                  {/* Fixed Fingerprint component usage by importing it from lucide-react */}
                   <Fingerprint size={20} className="text-blue-500" /> Infrastructure Audit Trail
               </h4>
               <div className="flex-1 overflow-auto space-y-3 pr-4">
@@ -233,6 +308,99 @@ export const DevAdmin: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Create/Edit Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-10 pt-10 pb-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-xl">
+                  {editingTenant ? <Edit size={24} /> : <Plus size={24} />}
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight leading-none">
+                    {editingTenant ? 'Edit Cluster Node' : 'Deploy New Cluster'}
+                  </h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                    {editingTenant ? `Cluster ID: ${editingTenant.id}` : 'Infrastructure Deployment'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setIsModalOpen(false)} className="p-3 hover:bg-slate-100 rounded-full transition-all">
+                <X size={24} className="text-slate-400" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-10 space-y-8 no-scrollbar">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">System Node Name (Slug)</label>
+                  <input 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-black outline-none focus:ring-2 focus:ring-blue-600 transition-all" 
+                    value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} 
+                    placeholder="Ex. arobazzar-main" 
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Display Shop Name</label>
+                  <input 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-black outline-none focus:ring-2 focus:ring-blue-600 transition-all" 
+                    value={formData.shopName} onChange={e => setFormData({...formData, shopName: e.target.value})} 
+                    placeholder="Ex. Aro Bazzar" 
+                  />
+                </div>
+                <div className="md:col-span-2 space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Server size={12}/> MongoDB Multi-Cluster URI</label>
+                  <input 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-xs font-mono font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-600 transition-all" 
+                    value={formData.mongoUri} onChange={e => setFormData({...formData, mongoUri: e.target.value})} 
+                    placeholder="mongodb+srv://..." 
+                  />
+                </div>
+                <div className="md:col-span-2 space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Logo URL (Icon)</label>
+                  <input 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-black outline-none focus:ring-2 focus:ring-blue-600 transition-all" 
+                    value={formData.logoUrl} onChange={e => setFormData({...formData, logoUrl: e.target.value})} 
+                    placeholder="https://..." 
+                  />
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-950 rounded-[2rem] border border-white/5 space-y-6">
+                 <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2"><Key size={14}/> Super Admin Access Node</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Admin Username/Email</label>
+                      <input 
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-blue-500 transition-all" 
+                        value={formData.adminEmail} onChange={e => setFormData({...formData, adminEmail: e.target.value})} 
+                        placeholder="superadmin@email.com" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Initial Password</label>
+                      <input 
+                        type="password"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-blue-500 transition-all" 
+                        value={formData.adminPass} onChange={e => setFormData({...formData, adminPass: e.target.value})} 
+                        placeholder="SecurePass123" 
+                      />
+                    </div>
+                 </div>
+              </div>
+            </div>
+
+            <div className="px-10 py-8 border-t border-slate-50 bg-slate-50 flex items-center justify-end gap-4">
+               <button onClick={() => setIsModalOpen(false)} className="px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-200 transition-all">Cancel</button>
+               <button onClick={handleSaveCluster} className="px-10 py-4 bg-blue-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all flex items-center gap-2">
+                 <Save size={16} /> {editingTenant ? 'Update Cluster' : 'Deploy Cluster'}
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
