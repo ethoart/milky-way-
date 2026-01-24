@@ -34,6 +34,7 @@ export interface Tenant {
   name: string;
   mongoUri: string;
   isActive: boolean;
+  domain?: string; // Custom domain for branding
   settings: TenantSettings;
 }
 
@@ -45,6 +46,7 @@ export interface TenantSettings {
   courierApiKey: string;
   courierApiUrl: string;
   courierClientId: string; // Fardar Express Client ID
+  showBillQr: boolean; // Toggle for QR on bills/labels
 }
 
 export interface User {

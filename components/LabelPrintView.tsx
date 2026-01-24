@@ -1,3 +1,4 @@
+
 import React from 'react';
 import Barcode from 'react-barcode';
 import QRCode from 'react-qr-code';
@@ -52,12 +53,14 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
                     <p className="text-[9px] font-bold text-gray-400 mt-1">Ref: {order.id.slice(-12)}</p>
                   </div>
 
-                  <div className="flex flex-col items-center">
-                    <div className="p-1 border border-black">
-                        <QRCode value={order.id} size={42} />
+                  {settings.showBillQr && (
+                    <div className="flex flex-col items-center">
+                      <div className="p-1 border border-black">
+                          <QRCode value={order.id} size={42} />
+                      </div>
+                      <span className="text-[7px] font-black uppercase text-gray-400 mt-1">Return</span>
                     </div>
-                    <span className="text-[7px] font-black uppercase text-gray-400 mt-1">Return</span>
-                  </div>
+                  )}
                 </div>
 
                 {/* Barcode Section */}

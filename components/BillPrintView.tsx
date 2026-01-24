@@ -1,3 +1,4 @@
+
 import React from 'react';
 import Barcode from 'react-barcode';
 import QRCode from 'react-qr-code';
@@ -44,12 +45,14 @@ export const BillPrintView: React.FC<BillPrintViewProps> = ({ order, settings })
         </div>
 
         {/* Small Return QR side-by-side on bill for faster processing */}
-        <div className="flex flex-col items-center gap-1">
-          <div className="p-1 border border-black bg-white">
-            <QRCode value={order.id} size={50} />
+        {settings.showBillQr && (
+          <div className="flex flex-col items-center gap-1">
+            <div className="p-1 border border-black bg-white">
+              <QRCode value={order.id} size={50} />
+            </div>
+            <span className="text-[8px] font-black uppercase text-gray-400">Return Key</span>
           </div>
-          <span className="text-[8px] font-black uppercase text-gray-400">Return Key</span>
-        </div>
+        )}
       </div>
 
       {/* Bottom Barcode - Matches PDF Screenshot */}

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/mockBackend';
 import { Tenant, TenantSettings } from '../types';
-import { Save, Store, MapPin, Phone, Key, ShieldCheck, Truck, Link, Copy, CheckCircle2 } from 'lucide-react';
+import { Save, Store, MapPin, Phone, Key, ShieldCheck, Truck, Link, Copy, CheckCircle2, QrCode } from 'lucide-react';
 
 interface SettingsProps {
   tenantId: string;
@@ -11,7 +11,7 @@ interface SettingsProps {
 export const Settings: React.FC<SettingsProps> = ({ tenantId }) => {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [settings, setSettings] = useState<TenantSettings>({
-      shopName: '', shopAddress: '', shopPhone: '', courierApiKey: '', courierApiUrl: '', courierClientId: ''
+      shopName: '', shopAddress: '', shopPhone: '', courierApiKey: '', courierApiUrl: '', courierClientId: '', showBillQr: true
   });
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -103,13 +103,6 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId }) => {
                             <span className="text-[10px] font-black uppercase">{copied ? 'Copied' : 'Copy'}</span>
                         </button>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 mt-2">
-                        {['waybill_id', 'delivery_status', 'last_update_time'].map(param => (
-                            <div key={param} className="bg-emerald-600/5 border border-emerald-600/10 px-3 py-1.5 rounded-lg text-center">
-                                <span className="text-[8px] font-black text-emerald-600 uppercase tracking-tighter">{param}</span>
-                            </div>
-                        ))}
-                    </div>
                 </div>
             </div>
 
@@ -119,7 +112,7 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId }) => {
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-8 flex items-center gap-2">
                     <Store size={16} className="text-blue-600"/> Merchant Identity
                 </h3>
-                <div className="grid md:grid-cols-2 gap-6">
+                <div className="grid md:grid-cols-2 gap-6 mb-8">
                     <Field 
                         label="Official Shop Name" 
                         icon={<Store size={14} />} 
@@ -140,6 +133,27 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId }) => {
                             onChange={(v: string) => setSettings({...settings, shopAddress: v})} 
                         />
                     </div>
+                </div>
+                
+                <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-4">
+                        <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                            <QrCode size={20} />
+                        </div>
+                        <div>
+                            <p className="text-sm font-black text-slate-900 uppercase tracking-tight">Bill QR Protocols</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Show QR code on labels and bills</p>
+                        </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                            type="checkbox" 
+                            className="sr-only peer" 
+                            checked={settings.showBillQr}
+                            onChange={(e) => setSettings({...settings, showBillQr: e.target.checked})}
+                        />
+                        <div className="w-14 h-7 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
                 </div>
             </div>
 

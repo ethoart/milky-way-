@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/mockBackend';
 import { Tenant, User, Order, OrderStatus, Product, UserRole } from '../types';
@@ -11,7 +12,8 @@ import {
   Zap,
   Activity,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  Globe
 } from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
 
@@ -30,6 +32,7 @@ export const DevAdmin: React.FC = () => {
       shopName: '',
       logoUrl: '',
       mongoUri: '',
+      domain: '',
       adminEmail: '',
       adminPass: ''
   });
@@ -77,7 +80,7 @@ export const DevAdmin: React.FC = () => {
         return;
     }
     await db.createTenant(formData);
-    setFormData({ name: '', shopName: '', logoUrl: '', mongoUri: '', adminEmail: '', adminPass: '' });
+    setFormData({ name: '', shopName: '', logoUrl: '', mongoUri: '', domain: '', adminEmail: '', adminPass: '' });
     load();
     alert("System: Infrastructure deployed successfully.");
   };
@@ -91,13 +94,14 @@ export const DevAdmin: React.FC = () => {
           ...t,
           name: formData.name,
           mongoUri: formData.mongoUri,
+          domain: formData.domain,
           settings: { ...t.settings, shopName: formData.shopName, logoUrl: formData.logoUrl }
       };
       
       try {
         await db.updateTenant(updatedTenant, formData.adminEmail, formData.adminPass);
         setEditingId(null);
-        setFormData({ name: '', shopName: '', logoUrl: '', mongoUri: '', adminEmail: '', adminPass: '' });
+        setFormData({ name: '', shopName: '', logoUrl: '', mongoUri: '', domain: '', adminEmail: '', adminPass: '' });
         load();
         alert("System: Cluster and Super Admin identity updated successfully.");
       } catch (e: any) {
@@ -115,6 +119,7 @@ export const DevAdmin: React.FC = () => {
       shopName: t.settings.shopName || '',
       logoUrl: t.settings.logoUrl || '',
       mongoUri: t.mongoUri || '',
+      domain: t.domain || '',
       adminEmail: currentAdmin?.username || '',
       adminPass: ''
     });
@@ -130,7 +135,6 @@ export const DevAdmin: React.FC = () => {
                         <ShieldCheck size={32} className="text-blue-400" />
                         <span className="px-4 py-1.5 bg-blue-500/20 text-blue-400 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-blue-500/30">Master Infrastructure</span>
                         
-                        {/* Database Connection Status */}
                         <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${
                           dbStatus === 'ONLINE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
                           dbStatus === 'OFFLINE' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
@@ -189,6 +193,7 @@ export const DevAdmin: React.FC = () => {
                                     <h4 className="text-xl font-black text-slate-900 tracking-tighter uppercase">{t.settings.shopName || t.name}</h4>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Node Identifier: {t.id}</p>
                                     <p className="text-[9px] font-mono text-blue-500 mt-1 truncate max-w-[300px]">{t.mongoUri || 'Using Central Milky Way Pool'}</p>
+                                    {t.domain && <p className="text-[9px] font-black text-emerald-600 mt-1 uppercase">Bound Domain: {t.domain}</p>}
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -247,6 +252,10 @@ export const DevAdmin: React.FC = () => {
                         <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none" value={formData.shopName} onChange={e => setFormData({...formData, shopName: e.target.value})} placeholder="Shop Name" />
                     </div>
                     <div>
+                        <label className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-1.5 ml-1 flex items-center gap-1.5"><Globe size={10}/> Custom Domain</label>
+                        <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[11px] font-bold outline-none" value={formData.domain} onChange={e => setFormData({...formData, domain: e.target.value})} placeholder="oms.yourbrand.com" />
+                    </div>
+                    <div>
                         <label className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-1.5 ml-1 flex items-center gap-1.5"><Server size={10}/> Dedicated Mongo URI</label>
                         <input className="w-full bg-blue-50 border border-blue-100 rounded-2xl px-5 py-4 text-[10px] font-mono font-bold outline-none text-blue-600" value={formData.mongoUri} onChange={e => setFormData({...formData, mongoUri: e.target.value})} placeholder="mongodb+srv://..." />
                     </div>
@@ -259,7 +268,7 @@ export const DevAdmin: React.FC = () => {
                         {editingId ? 'Update Identity' : 'Inject Infrastructure'}
                     </button>
                     {editingId && (
-                      <button onClick={() => { setEditingId(null); setFormData({name: '', shopName: '', logoUrl: '', mongoUri: '', adminEmail: '', adminPass: ''}); }} className="w-full text-slate-400 font-bold text-[10px] uppercase tracking-widest py-2">Cancel Edit</button>
+                      <button onClick={() => { setEditingId(null); setFormData({name: '', shopName: '', logoUrl: '', mongoUri: '', domain: '', adminEmail: '', adminPass: ''}); }} className="w-full text-slate-400 font-bold text-[10px] uppercase tracking-widest py-2">Cancel Edit</button>
                     )}
                 </div>
             </div>

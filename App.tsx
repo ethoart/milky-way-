@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
@@ -16,7 +17,7 @@ import { User, UserRole, Tenant } from './types';
 import { db } from './services/mockBackend';
 import { Lock, User as UserIcon, Menu, Globe, Shield } from 'lucide-react';
 
-const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<void> }) => {
+const LoginPage = ({ onLogin, branding }: { onLogin: (u: string, p: string) => Promise<void>, branding?: Tenant }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,6 +37,9 @@ const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<voi
     }
   }
 
+  const shopName = branding?.settings.shopName || 'Milky Way';
+  const logoUrl = branding?.settings.logoUrl;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#f1f5f9] p-4 relative overflow-hidden">
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/10 rounded-full blur-[100px]"></div>
@@ -43,10 +47,14 @@ const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<voi
       
       <div className="z-10 bg-white p-8 md:p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm border border-slate-100 animate-slide-in">
         <div className="flex flex-col items-center mb-10 text-center">
-            <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-200 mb-5">
-                <Globe className="text-white" size={28} />
-            </div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Milky Way</h1>
+            {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="w-16 h-16 rounded-2xl object-cover shadow-xl mb-5" />
+            ) : (
+                <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-200 mb-5">
+                    <Globe className="text-white" size={28} />
+                </div>
+            )}
+            <h1 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">{shopName}</h1>
             <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-2">Enterprise OMS Engine</p>
         </div>
         
@@ -77,11 +85,20 @@ const LoginPage = ({ onLogin }: { onLogin: (u: string, p: string) => Promise<voi
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null); 
+  const [brandedTenant, setBrandedTenant] = useState<Tenant | null>(null);
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
+    const checkDomain = async () => {
+        const tenants = await db.getTenants();
+        const currentDomain = window.location.hostname;
+        const match = tenants.find(t => t.domain === currentDomain);
+        if (match) setBrandedTenant(match);
+    };
+    checkDomain();
+
     const saved = localStorage.getItem('mw_user');
     if (saved) {
         const u = JSON.parse(saved); 
@@ -120,7 +137,7 @@ export default function App() {
     }
   };
 
-  if (!user) return <LoginPage onLogin={handleLogin} />;
+  if (!user) return <LoginPage onLogin={handleLogin} branding={brandedTenant || undefined} />;
 
   const renderPage = () => {
     if (user.role === UserRole.DEV_ADMIN) return <DevAdmin />;

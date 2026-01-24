@@ -104,6 +104,7 @@ class BackendService {
       id: formData.name,
       name: formData.name,
       mongoUri: formData.mongoUri,
+      domain: formData.domain || '',
       isActive: true,
       settings: {
         shopName: formData.shopName,
@@ -112,7 +113,8 @@ class BackendService {
         shopPhone: '',
         courierApiKey: '',
         courierApiUrl: 'https://www.fdedomestic.com/api/parcel/new_api_v1.php',
-        courierClientId: ''
+        courierClientId: '',
+        showBillQr: true
       }
     };
     const adminUser = {
