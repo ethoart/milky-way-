@@ -19,7 +19,10 @@ import {
   X,
   Save,
   Server,
-  Key
+  Key,
+  AlertTriangle,
+  Lock,
+  Zap
 } from 'lucide-react';
 
 export const DevAdmin: React.FC = () => {
@@ -83,7 +86,7 @@ export const DevAdmin: React.FC = () => {
       logoUrl: t.settings.logoUrl || '',
       mongoUri: t.mongoUri,
       domain: t.domain || '',
-      adminEmail: '', // Passwords/Emails are updated separately or via this form
+      adminEmail: '', 
       adminPass: ''
     });
     setIsModalOpen(true);
@@ -207,36 +210,62 @@ export const DevAdmin: React.FC = () => {
 
         {view === 'DOMAINS' && (
           <div className="space-y-10">
-            {/* Cloudflare Setup Instructions */}
-            <div className="bg-blue-600 text-white p-8 rounded-[3.5rem] shadow-xl flex flex-col lg:flex-row items-center gap-10">
-                <div className="w-20 h-20 bg-white/20 rounded-[2rem] flex items-center justify-center shrink-0">
-                    <Cloud size={40} />
-                </div>
-                <div className="flex-1 space-y-4">
-                    <h3 className="text-2xl font-black uppercase tracking-tight">Cloudflare DNS Instructions</h3>
-                    <p className="text-[11px] font-bold opacity-80 uppercase tracking-widest leading-relaxed">
-                        To point a custom domain to this Milky Way Cluster, provide these details to the Super Admin for their Cloudflare dashboard:
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-white/10 p-5 rounded-2xl border border-white/20">
-                            <div className="flex justify-between items-center mb-1">
-                                <span className="text-[9px] font-black uppercase opacity-60">Record Type: CNAME</span>
-                                <button onClick={() => copyToClipboard(dnsTarget, 'cname')} className="text-white/40 hover:text-white">
-                                    {copied === 'cname' ? <CheckCircle2 size={14}/> : <Copy size={14}/>}
-                                </button>
+            {/* Cloudflare Setup & SSL Troubleshooting */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 bg-blue-600 text-white p-8 rounded-[3.5rem] shadow-xl flex flex-col md:flex-row items-center gap-10">
+                    <div className="w-20 h-20 bg-white/20 rounded-[2rem] flex items-center justify-center shrink-0">
+                        <Cloud size={40} />
+                    </div>
+                    <div className="flex-1 space-y-4">
+                        <h3 className="text-2xl font-black uppercase tracking-tight">Cloudflare DNS Bridge</h3>
+                        <p className="text-[11px] font-bold opacity-80 uppercase tracking-widest leading-relaxed">
+                            Point custom domains to this cluster node using the following records:
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-white/10 p-5 rounded-2xl border border-white/20">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[9px] font-black uppercase opacity-60">Record Type: CNAME</span>
+                                    <button onClick={() => copyToClipboard(dnsTarget, 'cname')} className="text-white/40 hover:text-white">
+                                        {copied === 'cname' ? <CheckCircle2 size={14}/> : <Copy size={14}/>}
+                                    </button>
+                                </div>
+                                <span className="text-sm font-mono font-black">{dnsTarget}</span>
                             </div>
-                            <span className="text-sm font-mono font-black">{dnsTarget}</span>
-                        </div>
-                        <div className="bg-white/10 p-5 rounded-2xl border border-white/20">
-                            <div className="flex justify-between items-center mb-1">
-                                <span className="text-[9px] font-black uppercase opacity-60">Record Type: A (Static)</span>
-                                <button onClick={() => copyToClipboard(staticIp, 'a')} className="text-white/40 hover:text-white">
-                                    {copied === 'a' ? <CheckCircle2 size={14}/> : <Copy size={14}/>}
-                                </button>
+                            <div className="bg-white/10 p-5 rounded-2xl border border-white/20">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[9px] font-black uppercase opacity-60">Record Type: A (Static)</span>
+                                    <button onClick={() => copyToClipboard(staticIp, 'a')} className="text-white/40 hover:text-white">
+                                        {copied === 'a' ? <CheckCircle2 size={14}/> : <Copy size={14}/>}
+                                    </button>
+                                </div>
+                                <span className="text-sm font-mono font-black">{staticIp}</span>
                             </div>
-                            <span className="text-sm font-mono font-black">{staticIp}</span>
                         </div>
                     </div>
+                </div>
+
+                <div className="bg-rose-50 border border-rose-100 p-8 rounded-[3rem] space-y-4">
+                    <div className="flex items-center gap-3 text-rose-600">
+                        <AlertTriangle size={24} />
+                        <h3 className="text-sm font-black uppercase tracking-widest">Error 525 Fix</h3>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase leading-relaxed">
+                        If you see "SSL Handshake Failed" in Cloudflare, follow these protocol steps:
+                    </p>
+                    <ul className="space-y-2">
+                        <li className="flex items-start gap-2 text-[10px] font-black text-slate-700 uppercase">
+                            <div className="w-4 h-4 rounded bg-rose-200 flex items-center justify-center text-[8px] mt-0.5">1</div>
+                            Set SSL mode to "Full" (NOT Strict)
+                        </li>
+                        <li className="flex items-start gap-2 text-[10px] font-black text-slate-700 uppercase">
+                            <div className="w-4 h-4 rounded bg-rose-200 flex items-center justify-center text-[8px] mt-0.5">2</div>
+                            Disable "Always Use HTTPS" in CF
+                        </li>
+                        <li className="flex items-start gap-2 text-[10px] font-black text-slate-700 uppercase">
+                            <div className="w-4 h-4 rounded bg-rose-200 flex items-center justify-center text-[8px] mt-0.5">3</div>
+                            Verify Origin is serving port 443
+                        </li>
+                    </ul>
                 </div>
             </div>
 
@@ -267,12 +296,15 @@ export const DevAdmin: React.FC = () => {
                                 </button>
                             </div>
                             <h4 className="text-lg font-black text-slate-900 truncate tracking-tight">{r.host}</h4>
-                            <div className="mt-4 flex items-center gap-4">
+                            <div className="mt-4 flex flex-wrap items-center gap-4">
                                 <a href={`https://${r.host}`} target="_blank" className="text-[9px] font-black text-blue-500 uppercase flex items-center gap-1.5 hover:underline">
                                     <ExternalLink size={12} /> Test Handshake
                                 </a>
                                 <div className="flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase">
                                     <ShieldCheck size={12} /> Live
+                                </div>
+                                <div className="flex items-center gap-1 text-[9px] font-black text-blue-400 uppercase">
+                                    <Lock size={12} /> SSL Active
                                 </div>
                             </div>
                         </div>
