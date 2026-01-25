@@ -5,7 +5,7 @@ import { db } from '../services/mockBackend';
 import { formatCurrency } from '../utils/helpers';
 import { 
   RefreshCcw, DollarSign, Truck, CheckCircle, RotateCcw, 
-  Archive, ListFilter, Users, Calendar, TrendingUp, BarChart3, Filter,
+  Archive, ListFilter, Users, Calendar, TrendingUp, BarChart3,
   PhoneOff, Pause, ShoppingBag
 } from 'lucide-react';
 import { 
@@ -78,34 +78,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
     const shippedCount = filteredOrders.filter(o => o.shippedAt && new Date(o.shippedAt) >= sDate && new Date(o.shippedAt) <= eDate).length;
     const totalRevenue = filteredOrders.filter(o => o.status === OrderStatus.DELIVERED).reduce((s, o) => s + o.totalAmount, 0);
 
-    // Shipping Manifest (Product-wise)
-    const productTally: { [key: string]: { name: string; sku: string; shipCount: number } } = {};
-    filteredOrders.forEach(o => {
-        if (o.shippedAt) {
-            o.items.forEach(item => {
-                if (!productTally[item.productId]) {
-                    const p = products.find(prod => prod.id === item.productId);
-                    productTally[item.productId] = { name: item.name, sku: p?.sku || 'N/A', shipCount: 0 };
-                }
-                productTally[item.productId].shipCount += item.quantity;
-            });
-        }
-    });
-
     // Team Efficiency (User-wise)
     const teamStats: { [key: string]: { name: string; confirmed: number; rejected: number; opened: number; hold: number; noAnswer: number } } = {};
     team.forEach(u => teamStats[u.username] = { name: u.username, confirmed: 0, rejected: 0, opened: 0, hold: 0, noAnswer: 0 });
+    
     filteredOrders.forEach(o => {
         const u = o.openedBy || 'System';
         if (!teamStats[u]) teamStats[u] = { name: u, confirmed: 0, rejected: 0, opened: 0, hold: 0, noAnswer: 0 };
-        if (o.status === OrderStatus.CONFIRMED) teamStats[u].confirmed++;
-        if (o.status === OrderStatus.REJECTED) teamStats[u].rejected++;
+        
+        // Logical aggregation for 'Confirmed': Anything that reached confirmed or beyond
+        if ([OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.DELIVERY, OrderStatus.DELIVERED].includes(o.status)) {
+            teamStats[u].confirmed++;
+        }
+        
+        if ([OrderStatus.REJECTED, OrderStatus.RETURNED, OrderStatus.RETURN_COMPLETED].includes(o.status)) {
+            teamStats[u].rejected++;
+        }
+        
         if (o.status === OrderStatus.OPEN_LEAD) teamStats[u].opened++;
         if (o.status === OrderStatus.HOLD) teamStats[u].hold++;
         if (o.status === OrderStatus.NO_ANSWER) teamStats[u].noAnswer++;
     });
 
-    // Trends Data (Last 14 days)
+    // Trends Data
     const dailyMap: { [key: string]: { date: string; shipped: number; sales: number } } = {};
     for (let i = 13; i >= 0; i--) {
         const d = new Date();
@@ -116,10 +111,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
     orders.forEach(o => {
         const shipKey = o.shippedAt ? o.shippedAt.split('T')[0] : null;
         if (shipKey && dailyMap[shipKey]) dailyMap[shipKey].shipped++;
-        
         const createKey = o.createdAt.split('T')[0];
         if (o.status === OrderStatus.DELIVERED && dailyMap[createKey]) {
             dailyMap[createKey].sales += o.totalAmount;
+        }
+    });
+
+    // Product Tally
+    const productTally: { [key: string]: { name: string; sku: string; shipCount: number } } = {};
+    filteredOrders.forEach(o => {
+        if (o.shippedAt) {
+            o.items.forEach(item => {
+                if (!productTally[item.productId]) {
+                    const p = products.find(prod => prod.id === item.productId);
+                    productTally[item.productId] = { name: item.name, sku: p?.sku || 'N/A', shipCount: 0 };
+                }
+                productTally[item.productId].shipCount += item.quantity;
+            });
         }
     });
 
@@ -141,7 +149,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
 
   return (
     <div className="space-y-6 animate-slide-in max-w-[1400px] mx-auto pb-20">
-      {/* Top Controls */}
       <div className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div className="flex gap-2">
             {(['TODAY', 'WEEK', 'MONTH', 'YEAR'] as const).map(p => (
@@ -161,7 +168,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
         </div>
       </div>
 
-      {/* Grid Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <BigStat label="Confirmed" value={dashboardData.stats.confirmedCount} color="bg-blue-50 text-blue-600" icon={<CheckCircle/>} />
           <BigStat label="Shipped" value={dashboardData.stats.shippedCount} color="bg-indigo-50 text-indigo-600" icon={<Truck/>} />
@@ -171,7 +177,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
           <BigStat label="Settlement" value={formatCurrency(dashboardData.stats.totalRevenue)} color="bg-slate-900 text-white" icon={<DollarSign/>} />
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
               <div className="flex items-center gap-3 mb-8">
@@ -216,7 +221,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Manifest */}
           <div className="lg:col-span-6 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
               <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-blue-50/10">
                   <h3 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2">
@@ -239,7 +243,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
               </div>
           </div>
 
-          {/* User Performance - Expanded to show more stats */}
           <div className="lg:col-span-6 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
               <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-indigo-50/10">
                   <h3 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2">

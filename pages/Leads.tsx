@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/mockBackend';
 import { Product, Order, OrderStatus } from '../types';
-import { UserPlus, FileSpreadsheet, AlertCircle, CheckCircle2, ChevronDown, History, Package, ShieldAlert, AlertTriangle, Upload, Trash2, Database } from 'lucide-react';
+import { UserPlus, FileSpreadsheet, CheckCircle2, ChevronDown, History, Package, ShieldAlert, AlertTriangle, Upload, Trash2, Database, Box } from 'lucide-react';
 import { parseCSV, formatCurrency } from '../utils/helpers';
 
 interface LeadsProps {
@@ -14,7 +14,6 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
   const [currentUser, setCurrentUser] = useState<string>('System');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Stabilized form state
   const [manualForm, setManualForm] = useState({ name: '', phone: '', address: '', productId: '' });
   const [customerHistory, setCustomerHistory] = useState<any>(null);
   const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' | 'info' } | null>(null);
@@ -125,10 +124,8 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Manual & CSV Tools */}
         <div className="lg:col-span-8 space-y-8">
             
-            {/* Manual Entry */}
             <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
               <div className="flex items-center justify-between pb-6 border-b border-slate-50">
                 <div className="flex items-center gap-3">
@@ -189,7 +186,6 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
               </button>
             </div>
 
-            {/* CSV Bulk Importer */}
             <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
                 <div className="flex items-center justify-between pb-6 border-b border-slate-50">
                     <div className="flex items-center gap-3">
@@ -214,25 +210,29 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
                     </div>
                 ) : (
                     <div className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1.5 relative">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Target Product For Batch</label>
+                        <div className="bg-blue-50 border-2 border-blue-100 p-8 rounded-[2.5rem] space-y-6">
+                            <div className="flex items-center gap-4 text-blue-900">
+                                <Box size={24} />
+                                <h4 className="text-sm font-black uppercase tracking-widest">Step 2: Assign Product SKU to Batch</h4>
+                            </div>
+                            <div className="relative">
                                 <select 
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-sm font-black outline-none appearance-none"
+                                    className="w-full bg-white border-2 border-blue-200 rounded-2xl px-6 py-5 text-lg font-black outline-none appearance-none focus:border-blue-600 transition-all shadow-xl shadow-blue-500/10"
                                     value={csvProductId}
                                     onChange={e => setCsvProductId(e.target.value)}
                                 >
-                                    <option value="">Select SKU...</option>
-                                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    <option value="">Select Target Product...</option>
+                                    {products.map(p => <option key={p.id} value={p.id}>{p.name} ({formatCurrency(p.price)})</option>)}
                                 </select>
+                                <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-blue-600" size={20} />
                             </div>
-                            <div className="bg-blue-600 rounded-2xl p-6 flex flex-col justify-center text-white">
-                                <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Pending Ingestion</span>
-                                <span className="text-2xl font-black uppercase tracking-tighter">{pendingLeads.length} Records Detected</span>
+                            <div className="bg-blue-600 rounded-2xl p-6 flex items-center justify-between text-white shadow-xl">
+                                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Batch Summary</span>
+                                <span className="text-xl font-black uppercase tracking-tight">{pendingLeads.length} Leads Identified</span>
                             </div>
                         </div>
 
-                        <div className="max-h-[300px] overflow-auto rounded-2xl border border-slate-100 no-scrollbar">
+                        <div className="max-h-[300px] overflow-auto rounded-3xl border border-slate-100 no-scrollbar">
                             <table className="w-full text-left compact-table">
                                 <thead className="sticky top-0 bg-white border-b border-slate-50">
                                     <tr>
@@ -256,7 +256,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
                         <button 
                             disabled={!csvProductId || isProcessing}
                             onClick={handleBulkSubmit}
-                            className="w-full py-5 bg-blue-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                            className="w-full py-6 bg-slate-900 text-white rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
                         >
                             <Database size={18} /> {isProcessing ? 'PROVISIONING...' : 'Commit Batch to Pipeline'}
                         </button>
@@ -265,7 +265,6 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
             </div>
         </div>
 
-        {/* Right Column: Intel */}
         <div className="lg:col-span-4 space-y-8 sticky top-10">
             <div className="bg-slate-950 text-white p-10 rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col min-h-[500px] border border-white/5">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600 rounded-full blur-[100px] opacity-20 transform translate-x-1/2 -translate-y-1/2"></div>
