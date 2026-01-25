@@ -1,3 +1,4 @@
+
 import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings, StockBatch } from '../types';
 
 const API_BASE = '/api';
@@ -135,8 +136,8 @@ class BackendService {
         const formData = new URLSearchParams();
         
         // Data Normalization for Fardar strict validation
-        const numericOrderId = order.id.replace(/\D/g, ''); // Fixes 202 Error
-        const numericPhone = order.customerPhone.replace(/\D/g, ''); // Ensures valid contact
+        const numericOrderId = order.id.replace(/\D/g, ''); 
+        const numericPhone = order.customerPhone.replace(/\D/g, ''); 
 
         formData.append('api_key', tenant.settings.courierApiKey);
         formData.append('client_id', tenant.settings.courierClientId);
@@ -149,7 +150,7 @@ class BackendService {
         formData.append('recipient_address', order.customerAddress);
         formData.append('recipient_city', order.customerCity || 'Colombo');
         formData.append('amount', Math.round(order.totalAmount).toString());
-        formData.append('exchange', '0'); // 0 for Normal Parcel
+        formData.append('exchange', '0'); 
 
         try {
             const response = await fetch(tenant.settings.courierApiUrl, {
@@ -160,7 +161,6 @@ class BackendService {
 
             const result = await response.json();
             
-            // Fardar API returns status 200 for successful insert
             if (Number(result.status) === 200 && result.waybill_no) {
                 waybillId = result.waybill_no;
             } else {
@@ -181,7 +181,6 @@ class BackendService {
         throw new Error("Missing Courier API Credentials in settings.");
     }
 
-    // Deduct Stock via FIFO
     const allProducts = await this.getProducts(tenantId);
     for (const item of order.items) {
         const prod = allProducts.find(p => p.id === item.productId);
@@ -229,8 +228,8 @@ class BackendService {
     return all.filter((u: any) => u.tenantId === tenantId);
   }
 
-  async addTeamMember(tenantId: string, username: string, role: UserRole, email: string, password?: string): Promise<void> {
-    const user: any = { id: `u-${Date.now()}`, username, email, role, tenantId };
+  async addTeamMember(tenantId: string, username: string, role: UserRole, email: string, password?: string, permissions?: string[]): Promise<void> {
+    const user: any = { id: `u-${Date.now()}`, username, email, role, tenantId, permissions };
     if (password) user.password = password;
     await this.request('/users', 'POST', user);
   }

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
   LayoutDashboard, 
@@ -7,7 +8,6 @@ import {
   Settings, 
   Users, 
   LogOut, 
-  ScanLine, 
   UserPlus, 
   Wallet,
   CalendarCheck,
@@ -29,7 +29,22 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activePage, onNavigate, onLogout, isOpen, onClose }) => {
+  
+  const hasAccess = (pageId: string) => {
+    if (user.role === UserRole.DEV_ADMIN) return true;
+    if (user.role === UserRole.SUPER_ADMIN) return true;
+    
+    // Admin Staff Access Rules:
+    // 'selling' is the baseline requirement.
+    if (pageId === 'selling') return true;
+    
+    // Check custom permissions granted by Super Admin
+    return user.permissions?.includes(pageId);
+  };
+
   const navItem = (id: string, icon: React.ReactNode, label: string) => {
+    if (!hasAccess(id)) return null;
+
     const isActive = activePage === id;
     return (
       <button
@@ -55,11 +70,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
     );
   };
 
-  const SectionHeader = (label: string) => (
-    <div className="px-3 mt-6 mb-2">
-      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</p>
-    </div>
-  );
+  const SectionHeader = (label: string, idCheck?: string[]) => {
+    if (user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.DEV_ADMIN && idCheck) {
+        const hasSome = idCheck.some(id => hasAccess(id));
+        if (!hasSome) return null;
+    }
+
+    return (
+      <div className="px-3 mt-6 mb-2">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</p>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -99,13 +121,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
             <>
               {navItem('dashboard', <LayoutDashboard />, 'Dashboard')}
 
-              {SectionHeader('Terminal')}
+              {SectionHeader('Terminal', ['leads', 'selling', 'shipping', 'today_shipped'])}
               {navItem('leads', <UserPlus />, 'Inbound')}
               {navItem('selling', <ShoppingCart />, 'Selling')}
               {navItem('shipping', <Truck />, 'Logistics')}
               {navItem('today_shipped', <CalendarCheck />, 'Daily Logs')}
               
-              {SectionHeader('Assets')}
+              {SectionHeader('Assets', ['financials', 'inventory', 'returns'])}
               {navItem('financials', <Wallet />, 'Financials')}
               {navItem('inventory', <Package />, 'Inventory')}
               {navItem('returns', <Scan size={18} className="text-blue-500"/>, 'Milky Way Scan')}

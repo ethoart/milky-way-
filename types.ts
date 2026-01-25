@@ -39,7 +39,7 @@ export interface Tenant {
   mongoUri: string;
   isActive: boolean;
   domain?: string; 
-  domainRecords?: DomainRecord[]; // Advanced domain management
+  domainRecords?: DomainRecord[]; 
   settings: TenantSettings;
 }
 
@@ -60,7 +60,7 @@ export interface User {
   email?: string;
   role: UserRole;
   tenantId?: string;
-  permissions?: string[];
+  permissions?: string[]; // Array of page IDs like 'dashboard', 'shipping', 'financials'
 }
 
 export interface StockBatch {

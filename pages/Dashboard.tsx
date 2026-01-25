@@ -1,10 +1,12 @@
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { Order, OrderStatus, Product, User } from '../types';
 import { db } from '../services/mockBackend';
 import { formatCurrency } from '../utils/helpers';
 import { 
   RefreshCcw, DollarSign, Truck, CheckCircle, RotateCcw, 
-  Archive, ListFilter, Users, Calendar, TrendingUp, BarChart3, Filter
+  Archive, ListFilter, Users, Calendar, TrendingUp, BarChart3, Filter,
+  PhoneOff, Pause, ShoppingBag
 } from 'lucide-react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, 
@@ -91,14 +93,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
     });
 
     // Team Efficiency (User-wise)
-    const teamStats: { [key: string]: { name: string; confirmed: number; rejected: number; opened: number } } = {};
-    team.forEach(u => teamStats[u.username] = { name: u.username, confirmed: 0, rejected: 0, opened: 0 });
+    const teamStats: { [key: string]: { name: string; confirmed: number; rejected: number; opened: number; hold: number; noAnswer: number } } = {};
+    team.forEach(u => teamStats[u.username] = { name: u.username, confirmed: 0, rejected: 0, opened: 0, hold: 0, noAnswer: 0 });
     filteredOrders.forEach(o => {
         const u = o.openedBy || 'System';
-        if (!teamStats[u]) teamStats[u] = { name: u, confirmed: 0, rejected: 0, opened: 0 };
+        if (!teamStats[u]) teamStats[u] = { name: u, confirmed: 0, rejected: 0, opened: 0, hold: 0, noAnswer: 0 };
         if (o.status === OrderStatus.CONFIRMED) teamStats[u].confirmed++;
         if (o.status === OrderStatus.REJECTED) teamStats[u].rejected++;
         if (o.status === OrderStatus.OPEN_LEAD) teamStats[u].opened++;
+        if (o.status === OrderStatus.HOLD) teamStats[u].hold++;
+        if (o.status === OrderStatus.NO_ANSWER) teamStats[u].noAnswer++;
     });
 
     // Trends Data (Last 14 days)
@@ -128,7 +132,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
   }, [orders, products, team, startDate, endDate]);
 
   const BigStat = ({ label, value, color, icon }: any) => (
-    <div className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm flex flex-col items-center justify-center">
+    <div className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm flex flex-col items-center justify-center text-center">
         <div className={`p-3 rounded-2xl ${color} mb-3`}>{React.cloneElement(icon, { size: 18 })}</div>
         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</span>
         <span className="text-xl font-black text-slate-900">{value}</span>
@@ -213,7 +217,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Manifest */}
-          <div className="lg:col-span-7 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+          <div className="lg:col-span-6 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
               <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-blue-50/10">
                   <h3 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2">
                       <ListFilter size={16} className="text-blue-600" /> Dispatch Manifest
@@ -235,8 +239,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
               </div>
           </div>
 
-          {/* User Performance */}
-          <div className="lg:col-span-5 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+          {/* User Performance - Expanded to show more stats */}
+          <div className="lg:col-span-6 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
               <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-indigo-50/10">
                   <h3 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2">
                       <Users size={16} className="text-indigo-600" /> Team Efficiency
@@ -244,18 +248,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
               </div>
               <div className="flex-1 overflow-auto max-h-[400px] no-scrollbar">
                   <table className="w-full text-left compact-table">
-                      <thead><tr><th>Staff Identity</th><th className="text-center">Confirm</th><th className="text-center">Reject</th></tr></thead>
+                      <thead>
+                        <tr>
+                          <th>Staff Identity</th>
+                          <th className="text-center"><span className="flex items-center justify-center gap-1"><ShoppingBag size={10}/> Leads</span></th>
+                          <th className="text-center"><span className="flex items-center justify-center gap-1"><PhoneOff size={10}/> N/A</span></th>
+                          <th className="text-center"><span className="flex items-center justify-center gap-1"><Archive size={10}/> Rej</span></th>
+                          <th className="text-center"><span className="flex items-center justify-center gap-1"><Pause size={10}/> Hold</span></th>
+                          <th className="text-center"><span className="flex items-center justify-center gap-1"><CheckCircle size={10}/> Conf</span></th>
+                        </tr>
+                      </thead>
                       <tbody className="divide-y divide-slate-50">
                           {dashboardData.team.map((u, i) => (
                               <tr key={i} className="hover:bg-slate-50">
                                   <td>
                                       <div className="flex flex-col">
                                           <span className="text-[13px] font-black text-slate-900 uppercase leading-none">{u.name}</span>
-                                          <span className="text-[8px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">{u.opened} Processed</span>
+                                          <span className="text-[8px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">Cluster Node Active</span>
                                       </div>
                                   </td>
-                                  <td className="text-center"><span className="text-emerald-600 font-black">{u.confirmed}</span></td>
-                                  <td className="text-center"><span className="text-rose-500 font-black">{u.rejected}</span></td>
+                                  <td className="text-center font-bold text-slate-600">{u.opened}</td>
+                                  <td className="text-center font-bold text-slate-500">{u.noAnswer}</td>
+                                  <td className="text-center font-bold text-rose-500">{u.rejected}</td>
+                                  <td className="text-center font-bold text-amber-500">{u.hold}</td>
+                                  <td className="text-center font-bold text-emerald-600">{u.confirmed}</td>
                               </tr>
                           ))}
                       </tbody>
