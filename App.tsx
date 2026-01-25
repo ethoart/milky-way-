@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { OrderDetail } from './pages/OrderDetail'; 
@@ -90,20 +90,28 @@ export default function App() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const initBranding = useCallback(async () => {
+    try {
+      const tenants = await db.getTenants();
+      const currentHost = window.location.hostname.toLowerCase();
+      const currentHostNoWww = currentHost.replace('www.', '');
+      
+      const match = tenants.find(t => {
+          if (t.domain?.toLowerCase() === currentHost || t.domain?.toLowerCase() === currentHostNoWww) return true;
+          return (t.domainRecords || []).some(r => {
+              const host = r.host.toLowerCase();
+              return (host === currentHost || host === currentHostNoWww) && r.isActive;
+          });
+      });
+      
+      if (match) setBrandedTenant(match);
+    } catch (e) {
+      console.error("Branding sync failure", e);
+    }
+  }, []);
+
   useEffect(() => {
-    const checkDomain = async () => {
-        const tenants = await db.getTenants();
-        const currentDomain = window.location.hostname;
-        
-        // Advanced lookup: check multiple domain records per tenant
-        const match = tenants.find(t => 
-            t.domain === currentDomain || 
-            (t.domainRecords || []).some(r => r.host === currentDomain && r.isActive)
-        );
-        
-        if (match) setBrandedTenant(match);
-    };
-    checkDomain();
+    initBranding();
 
     const saved = localStorage.getItem('mw_user');
     if (saved) {
@@ -112,7 +120,7 @@ export default function App() {
         if (u.tenantId) db.getTenant(u.tenantId).then(t => t && setTenant(t));
         if (u.role === UserRole.DEV_ADMIN) setCurrentPage('dev_dashboard');
     }
-  }, []);
+  }, [initBranding]);
 
   const handleLogin = async (u: string, p: string) => {
     const userObj = await db.login(u, p);

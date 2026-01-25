@@ -22,7 +22,9 @@ import {
   Key,
   AlertTriangle,
   Lock,
-  Zap
+  Zap,
+  Activity,
+  Terminal
 } from 'lucide-react';
 
 export const DevAdmin: React.FC = () => {
@@ -210,17 +212,19 @@ export const DevAdmin: React.FC = () => {
 
         {view === 'DOMAINS' && (
           <div className="space-y-10">
-            {/* Cloudflare Setup & SSL Troubleshooting */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-blue-600 text-white p-8 rounded-[3.5rem] shadow-xl flex flex-col md:flex-row items-center gap-10">
-                    <div className="w-20 h-20 bg-white/20 rounded-[2rem] flex items-center justify-center shrink-0">
-                        <Cloud size={40} />
+            {/* Netlify & Cloudflare Setup Guide */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="lg:col-span-8 bg-blue-600 text-white p-10 rounded-[4rem] shadow-xl flex flex-col md:flex-row items-center gap-12">
+                    <div className="w-24 h-24 bg-white/20 rounded-[2.5rem] flex items-center justify-center shrink-0 shadow-inner">
+                        <Cloud size={48} />
                     </div>
-                    <div className="flex-1 space-y-4">
-                        <h3 className="text-2xl font-black uppercase tracking-tight">Cloudflare DNS Bridge</h3>
-                        <p className="text-[11px] font-bold opacity-80 uppercase tracking-widest leading-relaxed">
-                            Point custom domains to this cluster node using the following records:
-                        </p>
+                    <div className="flex-1 space-y-6">
+                        <div>
+                            <h3 className="text-3xl font-black uppercase tracking-tight">Deployment DNS Bridge</h3>
+                            <p className="text-[11px] font-bold opacity-80 uppercase tracking-widest leading-relaxed mt-2">
+                                Point custom domains to this cluster node using the following records:
+                            </p>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="bg-white/10 p-5 rounded-2xl border border-white/20">
                                 <div className="flex justify-between items-center mb-1">
@@ -244,75 +248,75 @@ export const DevAdmin: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="bg-rose-50 border border-rose-100 p-8 rounded-[3rem] space-y-4">
-                    <div className="flex items-center gap-3 text-rose-600">
-                        <AlertTriangle size={24} />
-                        <h3 className="text-sm font-black uppercase tracking-widest">Error 525 Fix</h3>
+                <div className="lg:col-span-4 bg-slate-900 border border-white/5 p-10 rounded-[3.5rem] space-y-6 shadow-2xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-5">
+                         <Terminal size={120} />
                     </div>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase leading-relaxed">
-                        If you see "SSL Handshake Failed" in Cloudflare, follow these protocol steps:
-                    </p>
-                    <ul className="space-y-2">
-                        <li className="flex items-start gap-2 text-[10px] font-black text-slate-700 uppercase">
-                            <div className="w-4 h-4 rounded bg-rose-200 flex items-center justify-center text-[8px] mt-0.5">1</div>
-                            Set SSL mode to "Full" (NOT Strict)
-                        </li>
-                        <li className="flex items-start gap-2 text-[10px] font-black text-slate-700 uppercase">
-                            <div className="w-4 h-4 rounded bg-rose-200 flex items-center justify-center text-[8px] mt-0.5">2</div>
-                            Disable "Always Use HTTPS" in CF
-                        </li>
-                        <li className="flex items-start gap-2 text-[10px] font-black text-slate-700 uppercase">
-                            <div className="w-4 h-4 rounded bg-rose-200 flex items-center justify-center text-[8px] mt-0.5">3</div>
-                            Verify Origin is serving port 443
-                        </li>
-                    </ul>
+                    <div className="flex items-center gap-3 text-rose-500 relative z-10">
+                        <AlertTriangle size={24} />
+                        <h3 className="text-sm font-black uppercase tracking-widest">Fixing 404 / 525 Errors</h3>
+                    </div>
+                    <div className="space-y-4 relative z-10">
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                            <p className="text-[10px] font-black text-blue-400 uppercase mb-2">1. Site Not Found (404)</p>
+                            <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                                You MUST add the domain in your <b>Netlify Dashboard</b> > <b>Domain Management</b>. Netlify will reject traffic from unmapped domains.
+                            </p>
+                        </div>
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                            <p className="text-[10px] font-black text-rose-400 uppercase mb-2">2. SSL Handshake (525)</p>
+                            <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                                Set Cloudflare SSL to <b>"Full"</b> (NOT Strict). Disable "Always Use HTTPS" in Cloudflare to allow Netlify to verify the cert.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             {tenants.map(t => (
-              <div key={t.id} className="bg-white p-8 rounded-[3.5rem] border border-slate-100 shadow-sm space-y-8">
-                <div className="flex items-center justify-between border-b border-slate-50 pb-6">
+              <div key={t.id} className="bg-white p-10 rounded-[4rem] border border-slate-100 shadow-sm space-y-10">
+                <div className="flex items-center justify-between border-b border-slate-50 pb-8">
                     <div className="flex items-center gap-5">
-                        <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100">
-                             {t.settings.logoUrl ? <img src={t.settings.logoUrl} className="w-full h-full object-cover rounded-xl" /> : <Globe size={24} className="text-slate-300"/>}
+                        <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100">
+                             {t.settings.logoUrl ? <img src={t.settings.logoUrl} className="w-full h-full object-cover rounded-xl" /> : <Globe size={28} className="text-slate-300"/>}
                         </div>
                         <div>
-                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight leading-none">{t.settings.shopName}</h3>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Bound to Cluster Host: {t.id}</p>
+                            <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">{t.settings.shopName}</h3>
+                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">Active Hub: {t.id}</p>
                         </div>
                     </div>
-                    <button onClick={() => addDomainRecord(t.id)} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg flex items-center gap-2 hover:bg-blue-700 transition-all">
-                        <Plus size={16} /> Bind New Host
+                    <button onClick={() => addDomainRecord(t.id)} className="bg-slate-950 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl flex items-center gap-2 hover:bg-black transition-all">
+                        <Plus size={18} /> Bind Custom Host
                     </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {(t.domainRecords || []).map(r => (
-                        <div key={r.host} className="group relative bg-slate-50 border border-slate-100 p-6 rounded-3xl transition-all hover:bg-white hover:shadow-2xl hover:border-blue-100">
+                        <div key={r.host} className="group relative bg-slate-50 border border-slate-100 p-8 rounded-[2.5rem] transition-all hover:bg-white hover:shadow-2xl hover:border-blue-100">
                             <div className="flex justify-between items-start mb-6">
-                                <div className="px-3 py-1 bg-blue-100 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest">{r.type} Record</div>
+                                <div className="px-4 py-1.5 bg-blue-100 text-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest">{r.type} Record</div>
                                 <button onClick={() => removeDomainRecord(t.id, r.host)} className="p-2 text-slate-300 hover:text-rose-500 bg-white rounded-xl shadow-sm opacity-0 group-hover:opacity-100 transition-all">
-                                    <Trash2 size={16} />
+                                    <Trash2 size={18} />
                                 </button>
                             </div>
-                            <h4 className="text-lg font-black text-slate-900 truncate tracking-tight">{r.host}</h4>
-                            <div className="mt-4 flex flex-wrap items-center gap-4">
-                                <a href={`https://${r.host}`} target="_blank" className="text-[9px] font-black text-blue-500 uppercase flex items-center gap-1.5 hover:underline">
-                                    <ExternalLink size={12} /> Test Handshake
+                            <h4 className="text-xl font-black text-slate-900 truncate tracking-tight">{r.host}</h4>
+                            <div className="mt-6 flex flex-wrap items-center gap-4">
+                                <a href={`https://${r.host}`} target="_blank" className="text-[10px] font-black text-blue-600 uppercase flex items-center gap-2 hover:underline">
+                                    <ExternalLink size={14} /> Verify Path
                                 </a>
-                                <div className="flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase">
-                                    <ShieldCheck size={12} /> Live
+                                <div className="flex items-center gap-1 text-[10px] font-black text-emerald-600 uppercase">
+                                    <ShieldCheck size={14} /> DNS Valid
                                 </div>
-                                <div className="flex items-center gap-1 text-[9px] font-black text-blue-400 uppercase">
-                                    <Lock size={12} /> SSL Active
+                                <div className="flex items-center gap-1 text-[10px] font-black text-slate-300 uppercase">
+                                    <Lock size={14} /> SSL Active
                                 </div>
                             </div>
                         </div>
                     ))}
                     {(!t.domainRecords || t.domainRecords.length === 0) && (
-                        <div className="col-span-full py-16 text-center border-4 border-dashed border-slate-50 rounded-[3rem] text-slate-300">
-                            <Globe size={48} className="mx-auto mb-4 opacity-10" />
-                            <p className="text-[10px] font-black uppercase tracking-[0.4em]">No custom domains assigned</p>
+                        <div className="col-span-full py-24 text-center border-4 border-dashed border-slate-50 rounded-[4rem] text-slate-300">
+                            <Activity size={64} className="mx-auto mb-6 opacity-10" />
+                            <p className="text-[11px] font-black uppercase tracking-[0.5em]">No active domains bound to this node</p>
                         </div>
                     )}
                 </div>
