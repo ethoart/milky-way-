@@ -85,8 +85,8 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
             <Scan size={40} className="text-white" />
         </div>
         <div>
-            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Milky Way OMS Scan</h2>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mt-2">Inventory Restocking Terminal</p>
+            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Milky Way OMS</h2>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mt-2">Enterprise Scan Terminal</p>
         </div>
         
         {/* Terminal Mode Selector */}

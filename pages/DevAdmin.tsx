@@ -260,7 +260,7 @@ export const DevAdmin: React.FC = () => {
                         <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
                             <p className="text-[10px] font-black text-blue-400 uppercase mb-2">1. Site Not Found (404)</p>
                             <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
-                                You MUST add the domain in your <b>Netlify Dashboard</b> > <b>Domain Management</b>. Netlify will reject traffic from unmapped domains.
+                                You MUST add the domain in your <b>Netlify Dashboard</b> &gt; <b>Domain Management</b>. Netlify will reject traffic from unmapped domains.
                             </p>
                         </div>
                         <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
