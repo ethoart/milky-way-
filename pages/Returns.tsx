@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { db } from '../services/mockBackend';
 import { CheckCircle, AlertOctagon, Camera, X, Scan, Keyboard, ShieldCheck, Zap, Laptop, Monitor } from 'lucide-react';
@@ -84,7 +85,7 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
             <Scan size={40} className="text-white" />
         </div>
         <div>
-            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Milky Way Scan</h2>
+            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Milky Way OMS Scan</h2>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mt-2">Inventory Restocking Terminal</p>
         </div>
         

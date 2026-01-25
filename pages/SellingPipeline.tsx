@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/mockBackend';
 import { OrderList } from './OrderList';
@@ -27,6 +28,19 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSe
     }
     alert("Bulk Handshake Complete: Records updated.");
     setRefreshKey(prev => prev + 1);
+  };
+
+  const getFilterColor = (status: string) => {
+    if (activeFilter !== status) return 'bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-black';
+    switch(status) {
+      case OrderStatus.PENDING: return 'bg-blue-600 text-white shadow-lg scale-105';
+      case OrderStatus.OPEN_LEAD: return 'bg-sky-400 text-white shadow-lg scale-105';
+      case OrderStatus.CONFIRMED: return 'bg-emerald-600 text-white shadow-lg scale-105';
+      case OrderStatus.HOLD: return 'bg-purple-600 text-white shadow-lg scale-105';
+      case OrderStatus.NO_ANSWER: return 'bg-yellow-500 text-white shadow-lg scale-105';
+      case OrderStatus.REJECTED: return 'bg-rose-600 text-white shadow-lg scale-105';
+      default: return 'bg-black text-white shadow-lg scale-105';
+    }
   };
 
   const filters = [
@@ -66,11 +80,7 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSe
           <button
             key={f.status}
             onClick={() => setActiveFilter(f.status as any)}
-            className={`flex items-center gap-2 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-              activeFilter === f.status 
-              ? 'bg-black text-white shadow-lg scale-[1.05]' 
-              : 'text-slate-400 hover:bg-slate-50 hover:text-black'
-            }`}
+            className={`flex items-center gap-2 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${getFilterColor(f.status)}`}
           >
             {f.icon} {f.label}
           </button>

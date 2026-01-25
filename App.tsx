@@ -122,6 +122,13 @@ export default function App() {
     }
   }, [initBranding]);
 
+  // Synchronize document title with shop name
+  useEffect(() => {
+    const defaultTitle = user?.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way OMS';
+    const displayShopName = tenant?.settings.shopName || brandedTenant?.settings.shopName || defaultTitle;
+    document.title = `${displayShopName} | Control Hub`;
+  }, [user, tenant, brandedTenant]);
+
   const handleLogin = async (u: string, p: string) => {
     const userObj = await db.login(u, p);
     if (userObj) {

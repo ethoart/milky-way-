@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus } from '../types';
@@ -71,7 +72,6 @@ export const OrderList: React.FC<OrderListProps> = ({
   }, [orders, activeStatus, search, startDate, endDate, productId, logisticsOnly]);
 
   const handleOrderClick = async (order: Order) => {
-    // Lead Management: Transition PENDING leads to OPEN_LEAD when viewed
     if (order.status === OrderStatus.PENDING) {
         const currentUser = localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System';
         const updated: Order = {
@@ -99,6 +99,19 @@ export const OrderList: React.FC<OrderListProps> = ({
     if (!confirm("Confirm Record Destruction?")) return;
     await db.deleteOrder(orderId, tenantId);
     loadData();
+  };
+
+  const getStatusColor = (status: OrderStatus) => {
+    switch(status) {
+      case OrderStatus.PENDING: return 'bg-blue-600 text-white';
+      case OrderStatus.OPEN_LEAD: return 'bg-sky-400 text-white';
+      case OrderStatus.CONFIRMED: return 'bg-emerald-600 text-white';
+      case OrderStatus.HOLD: return 'bg-purple-600 text-white';
+      case OrderStatus.NO_ANSWER: return 'bg-yellow-500 text-white';
+      case OrderStatus.REJECTED: return 'bg-rose-600 text-white';
+      case OrderStatus.SHIPPED: return 'bg-indigo-600 text-white';
+      default: return 'bg-slate-200 text-slate-600';
+    }
   };
 
   return (
@@ -183,12 +196,9 @@ export const OrderList: React.FC<OrderListProps> = ({
                   </td>
                   <td><span className="text-sm font-black text-slate-900">{formatCurrency(order.totalAmount)}</span></td>
                   <td className="text-center">
-                    <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
-                      order.status === OrderStatus.PENDING ? 'bg-slate-200 text-slate-600' :
-                      order.status === OrderStatus.CONFIRMED ? 'bg-emerald-600 text-white shadow-sm' :
-                      order.status === OrderStatus.SHIPPED ? 'bg-indigo-600 text-white shadow-sm' :
-                      'bg-slate-100 text-slate-600 border border-slate-200'
-                    }`}>{order.status.replace('_', ' ')}</span>
+                    <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-sm border border-black/5 ${getStatusColor(order.status)}`}>
+                      {order.status.replace('_', ' ')}
+                    </span>
                   </td>
                   <td className="text-right pr-6">
                     <div className="flex items-center justify-end gap-2">

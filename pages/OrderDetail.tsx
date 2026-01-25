@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { db } from '../services/mockBackend';
@@ -31,7 +32,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const [shippingLoading, setShippingLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Local state for form fields to prevent re-renders of the whole page on every character typed
   const [localFormData, setLocalFormData] = useState({ 
     customerName: '', 
     customerPhone: '', 
@@ -119,6 +119,21 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     loadData();
   };
 
+  const getBtnColor = (status: OrderStatus) => {
+    if (order?.status === status) {
+        switch(status) {
+          case OrderStatus.PENDING: return 'bg-blue-600 text-white shadow-lg';
+          case OrderStatus.OPEN_LEAD: return 'bg-sky-400 text-white shadow-lg';
+          case OrderStatus.CONFIRMED: return 'bg-emerald-600 text-white shadow-lg';
+          case OrderStatus.HOLD: return 'bg-purple-600 text-white shadow-lg';
+          case OrderStatus.NO_ANSWER: return 'bg-yellow-500 text-white shadow-lg';
+          case OrderStatus.REJECTED: return 'bg-rose-600 text-white shadow-lg';
+          default: return 'bg-blue-600 text-white shadow-lg';
+        }
+    }
+    return 'bg-slate-50 text-slate-400 hover:text-slate-600';
+  };
+
   if (loading || !order) return <div className="p-20 text-center font-black uppercase text-slate-300 text-xs tracking-widest">Synchronizing Node...</div>;
 
   return (
@@ -151,14 +166,13 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-8">
-                {/* Action Grid */}
                 <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={16}/> Command Protocol</h3>
                     <div className="flex flex-wrap gap-2">
                         {[OrderStatus.OPEN_LEAD, OrderStatus.HOLD, OrderStatus.NO_ANSWER, OrderStatus.REJECTED].map(s => (
-                           <button key={s} onClick={() => updateStatus(s)} className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase transition-all ${order.status === s ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}>{s.replace('_', ' ')}</button>
+                           <button key={s} onClick={() => updateStatus(s)} className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase transition-all ${getBtnColor(s)}`}>{s.replace('_', ' ')}</button>
                         ))}
-                        <button onClick={() => updateStatus(OrderStatus.CONFIRMED)} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-emerald-700 transition-all">Confirm Order</button>
+                        <button onClick={() => updateStatus(OrderStatus.CONFIRMED)} className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase shadow-xl transition-all ${order.status === OrderStatus.CONFIRMED ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>Confirm Order</button>
                         {(order.status === OrderStatus.CONFIRMED || order.status === OrderStatus.SHIPPED) && (
                              <button onClick={() => updateStatus(OrderStatus.SHIPPED)} disabled={shippingLoading} className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase flex items-center gap-3 hover:bg-black transition-all shadow-2xl">
                                 <Truck size={20} className="text-blue-400" /> {shippingLoading ? 'API LINKING...' : 'Dispatch to Fardar'}
@@ -167,7 +181,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                     </div>
                 </div>
 
-                {/* Subject Info - Stabilized Inputs */}
                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><UserIcon size={16}/> Consignee Identity</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -212,7 +225,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                     </div>
                 </div>
 
-                {/* Manifest */}
                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
                     <div className="flex items-center justify-between">
                         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Package size={16}/> Order Manifest</h3>
