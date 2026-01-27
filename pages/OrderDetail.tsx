@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus, OrderLog, Product, Tenant, CourierMode } from '../types';
 import { 
   ArrowLeft, Truck, Check, Clock, User as UserIcon, Save, 
-  Activity, MapPin, Package, Trash2, Plus, Printer, RefreshCcw, MessageSquare, Zap, Calendar, ShoppingBag, DollarSign, Search
+  Activity, MapPin, Package, Trash2, Plus, Printer, RefreshCcw, MessageSquare, Zap, Calendar, ShoppingBag, DollarSign, Search, ChevronDown, X
 } from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
 import { LabelPrintView } from '../components/LabelPrintView';
@@ -34,6 +34,11 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const [isSaving, setIsSaving] = useState(false);
   const [callNote, setCallNote] = useState('');
   const [showPrintPortal, setShowPrintPortal] = useState(false);
+
+  // City Search States
+  const [citySearch, setCitySearch] = useState('');
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const cityDropdownRef = useRef<HTMLDivElement>(null);
 
   const [localFormData, setLocalFormData] = useState({ 
     customerName: '', 
@@ -65,16 +70,18 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
         setOrder(data);
         setProducts(fetchedProducts);
         setTenant(fetchedTenant || null);
+        const initialCity = data.customerCity || (cityList.includes('Colombo') ? 'Colombo' : cityList[0]);
         setLocalFormData({ 
           customerName: data.customerName || '', 
           customerPhone: data.customerPhone || '', 
           customerAddress: data.customerAddress || '', 
-          customerCity: data.customerCity || (cityList.includes('Colombo') ? 'Colombo' : cityList[0]), 
+          customerCity: initialCity, 
           parcelWeight: data.parcelWeight || '1', 
           parcelDescription: data.parcelDescription || '',
           trackingNumber: data.trackingNumber || '',
           createdAt: data.createdAt ? new Date(data.createdAt).toISOString().slice(0, 16) : ''
         });
+        setCitySearch(initialCity);
         setItems(data.items || []);
       }
     } finally {
@@ -83,6 +90,24 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   }, [orderId, tenantId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Handle clicks outside city dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (cityDropdownRef.current && !cityDropdownRef.current.contains(event.target as Node)) {
+        setShowCityDropdown(false);
+        // Reset search to current selection if closed without selecting
+        setCitySearch(localFormData.customerCity);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [localFormData.customerCity]);
+
+  const filteredCities = useMemo(() => {
+    if (!citySearch) return cities;
+    return cities.filter(c => c.toLowerCase().includes(citySearch.toLowerCase()));
+  }, [cities, citySearch]);
 
   const totalAmount = useMemo(() => {
     return items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -286,19 +311,66 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                             placeholder="Detailed Street Address..." 
                           />
                         </div>
-                        <div className="space-y-1.5">
+                        
+                        {/* Searchable City Selector */}
+                        <div className="space-y-1.5 relative" ref={cityDropdownRef}>
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Target Distribution City</label>
                             <div className="relative">
-                                <select 
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-900 outline-none appearance-none cursor-pointer shadow-sm"
-                                    value={localFormData.customerCity}
-                                    onChange={e => setLocalFormData({...localFormData, customerCity: e.target.value})}
-                                >
-                                    {cities.map(city => <option key={city} value={city}>{city.toUpperCase()}</option>)}
-                                </select>
-                                <MapPin size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                <input 
+                                    type="text"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm pr-10"
+                                    value={citySearch}
+                                    onFocus={() => { setShowCityDropdown(true); setCitySearch(''); }}
+                                    onChange={(e) => { setCitySearch(e.target.value); setShowCityDropdown(true); }}
+                                    placeholder="Search & Select City..."
+                                />
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                  {citySearch !== localFormData.customerCity && citySearch !== '' && (
+                                    <X size={14} className="text-slate-300 cursor-pointer hover:text-rose-500" onClick={() => { setCitySearch(localFormData.customerCity); setShowCityDropdown(false); }} />
+                                  )}
+                                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${showCityDropdown ? 'rotate-180' : ''}`} />
+                                </div>
                             </div>
+                            
+                            {showCityDropdown && (
+                              <div className="absolute z-[100] left-0 right-0 mt-2 bg-white border border-slate-100 rounded-[1.5rem] shadow-2xl max-h-[300px] overflow-y-auto no-scrollbar animate-slide-in">
+                                {filteredCities.length > 0 ? (
+                                  filteredCities.map((city) => (
+                                    <div 
+                                      key={city} 
+                                      className={`px-6 py-3.5 text-xs font-black uppercase cursor-pointer hover:bg-slate-50 transition-colors flex items-center justify-between ${localFormData.customerCity === city ? 'bg-blue-50 text-blue-600' : 'text-slate-700'}`}
+                                      onClick={() => {
+                                        setLocalFormData({...localFormData, customerCity: city});
+                                        setCitySearch(city);
+                                        setShowCityDropdown(false);
+                                      }}
+                                    >
+                                      {city}
+                                      {localFormData.customerCity === city && <Check size={14} />}
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="px-6 py-8 text-center">
+                                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No matching regions</p>
+                                    <button 
+                                      onClick={() => {
+                                        const customCity = citySearch.trim();
+                                        if (customCity) {
+                                          setLocalFormData({...localFormData, customerCity: customCity});
+                                          setCitySearch(customCity);
+                                          setShowCityDropdown(false);
+                                        }
+                                      }}
+                                      className="mt-3 text-[10px] font-black text-blue-600 uppercase underline"
+                                    >
+                                      Use "{citySearch}" anyway
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                         </div>
+
                         <div className="space-y-1.5">
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Arrival Timestamp</label>
                             <div className="relative">
