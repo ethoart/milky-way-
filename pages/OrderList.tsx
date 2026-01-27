@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency } from '../utils/helpers';
-import { Search, ChevronRight, Layers, AlertCircle, Zap, Trash2, CheckSquare, Square, Truck, Loader2, Printer } from 'lucide-react';
+import { Search, ChevronRight, Layers, AlertCircle, Zap, Trash2, CheckSquare, Square, Truck, Loader2, Printer, UserPlus, Users } from 'lucide-react';
 
 interface OrderListProps {
   tenantId: string;
@@ -37,7 +37,7 @@ export const OrderList: React.FC<OrderListProps> = ({
       const fetchedOrders = await db.getOrders(tenantId);
       setOrders(fetchedOrders);
       
-      const uniquePhones = [...new Set(fetchedOrders.slice(0, 30).map(o => o.customerPhone))];
+      const uniquePhones = [...new Set(fetchedOrders.slice(0, 50).map(o => o.customerPhone))];
       const historyPromises = uniquePhones.map(async (phone) => {
         const h = await db.getCustomerHistory(phone, tenantId);
         return { phone, h };
@@ -166,7 +166,7 @@ export const OrderList: React.FC<OrderListProps> = ({
               <th className="w-12"></th>
               <th className="w-24">Node</th>
               <th>Identity</th>
-              <th className="text-center">Risk</th>
+              <th className="text-center">Intel</th>
               <th>Amount</th>
               <th className="text-center">Pipeline</th>
               <th className="text-right pr-6">Action</th>
@@ -176,7 +176,9 @@ export const OrderList: React.FC<OrderListProps> = ({
             {filteredOrders.map((order) => {
               const history = customerHistories[order.customerPhone];
               const isSelected = selectedIds.includes(order.id);
-              const isHighRisk = history?.returns > 0;
+              const hasReturns = history?.returns > 0;
+              const isRepeat = history?.count >= 2;
+              
               return (
                 <tr key={order.id} className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/50' : ''}`} onClick={() => handleOrderClick(order)}>
                   <td onClick={(e) => toggleSelect(e, order.id)} className="text-center">
@@ -187,12 +189,26 @@ export const OrderList: React.FC<OrderListProps> = ({
                   <td><span className="font-mono text-[10px] font-bold text-slate-400">#{order.id.slice(-6)}</span></td>
                   <td>
                     <div className="flex flex-col">
-                      <span className={`text-[13px] font-black tracking-tight ${isHighRisk ? 'text-rose-600' : 'text-slate-900'} uppercase`}>{order.customerName}</span>
+                      <span className={`text-[13px] font-black tracking-tight uppercase ${hasReturns ? 'text-rose-600 bg-rose-50 px-1 rounded' : 'text-slate-900'}`}>
+                        {order.customerName}
+                      </span>
                       <span className="text-[10px] font-bold text-slate-400">{order.customerPhone}</span>
                     </div>
                   </td>
                   <td className="text-center">
-                      {isHighRisk ? <div className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[8px] font-black uppercase inline-flex items-center gap-1"><AlertCircle size={10} /> {history.returns} REJ</div> : <span className="text-[10px] font-bold text-slate-300">-</span>}
+                      <div className="flex flex-col gap-1 items-center">
+                        {hasReturns && (
+                          <div className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[8px] font-black uppercase inline-flex items-center gap-1">
+                            <AlertCircle size={10} /> {history.returns} RETURNS
+                          </div>
+                        )}
+                        {isRepeat && (
+                          <div className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[8px] font-black uppercase inline-flex items-center gap-1">
+                            <Users size={10} /> REPEAT ({history.count})
+                          </div>
+                        )}
+                        {!hasReturns && !isRepeat && <span className="text-[10px] font-bold text-slate-300">-</span>}
+                      </div>
                   </td>
                   <td><span className="text-sm font-black text-slate-900">{formatCurrency(order.totalAmount)}</span></td>
                   <td className="text-center">

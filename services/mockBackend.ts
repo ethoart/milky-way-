@@ -280,14 +280,23 @@ class BackendService {
   async getCustomerHistory(phone: string, tenantId: string): Promise<any> {
     if (!phone) return { status: CustomerStatus.NEW, count: 0, returns: 0 };
     const orders = await this.getOrders(tenantId);
-    const last9 = phone.replace(/\D/g, '').slice(-9);
-    const co = orders.filter(o => o.customerPhone && o.customerPhone.replace(/\D/g, '').slice(-9) === last9);
+    const last8 = phone.replace(/\D/g, '').slice(-8);
+    const co = orders.filter(o => o.customerPhone && o.customerPhone.replace(/\D/g, '').slice(-8) === last8);
     const rc = co.filter(o => o.status === OrderStatus.RETURNED || o.status === OrderStatus.RETURN_COMPLETED).length;
     let s = CustomerStatus.NEW;
     if (co.length > 0) s = CustomerStatus.REGULAR;
     if (rc >= 1) s = CustomerStatus.RISK_ORANGE;
     if (rc >= 2) s = CustomerStatus.RISK_RED;
     return { status: s, count: co.length, returns: rc };
+  }
+
+  async getCustomerDetailedHistory(phone: string, tenantId: string): Promise<Order[]> {
+    if (!phone) return [];
+    const orders = await this.getOrders(tenantId);
+    const last8 = phone.replace(/\D/g, '').slice(-8);
+    return orders
+      .filter(o => o.customerPhone && o.customerPhone.replace(/\D/g, '').slice(-8) === last8)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   async processReturn(trackingOrId: string, tenantId: string): Promise<Order | null> {

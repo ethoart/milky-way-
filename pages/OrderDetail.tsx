@@ -4,7 +4,7 @@ import { db } from '../services/mockBackend';
 import { Order, OrderStatus, OrderLog, Product, Tenant, CourierMode } from '../types';
 import { 
   ArrowLeft, Truck, Check, Clock, User as UserIcon, Save, 
-  Activity, MapPin, Package, Trash2, Plus, Printer, RefreshCcw, MessageSquare, Zap, Calendar, ShoppingBag, DollarSign, Search, ChevronDown, X
+  Activity, MapPin, Package, Trash2, Plus, Printer, RefreshCcw, MessageSquare, Zap, Calendar, ShoppingBag, DollarSign, Search, ChevronDown, X, History, ShoppingCart
 } from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
 import { LabelPrintView } from '../components/LabelPrintView';
@@ -29,6 +29,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const [products, setProducts] = useState<Product[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [cities, setCities] = useState<string[]>([]);
+  const [customerHistory, setCustomerHistory] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -71,6 +72,11 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
         setOrder(data);
         setProducts(fetchedProducts);
         setTenant(fetchedTenant || null);
+        
+        // Load detailed purchase history for this phone
+        const history = await db.getCustomerDetailedHistory(data.customerPhone, tenantId);
+        setCustomerHistory(history.filter(h => h.id !== orderId)); // Filter out current order
+
         const initialCity = data.customerCity || (uniqueCities.includes('Colombo') ? 'Colombo' : uniqueCities[0]);
         setLocalFormData({ 
           customerName: data.customerName || '', 
@@ -224,7 +230,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
       logs: [...(order.logs || []), log] 
     };
 
-    // Update confirmedAt if transitioning to CONFIRMED
     if (newStatus === OrderStatus.CONFIRMED && order.status !== OrderStatus.CONFIRMED) {
       updatedData.confirmedAt = new Date().toISOString();
     }
@@ -249,6 +254,16 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
         }
     }
     return 'bg-slate-50 text-slate-400 hover:text-slate-600';
+  };
+
+  const getStatusStyle = (status: OrderStatus) => {
+    switch (status) {
+        case OrderStatus.DELIVERED: return 'text-emerald-600 bg-emerald-50';
+        case OrderStatus.RETURNED:
+        case OrderStatus.RETURN_COMPLETED: return 'text-rose-600 bg-rose-50';
+        case OrderStatus.SHIPPED: return 'text-blue-600 bg-blue-50';
+        default: return 'text-slate-500 bg-slate-100';
+    }
   };
 
   if (loading || !order) return <div className="p-20 text-center font-black uppercase text-slate-300 text-xs tracking-widest">Synchronizing Node...</div>;
@@ -354,7 +369,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                           />
                         </div>
                         
-                        {/* Searchable City Selector */}
                         <div className="space-y-1.5 relative" ref={cityDropdownRef}>
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Target Distribution City</label>
                             <div className="relative">
@@ -481,7 +495,48 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
             </div>
 
             <div className="space-y-8">
-                 {/* Internal Notes */}
+                 {/* Detailed Purchase History (User Request) */}
+                 <div className="bg-slate-900 text-white p-8 rounded-[3rem] border border-white/5 shadow-2xl space-y-6">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                            <History size={16}/> Purchase Lifecycle
+                        </h3>
+                        <span className="px-3 py-1 bg-blue-600 rounded-full text-[9px] font-black uppercase">
+                            {customerHistory.length} Previous
+                        </span>
+                    </div>
+
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto no-scrollbar pr-1">
+                        {customerHistory.length > 0 ? customerHistory.map(hist => (
+                            <div key={hist.id} className="p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all group">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <p className="text-[11px] font-black text-white uppercase truncate max-w-[120px]">
+                                            {hist.items[0]?.name || 'Unknown SKU'}
+                                        </p>
+                                        <p className="text-[8px] font-bold text-slate-500 uppercase">
+                                            {new Date(hist.createdAt).toLocaleDateString()} • {formatCurrency(hist.totalAmount)}
+                                        </p>
+                                    </div>
+                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getStatusStyle(hist.status)}`}>
+                                        {hist.status.replace('_', ' ')}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2 opacity-40 group-hover:opacity-100 transition-opacity">
+                                    <ShoppingCart size={10} className="text-blue-400" />
+                                    <span className="text-[8px] font-mono text-slate-400 uppercase tracking-tighter">#{hist.id.slice(-8)}</span>
+                                </div>
+                            </div>
+                        )) : (
+                            <div className="py-10 text-center opacity-20">
+                                <Zap size={40} className="mx-auto mb-4" />
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em]">New Node Entry</p>
+                            </div>
+                        )}
+                    </div>
+                 </div>
+
+                 {/* Interaction Registry */}
                  <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MessageSquare size={16}/> Interaction Registry</h3>
                     <div className="space-y-4">
