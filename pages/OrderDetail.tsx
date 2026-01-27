@@ -63,14 +63,15 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
         db.getGlobalCities()
       ]);
       
-      const cityList = fetchedCities.length > 0 ? fetchedCities : SRI_LANKA_CITIES_FALLBACK;
-      setCities(cityList);
+      // Deduplicate cities
+      const uniqueCities = Array.from(new Set(fetchedCities.length > 0 ? fetchedCities : SRI_LANKA_CITIES_FALLBACK));
+      setCities(uniqueCities);
 
       if (data) {
         setOrder(data);
         setProducts(fetchedProducts);
         setTenant(fetchedTenant || null);
-        const initialCity = data.customerCity || (cityList.includes('Colombo') ? 'Colombo' : cityList[0]);
+        const initialCity = data.customerCity || (uniqueCities.includes('Colombo') ? 'Colombo' : uniqueCities[0]);
         setLocalFormData({ 
           customerName: data.customerName || '', 
           customerPhone: data.customerPhone || '', 
@@ -96,7 +97,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     const handleClickOutside = (event: MouseEvent) => {
       if (cityDropdownRef.current && !cityDropdownRef.current.contains(event.target as Node)) {
         setShowCityDropdown(false);
-        // Reset search to current selection if closed without selecting
         setCitySearch(localFormData.customerCity);
       }
     };
@@ -106,8 +106,36 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
 
   const filteredCities = useMemo(() => {
     if (!citySearch) return cities;
-    return cities.filter(c => c.toLowerCase().includes(citySearch.toLowerCase()));
+    const query = citySearch.toLowerCase();
+    return cities
+      .filter(c => c.toLowerCase().includes(query))
+      .sort((a, b) => {
+        const aLower = a.toLowerCase();
+        const bLower = b.toLowerCase();
+        const aStarts = aLower.startsWith(query);
+        const bStarts = bLower.startsWith(query);
+        
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        return a.localeCompare(b);
+      });
   }, [cities, citySearch]);
+
+  const highlightMatch = (text: string, query: string) => {
+    if (!query) return text;
+    const parts = text.split(new RegExp(`(${query})`, 'gi'));
+    return (
+      <span>
+        {parts.map((part, i) => 
+          part.toLowerCase() === query.toLowerCase() ? (
+            <span key={i} className="text-blue-600 bg-blue-100 px-0.5 rounded font-black">{part}</span>
+          ) : (
+            part
+          )
+        )}
+      </span>
+    );
+  };
 
   const totalAmount = useMemo(() => {
     return items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -187,7 +215,21 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     };
     
     setIsSaving(true);
-    await db.updateOrder({ ...order, ...localFormData, items, totalAmount, status: newStatus, logs: [...(order.logs || []), log] });
+    const updatedData: Partial<Order> = { 
+      ...order, 
+      ...localFormData, 
+      items, 
+      totalAmount, 
+      status: newStatus, 
+      logs: [...(order.logs || []), log] 
+    };
+
+    // Update confirmedAt if transitioning to CONFIRMED
+    if (newStatus === OrderStatus.CONFIRMED && order.status !== OrderStatus.CONFIRMED) {
+      updatedData.confirmedAt = new Date().toISOString();
+    }
+
+    await db.updateOrder(updatedData as Order);
     setIsSaving(false);
     loadData();
   };
@@ -320,7 +362,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                     type="text"
                                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm pr-10"
                                     value={citySearch}
-                                    onFocus={() => { setShowCityDropdown(true); setCitySearch(''); }}
+                                    onFocus={() => { setShowCityDropdown(true); }}
                                     onChange={(e) => { setCitySearch(e.target.value); setShowCityDropdown(true); }}
                                     placeholder="Search & Select City..."
                                 />
@@ -345,7 +387,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                         setShowCityDropdown(false);
                                       }}
                                     >
-                                      {city}
+                                      {highlightMatch(city, citySearch)}
                                       {localFormData.customerCity === city && <Check size={14} />}
                                     </div>
                                   ))

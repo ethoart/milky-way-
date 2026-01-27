@@ -7,10 +7,11 @@ import { PhoneForwarded, ListFilter, Pause, RefreshCcw } from 'lucide-react';
 
 interface ResidualManagementProps {
   tenantId: string;
+  shopName: string;
   onSelectOrder: (id: string) => void;
 }
 
-export const ResidualManagement: React.FC<ResidualManagementProps> = ({ tenantId, onSelectOrder }) => {
+export const ResidualManagement: React.FC<ResidualManagementProps> = ({ tenantId, shopName, onSelectOrder }) => {
   const [activeFilter, setActiveFilter] = useState<OrderStatus | 'ALL'>('ALL');
   const [orders, setOrders] = useState<Order[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -49,7 +50,7 @@ export const ResidualManagement: React.FC<ResidualManagementProps> = ({ tenantId
             <PhoneForwarded size={28} />
           </div>
           <div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none">Milky Way Residuals</h2>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none">{shopName} Residuals</h2>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Recovery Terminal for Aging Leads</p>
           </div>
         </div>

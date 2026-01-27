@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { db } from '../services/mockBackend';
@@ -8,10 +9,11 @@ import { BillPrintView } from '../components/BillPrintView';
 
 interface ShippingPipelineProps {
   tenantId: string;
+  shopName: string;
   onSelectOrder: (id: string) => void;
 }
 
-export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, onSelectOrder }) => {
+export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, shopName, onSelectOrder }) => {
   const [activeFilter, setActiveFilter] = useState<OrderStatus | 'ALL' | 'TODAY_SHIPPED'>('ALL');
 
   const filters = [
@@ -57,7 +59,7 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, on
                 <Truck size={24} />
             </div>
             <div>
-                <h2 className="text-3xl font-black text-black tracking-tighter uppercase leading-none">Logistics Hub</h2>
+                <h2 className="text-3xl font-black text-black tracking-tighter uppercase leading-none">{shopName} Logistics</h2>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Shipment Tracking & Status Control</p>
             </div>
         </div>

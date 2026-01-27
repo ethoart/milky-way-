@@ -89,6 +89,15 @@ export const handler: Handler = async (event, context) => {
         }
         return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
       }
+      if (method === 'DELETE') {
+        const tenantId = event.queryStringParameters?.id;
+        if (tenantId) {
+          await tenantsCol.deleteOne({ id: tenantId });
+          await usersCol.deleteMany({ tenantId: tenantId });
+          return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
+        }
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing tenant ID' }) };
+      }
     }
 
     const tenantId = event.queryStringParameters?.tenantId || JSON.parse(event.body || '{}').tenantId;

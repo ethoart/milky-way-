@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { db } from '../services/mockBackend';
@@ -8,9 +9,10 @@ import { LabelPrintView } from '../components/LabelPrintView';
 
 interface TodayShippedProps {
   tenantId: string;
+  shopName: string;
 }
 
-export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId }) => {
+export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [tenantSettings, setTenantSettings] = useState<TenantSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,7 +69,7 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId }) => {
             <CalendarCheck size={20} />
           </div>
           <div>
-            <h2 className="text-xl font-extrabold text-slate-900">Daily Dispatch</h2>
+            <h2 className="text-xl font-extrabold text-slate-900">{shopName} Dispatch</h2>
             <p className="text-xs text-slate-500 font-medium tracking-tight">Logistics registry for {targetDate}</p>
           </div>
         </div>
@@ -136,12 +138,6 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId }) => {
                     ))}
                 </tbody>
             </table>
-            {dailyOrders.length === 0 && (
-                <div className="flex flex-col items-center justify-center p-32 text-slate-200 opacity-20">
-                    <Package size={80} strokeWidth={1} />
-                    <p className="font-black uppercase tracking-[0.3em] text-[10px] mt-4">Registry Empty</p>
-                </div>
-            )}
         </div>
       </div>
     </div>

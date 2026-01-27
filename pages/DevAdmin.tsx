@@ -167,6 +167,19 @@ export const DevAdmin: React.FC = () => {
     }
   };
 
+  const handleDeleteTenant = async (tenantId: string) => {
+    if (!confirm("CRITICAL PROTOCOL: Purge this cluster dashboard and all associated credentials? This action is irreversible.")) return;
+    setLoading(true);
+    try {
+      await db.deleteTenant(tenantId);
+      await load();
+    } catch (e: any) {
+      alert("Purge failure: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const addDomainRecord = async (tenantId: string) => {
     const host = prompt("Enter the custom domain (e.g., dashboard.brand.com):");
     if (!host) return;
@@ -246,11 +259,22 @@ export const DevAdmin: React.FC = () => {
                                 <p className="text-[9px] font-mono text-blue-500 mt-1 truncate max-w-[400px]">{t.mongoUri}</p>
                             </div>
                         </div>
-                        <button onClick={() => openEditModal(t)} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-black">
-                          <Edit size={14} /> Edit Node
-                        </button>
+                        <div className="flex gap-2">
+                          <button onClick={() => openEditModal(t)} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-black transition-all">
+                            <Edit size={14} /> Edit Node
+                          </button>
+                          <button onClick={() => handleDeleteTenant(t.id)} className="p-3 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                     </div>
                 ))}
+                {tenants.length === 0 && !loading && (
+                    <div className="py-32 text-center opacity-20 uppercase font-black text-xs tracking-[0.5em] flex flex-col items-center gap-6">
+                        <Database size={60} strokeWidth={1} />
+                        No Clusters Active
+                    </div>
+                )}
             </div>
         )}
 

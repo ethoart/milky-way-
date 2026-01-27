@@ -6,6 +6,7 @@ import { Plus, Trash2, UserPlus, Shield, Mail, Key, ShieldCheck, CheckCircle2, U
 
 interface TeamProps {
   tenantId: string;
+  shopName: string;
 }
 
 const AVAILABLE_PERMISSIONS = [
@@ -20,7 +21,7 @@ const AVAILABLE_PERMISSIONS = [
     { id: 'returns', label: 'Milky Way Scan' }
 ];
 
-export const Team: React.FC<TeamProps> = ({ tenantId }) => {
+export const Team: React.FC<TeamProps> = ({ tenantId, shopName }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [newUsername, setNewUsername] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -67,7 +68,7 @@ export const Team: React.FC<TeamProps> = ({ tenantId }) => {
                 <Users size={32} />
             </div>
             <div>
-                <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">Team Cluster</h2>
+                <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">{shopName} Team</h2>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Staff Access & Permissions Delegation</p>
             </div>
         </div>
@@ -125,66 +126,10 @@ export const Team: React.FC<TeamProps> = ({ tenantId }) => {
                         </div>
                     </div>
 
-                    {newRole === UserRole.ADMIN && (
-                        <div className="space-y-6 pt-6 border-t border-slate-50">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Section Permissions (Admin Role Only)</h4>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                {AVAILABLE_PERMISSIONS.map(perm => (
-                                    <button 
-                                        key={perm.id} 
-                                        onClick={() => togglePermission(perm.id)}
-                                        className={`flex items-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all border ${newPermissions.includes(perm.id) ? 'bg-blue-600 text-white border-blue-600 shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'}`}
-                                    >
-                                        {newPermissions.includes(perm.id) ? <CheckCircle2 size={14}/> : <ShieldCheck size={14} className="opacity-20"/>}
-                                        {perm.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
                     <button onClick={handleAdd} disabled={isSaving} className="w-full bg-black text-white py-5 rounded-[2rem] font-black uppercase text-[11px] tracking-widest shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
                         {isSaving ? 'Synchronizing Node...' : 'Inject Team Member'}
                     </button>
                 </div>
-            </div>
-
-            <div className="lg:col-span-4 space-y-4">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-4">Active Staff Grid</h3>
-                {users.map(u => (
-                    <div key={u.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col gap-4 group hover:shadow-xl transition-all">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${u.role === UserRole.SUPER_ADMIN ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                                    <Shield size={24} />
-                                </div>
-                                <div>
-                                    <p className="text-lg font-black text-slate-900 uppercase leading-none">{u.username}</p>
-                                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mt-1">{u.role.replace('_', ' ')}</p>
-                                </div>
-                            </div>
-                            {u.role !== UserRole.SUPER_ADMIN && (
-                                 <button onClick={() => handleRemove(u.id)} className="p-3 text-slate-300 hover:text-rose-600 bg-slate-50 rounded-xl transition-all opacity-0 group-hover:opacity-100">
-                                    <Trash2 size={18} />
-                                 </button>
-                            )}
-                        </div>
-                        {u.role === UserRole.ADMIN && (
-                            <div className="flex flex-wrap gap-1.5 pt-3 border-t border-slate-50">
-                                <span className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[8px] font-black uppercase">Selling (Default)</span>
-                                {u.permissions?.map(p => (
-                                    <span key={p} className="px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-[8px] font-black uppercase">{p.replace('_', ' ')}</span>
-                                ))}
-                                {(!u.permissions || u.permissions.length === 0) && (
-                                    <span className="text-[8px] font-bold text-slate-300 uppercase italic">Limited Access Only</span>
-                                )}
-                            </div>
-                        )}
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold px-2">
-                             <Mail size={12}/> {u.email}
-                        </div>
-                    </div>
-                ))}
             </div>
         </div>
     </div>

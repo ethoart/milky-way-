@@ -24,22 +24,21 @@ import {
 
 interface FinancialCenterProps {
   tenantId: string;
+  shopName: string;
 }
 
-export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) => {
+export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shopName }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Date Filtering
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    d.setDate(1); // Default to start of current month
+    d.setDate(1); 
     return d.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Editable Constants & Manual Expenses
   const [deliveryFee, setDeliveryFee] = useState(350);
   const [returnFee, setReturnFee] = useState(150);
   const [manualExpenses, setManualExpenses] = useState(0);
@@ -57,7 +56,6 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) =>
     load();
   }, [tenantId]);
 
-  // Derived Financial Data
   const financialData = useMemo(() => {
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -76,7 +74,6 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) =>
 
     const grossRevenue = deliveredOrders.reduce((s, o) => s + o.totalAmount, 0);
     
-    // COGS Calculation
     const totalCogs = deliveredOrders.reduce((sum, order) => {
       return sum + order.items.reduce((itemSum, item) => {
         const prod = products.find(p => p.id === item.productId);
@@ -121,10 +118,9 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) =>
 
   return (
     <div className="space-y-10 max-w-7xl mx-auto pb-20 animate-slide-in print:p-0">
-      {/* Header & Date Selector */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 print:hidden">
         <div>
-          <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">Milky Way P&L</h2>
+          <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">{shopName} P&L</h2>
           <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-2">Financial Oracle Terminal</p>
         </div>
         
@@ -158,7 +154,6 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) =>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* Left: Configuration & Expenses */}
         <div className="lg:col-span-4 space-y-6 print:hidden">
           <div className="modern-card p-6 bg-slate-900 text-white border-none shadow-2xl">
             <h3 className="text-[11px] font-black uppercase tracking-widest mb-6 flex items-center gap-2 text-indigo-400">
@@ -231,7 +226,6 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) =>
           </div>
         </div>
 
-        {/* Right: The P&L Breakdown */}
         <div className="lg:col-span-8 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 print:grid-cols-2">
             <div className="modern-card p-8 bg-emerald-50 border-emerald-100 flex flex-col justify-between">
@@ -256,7 +250,6 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) =>
             </div>
           </div>
 
-          {/* Statement Table */}
           <div className="modern-card overflow-hidden bg-white shadow-sm border border-slate-100">
             <div className="p-6 border-b border-slate-50 flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
@@ -306,7 +299,6 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) =>
             </div>
           </div>
 
-          {/* Profit Split Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="modern-card p-6 border-l-4 border-l-indigo-600 bg-white">
                 <div className="flex items-center gap-3 mb-4">
@@ -337,11 +329,10 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) =>
         </div>
       </div>
 
-      {/* Print Specific Layout */}
       <div className="hidden print:block fixed inset-0 bg-white p-12 z-[9999]">
         <div className="flex justify-between items-start mb-12 border-b-2 border-slate-900 pb-8">
             <div>
-                <h1 className="text-4xl font-black uppercase tracking-tighter">Milky Way OMS</h1>
+                <h1 className="text-4xl font-black uppercase tracking-tighter">{shopName}</h1>
                 <p className="text-xs font-bold uppercase text-slate-500 tracking-widest">Certified Financial Statement</p>
             </div>
             <div className="text-right">
@@ -399,7 +390,7 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId }) =>
                 <div className="w-48 h-px bg-slate-300"></div>
                 <p className="text-[10px] font-black uppercase">Finance Manager Signature</p>
             </div>
-            <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">Milky Way Internal Auditor | Generated {new Date().toLocaleString()}</p>
+            <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">{shopName} Internal Auditor | Generated {new Date().toLocaleString()}</p>
         </div>
       </div>
     </div>

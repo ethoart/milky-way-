@@ -7,10 +7,11 @@ import { ShoppingBag, CheckCircle, Clock, XCircle, Pause, PhoneOff, ListFilter, 
 
 interface SellingPipelineProps {
   tenantId: string;
+  shopName: string;
   onSelectOrder: (id: string) => void;
 }
 
-export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSelectOrder }) => {
+export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, shopName, onSelectOrder }) => {
   const [activeFilter, setActiveFilter] = useState<OrderStatus | 'ALL'>('ALL');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -47,7 +48,6 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSe
     }
   };
 
-  // Calculate counts per status based on current product filter
   const counts = useMemo(() => {
     const stats = {
       ALL: 0,
@@ -60,7 +60,6 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSe
     };
     
     orders.forEach(o => {
-        // Only count if it matches the selected product
         if (selectedProductId !== 'ALL' && !o.items.some(i => i.productId === selectedProductId)) return;
         
         const s = o.status as keyof typeof stats;
@@ -90,7 +89,7 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSe
                 <ShoppingBag size={24} />
             </div>
             <div>
-                <h2 className="text-3xl font-black text-black tracking-tighter uppercase leading-none">Milky Way Selling</h2>
+                <h2 className="text-3xl font-black text-black tracking-tighter uppercase leading-none">{shopName} Selling</h2>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Active Conversion Pipeline</p>
             </div>
         </div>

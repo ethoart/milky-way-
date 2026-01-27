@@ -110,6 +110,7 @@ export interface Order {
   totalAmount: number;
   status: OrderStatus;
   createdAt: string;
+  confirmedAt?: string;
   shippedAt?: string; 
   trackingNumber?: string;
   courierStatus?: string;

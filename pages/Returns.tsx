@@ -7,9 +7,10 @@ import { Html5QrcodeScanner } from 'html5-qrcode';
 
 interface ReturnsProps {
   tenantId: string;
+  shopName: string;
 }
 
-export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
+export const Returns: React.FC<ReturnsProps> = ({ tenantId, shopName }) => {
   const [scanMode, setScanMode] = useState<'HARDWARE' | 'CAMERA' | 'MANUAL'>('HARDWARE');
   const [scanInput, setScanInput] = useState('');
   const [processedOrder, setProcessedOrder] = useState<Order | null>(null);
@@ -19,7 +20,6 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
-  // Auto-focus lock for Hardware Scanners (Laser/Beam)
   useEffect(() => {
     if (scanMode === 'HARDWARE') {
         const interval = setInterval(() => {
@@ -65,7 +65,6 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
       if (result) { 
           setProcessedOrder(result); 
           setScanInput(''); 
-          // Audible feedback could be added here
       } else { 
           setError(`Node ID "${cleanCode}" not found in this cluster.`); 
           setScanInput('');
@@ -85,11 +84,10 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
             <Scan size={40} className="text-white" />
         </div>
         <div>
-            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Milky Way OMS</h2>
+            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">{shopName} OMS</h2>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mt-2">Enterprise Scan Terminal</p>
         </div>
         
-        {/* Terminal Mode Selector */}
         <div className="flex flex-wrap justify-center gap-3 mt-10">
             <button 
                 onClick={() => setScanMode('HARDWARE')} 
@@ -156,7 +154,6 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
             </div>
         )}
 
-        {/* Status Feedback Display */}
         <div className="mt-10 min-h-[140px]">
             {processedOrder && (
                 <div className="bg-emerald-50 border-2 border-emerald-100 p-8 rounded-[2.5rem] flex items-center gap-6 text-emerald-700 animate-slide-in shadow-xl shadow-emerald-500/10">
@@ -188,7 +185,7 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId }) => {
             {!processedOrder && !error && (
                 <div className="h-full flex flex-col items-center justify-center text-slate-200 py-8 opacity-40">
                     <Zap size={56} className="mb-4" />
-                    <p className="text-[11px] font-black uppercase tracking-[0.5em]">System Idle • Handshake Ready</p>
+                    <p className="text-[11px] font-black uppercase tracking-[0.5em]">{shopName} Scan Terminal Idle</p>
                 </div>
             )}
         </div>

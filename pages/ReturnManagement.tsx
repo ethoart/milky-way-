@@ -7,10 +7,11 @@ import { RotateCcw, Scan, RotateCw, History, CheckCircle, ListFilter, ClipboardC
 
 interface ReturnManagementProps {
   tenantId: string;
+  shopName: string;
   onSelectOrder: (id: string) => void;
 }
 
-export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, onSelectOrder }) => {
+export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, shopName, onSelectOrder }) => {
   const [activeFilter, setActiveFilter] = useState<OrderStatus | 'ALL'>('ALL');
   const [scanInput, setScanInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -85,7 +86,7 @@ export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, on
             <RotateCcw size={28} />
           </div>
           <div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none">Milky Way Returns Hub</h2>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none">{shopName} Returns Hub</h2>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Logistics Reversal & Restock Controller</p>
           </div>
         </div>

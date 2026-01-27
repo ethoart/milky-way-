@@ -15,15 +15,15 @@ import {
 
 interface DashboardProps {
   tenantId: string;
+  shopName: string;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [team, setTeam] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Helper to get local YYYY-MM-DD string
   const getLocalIsoDate = (date: Date = new Date()) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -61,7 +61,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
     let start = new Date();
     
     if (type === 'TODAY') {
-      // stays as now
     } else if (type === 'WEEK') {
       start.setDate(now.getDate() - 7);
     } else if (type === 'MONTH') {
@@ -78,7 +77,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
     const sDateStr = startDate;
     const eDateStr = endDate;
 
-    // Initialize metrics
     let deliveredCount = 0;
     let returnedCount = 0;
     let restockedCount = 0;
@@ -92,7 +90,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
     const shippedProductTally: { [key: string]: { name: string; sku: string; count: number } } = {};
     const confirmedProductTally: { [key: string]: { name: string; sku: string; count: number } } = {};
 
-    // For Pulse Charts (Last 14 days)
     const dailyMap: { [key: string]: { date: string; shipped: number; sales: number } } = {};
     for (let i = 13; i >= 0; i--) {
         const d = new Date();
@@ -104,26 +101,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
     orders.forEach(o => {
         const createDate = o.createdAt.split('T')[0];
         const shipDate = o.shippedAt ? o.shippedAt.split('T')[0] : null;
+        const confirmDate = o.confirmedAt ? o.confirmedAt.split('T')[0] : null;
         
         const isInRange = createDate >= sDateStr && createDate <= eDateStr;
         const isShipInRange = shipDate && shipDate >= sDateStr && shipDate <= eDateStr;
+        
+        // Confirmation range logic: use confirmedAt if available, otherwise fallback to createdAt IF currently confirmed
+        const isConfirmInRange = confirmDate 
+          ? (confirmDate >= sDateStr && confirmDate <= eDateStr)
+          : ([OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.DELIVERY, OrderStatus.DELIVERED].includes(o.status) && isInRange);
 
-        // 1. INBOUND METRICS (Based on createdAt)
+        if (isConfirmInRange) {
+            confirmedCount++;
+            
+            o.items.forEach(item => {
+              if (!confirmedProductTally[item.productId]) {
+                  const p = products.find(prod => prod.id === item.productId);
+                  confirmedProductTally[item.productId] = { name: item.name, sku: p?.sku || 'N/A', count: 0 };
+              }
+              confirmedProductTally[item.productId].count += item.quantity;
+            });
+        }
+
         if (isInRange) {
-            // Confirm count includes anything that moved past initial leads
-            if ([OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.DELIVERY, OrderStatus.DELIVERED].includes(o.status)) {
-                confirmedCount++;
-                
-                // Track confirmed product manifest
-                o.items.forEach(item => {
-                  if (!confirmedProductTally[item.productId]) {
-                      const p = products.find(prod => prod.id === item.productId);
-                      confirmedProductTally[item.productId] = { name: item.name, sku: p?.sku || 'N/A', count: 0 };
-                  }
-                  confirmedProductTally[item.productId].count += item.quantity;
-                });
-            }
-
             if ([OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER].includes(o.status)) {
                 returnedCount++;
             }
@@ -131,11 +131,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
                 restockedCount++;
             }
 
-            // Team efficiency stats based on range
             const u = o.openedBy || 'System';
             if (!teamStats[u]) teamStats[u] = { name: u, confirmed: 0, rejected: 0, opened: 0, hold: 0, noAnswer: 0, residual: 0 };
             
-            if ([OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.DELIVERY, OrderStatus.DELIVERED].includes(o.status)) teamStats[u].confirmed++;
+            // Re-evaluate team confirmation based on confirmation window
+            if (isConfirmInRange) teamStats[u].confirmed++;
+            
             if ([OrderStatus.REJECTED, OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER, OrderStatus.RETURN_COMPLETED].includes(o.status)) teamStats[u].rejected++;
             if (o.status === OrderStatus.OPEN_LEAD) teamStats[u].opened++;
             if (o.status === OrderStatus.HOLD) teamStats[u].hold++;
@@ -143,8 +144,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
             if (o.status === OrderStatus.RESIDUAL || o.status === OrderStatus.REARRANGE) teamStats[u].residual++;
         }
 
-        // 2. LOGISTICS METRICS (Based on shippedAt)
-        // This is where "Today Shipped" logic is replicated
         if (isShipInRange) {
             shippedCount++;
             
@@ -153,7 +152,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
               totalRevenue += o.totalAmount;
             }
 
-            // Track dispatched product manifest
             o.items.forEach(item => {
                 if (!shippedProductTally[item.productId]) {
                     const p = products.find(prod => prod.id === item.productId);
@@ -162,13 +160,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
                 shippedProductTally[item.productId].count += item.quantity;
             });
 
-            // Sales Velocity Trend (Daily Charts) - using ship date for settlements in charts
             if (o.status === OrderStatus.DELIVERED && shipDate && dailyMap[shipDate]) {
                 dailyMap[shipDate].sales += o.totalAmount;
             }
         }
 
-        // Historical Trend Overlay (Always 14 days)
         if (shipDate && dailyMap[shipDate]) {
             dailyMap[shipDate].shipped++;
         }
@@ -212,7 +208,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
         </div>
       </div>
 
-      {/* Primary Metrics Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <BigStat label="Confirmed" value={dashboardData.stats.confirmedCount} color="bg-blue-50 text-blue-600" icon={<CheckCircle/>} />
           <BigStat label="Shipped" value={dashboardData.stats.shippedCount} color="bg-indigo-50 text-indigo-600" icon={<Truck/>} />
@@ -265,7 +260,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
           </div>
       </div>
 
-      {/* Manifest Row: Dispatched vs Confirmed */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
               <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-indigo-50/10">
@@ -318,7 +312,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
           </div>
       </div>
 
-      {/* Team Performance */}
       <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
           <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/10">
               <h3 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2">

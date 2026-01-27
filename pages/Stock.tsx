@@ -21,21 +21,18 @@ import { formatCurrency } from '../utils/helpers';
 
 interface StockProps {
   tenantId: string;
+  shopName: string;
 }
 
-export const Stock: React.FC<StockProps> = ({ tenantId }) => {
+export const Stock: React.FC<StockProps> = ({ tenantId, shopName }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   
-  // Master Product Form
   const [newProd, setNewProd] = useState({ name: '', sku: '', price: 0 });
   
-  // Batch Form State (per product)
   const [batchForms, setBatchForms] = useState<{[key: string]: { quantity: number, buyingPrice: number }}>({});
 
-  // Fix: Removed redundant legacy data transformation that was incorrectly accessing 'buyingPrice' on the Product type.
-  // The 'db.getProducts' service already handles this normalization.
   const load = async () => {
     setLoading(true);
     const data = await db.getProducts(tenantId);
@@ -86,15 +83,11 @@ export const Stock: React.FC<StockProps> = ({ tenantId }) => {
 
   const handleDeleteProduct = async (id: string) => {
     if (!confirm("CRITICAL PROTOCOL: Destroy this master product and all associated batches?")) return;
-    // Note: Backend might need a deleteProduct method, currently using updateProduct logic as proxy
-    // For this mock we just filter it out and reload
     const updatedProducts = products.filter(p => p.id !== id);
-    // In a real app we'd call db.deleteProduct(id)
     setProducts(updatedProducts);
   };
 
   const getProductStock = (p: Product) => (p.batches || []).reduce((sum, b) => sum + b.quantity, 0);
-  
   const getProductCostValue = (p: Product) => (p.batches || []).reduce((sum, b) => sum + (b.quantity * b.buyingPrice), 0);
 
   return (
@@ -105,7 +98,7 @@ export const Stock: React.FC<StockProps> = ({ tenantId }) => {
                   <Package size={28} />
               </div>
               <div>
-                <h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Inventory Grid</h2>
+                <h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">{shopName} Inventory</h2>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Multi-Batch FIFO Control Engine</p>
               </div>
           </div>
@@ -117,7 +110,6 @@ export const Stock: React.FC<StockProps> = ({ tenantId }) => {
           </div>
       </div>
 
-      {/* 1. Add Master Product */}
       <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
         <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
             <Plus size={16} className="text-blue-600" /> Register Master SKU
@@ -147,7 +139,6 @@ export const Stock: React.FC<StockProps> = ({ tenantId }) => {
         </button>
       </div>
 
-      {/* 2. Product Registry List */}
       <div className="space-y-4">
         {loading ? (
             <div className="p-20 text-center text-[10px] font-black uppercase tracking-[0.5em] text-slate-300">Syncing Inventory Nodes...</div>
@@ -193,7 +184,6 @@ export const Stock: React.FC<StockProps> = ({ tenantId }) => {
                     {isExpanded && (
                         <div className="px-8 pb-8 border-t border-slate-50 animate-slide-in">
                             <div className="pt-8 grid grid-cols-1 lg:grid-cols-12 gap-10">
-                                {/* Batch History (FIFO Visualization) */}
                                 <div className="lg:col-span-7 space-y-4">
                                     <div className="flex items-center justify-between">
                                         <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -219,15 +209,9 @@ export const Stock: React.FC<StockProps> = ({ tenantId }) => {
                                                 </div>
                                             </div>
                                         ))}
-                                        {p.batches.length === 0 && (
-                                            <div className="p-10 text-center border-2 border-dashed border-slate-100 rounded-3xl opacity-30 text-[10px] font-black uppercase tracking-widest">
-                                                No stock batches in floating registry
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
 
-                                {/* Add New Batch Form */}
                                 <div className="lg:col-span-5 space-y-6 bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
                                     <h5 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
                                         <Plus size={14} className="text-blue-600" /> Inject New Batch
@@ -254,14 +238,6 @@ export const Stock: React.FC<StockProps> = ({ tenantId }) => {
                                             Commit Stock Batch
                                         </button>
                                     </div>
-                                    <div className="pt-4 border-t border-slate-200 flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-blue-600 shadow-sm border border-slate-100">
-                                            <Info size={14} />
-                                        </div>
-                                        <p className="text-[8px] font-bold text-slate-500 uppercase leading-relaxed">
-                                            New batches are added to the end of the registry. System automatically consumes the oldest batch first during order fulfillment.
-                                        </p>
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -269,12 +245,6 @@ export const Stock: React.FC<StockProps> = ({ tenantId }) => {
                 </div>
             );
         })}
-        {products.length === 0 && !loading && (
-            <div className="p-32 text-center opacity-20 flex flex-col items-center gap-6">
-                <Package size={80} strokeWidth={1} />
-                <p className="font-black uppercase tracking-[0.4em] text-xs">Infrastructure Offline: No SKU Registry Found</p>
-            </div>
-        )}
       </div>
     </div>
   );

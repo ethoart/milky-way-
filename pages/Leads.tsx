@@ -15,9 +15,10 @@ const SRI_LANKA_CITIES_FALLBACK = [
 
 interface LeadsProps {
   tenantId: string;
+  shopName: string;
 }
 
-export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
+export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [cities, setCities] = useState<string[]>([]);
@@ -45,7 +46,8 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
     db.getProducts(tenantId).then(setProducts);
     db.getTenant(tenantId).then(setTenant);
     db.getGlobalCities().then(c => {
-        const cityList = c.length > 0 ? c : SRI_LANKA_CITIES_FALLBACK;
+        // Deduplicate cities
+        const cityList = Array.from(new Set(c.length > 0 ? c : SRI_LANKA_CITIES_FALLBACK));
         setCities(cityList);
         setManualForm(prev => ({ ...prev, city: cityList.includes('Colombo') ? 'Colombo' : cityList[0] }));
     });
@@ -164,7 +166,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
           <div>
             <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">Inbound Terminal</h2>
             <div className="flex items-center gap-2 mt-2">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Milky Way Injection Engine</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{shopName} Injection Engine</span>
                 <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${isExistingMode ? 'bg-indigo-600 text-white' : 'bg-emerald-500 text-white'}`}>
                     {isExistingMode ? 'Mode: Existing Waybill' : 'Mode: Standard API'}
                 </span>

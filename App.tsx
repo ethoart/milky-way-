@@ -144,30 +144,30 @@ export default function App() {
 
   if (!user) return <LoginPage onLogin={handleLogin} branding={brandedTenant || undefined} />;
 
+  const defaultTitle = user.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way';
+  const displayShopName = tenant?.settings.shopName || brandedTenant?.settings.shopName || defaultTitle;
+
   const renderPage = () => {
     if (user.role === UserRole.DEV_ADMIN) return <DevAdmin />;
     if (currentPage === 'order_detail' && selectedOrderId) return <OrderDetail orderId={selectedOrderId} tenantId={user.tenantId!} onBack={() => {setSelectedOrderId(null); setCurrentPage('selling');}} />;
     switch(currentPage) {
-        case 'dashboard': return <Dashboard tenantId={user.tenantId!} />;
-        case 'leads': return <Leads tenantId={user.tenantId!} />;
-        case 'selling': return <SellingPipeline tenantId={user.tenantId!} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
-        case 'shipping': return <ShippingPipeline tenantId={user.tenantId!} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
-        case 'today_shipped': return <TodayShipped tenantId={user.tenantId!} />;
-        case 'return_mgmt': return <ReturnManagement tenantId={user.tenantId!} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
-        case 'residual_mgmt': return <ResidualManagement tenantId={user.tenantId!} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
-        case 'financials': return <FinancialCenter tenantId={user.tenantId!} />;
-        case 'inventory': return <Stock tenantId={user.tenantId!} />;
-        case 'returns': return <Returns tenantId={user.tenantId!} />;
-        case 'settings': return <Settings tenantId={user.tenantId!} />;
-        case 'team': return <Team tenantId={user.tenantId!} />;
+        case 'dashboard': return <Dashboard tenantId={user.tenantId!} shopName={displayShopName} />;
+        case 'leads': return <Leads tenantId={user.tenantId!} shopName={displayShopName} />;
+        case 'selling': return <SellingPipeline tenantId={user.tenantId!} shopName={displayShopName} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
+        case 'shipping': return <ShippingPipeline tenantId={user.tenantId!} shopName={displayShopName} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
+        case 'today_shipped': return <TodayShipped tenantId={user.tenantId!} shopName={displayShopName} />;
+        case 'return_mgmt': return <ReturnManagement tenantId={user.tenantId!} shopName={displayShopName} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
+        case 'residual_mgmt': return <ResidualManagement tenantId={user.tenantId!} shopName={displayShopName} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
+        case 'financials': return <FinancialCenter tenantId={user.tenantId!} shopName={displayShopName} />;
+        case 'inventory': return <Stock tenantId={user.tenantId!} shopName={displayShopName} />;
+        case 'returns': return <Returns tenantId={user.tenantId!} shopName={displayShopName} />;
+        case 'settings': return <Settings tenantId={user.tenantId!} shopName={displayShopName} />;
+        case 'team': return <Team tenantId={user.tenantId!} shopName={displayShopName} />;
         case 'dev_dashboard': return <DevAdmin />;
         case 'dev_tenants': return <DevAdmin />;
-        default: return <Dashboard tenantId={user.tenantId!} />;
+        default: return <Dashboard tenantId={user.tenantId!} shopName={displayShopName} />;
     }
   };
-
-  const defaultTitle = user.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way';
-  const displayShopName = tenant?.settings.shopName || brandedTenant?.settings.shopName || defaultTitle;
 
   return (
     <div className="flex h-screen bg-[#f1f5f9] text-slate-900 overflow-hidden">

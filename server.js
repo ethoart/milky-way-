@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import { MongoClient, ServerApiVersion } from 'mongodb';
@@ -80,6 +81,28 @@ app.post('/api/tenants', async (req, res) => {
         await db.collection('users').updateOne({ tenantId: tenant.id, role: 'SUPER_ADMIN' }, { $set: adminUser }, { upsert: true });
     }
     res.json({ success: true });
+});
+
+app.put('/api/tenants', async (req, res) => {
+    const db = await connectDb();
+    const { tenant, adminUser } = req.body;
+    await db.collection('tenants').updateOne({ id: tenant.id }, { $set: tenant }, { upsert: true });
+    if (adminUser) {
+        await db.collection('users').updateOne({ tenantId: tenant.id, role: 'SUPER_ADMIN' }, { $set: adminUser }, { upsert: true });
+    }
+    res.json({ success: true });
+});
+
+app.delete('/api/tenants', async (req, res) => {
+    const db = await connectDb();
+    const { id } = req.query;
+    if (id) {
+        await db.collection('tenants').deleteOne({ id });
+        await db.collection('users').deleteMany({ tenantId: id });
+        res.json({ success: true });
+    } else {
+        res.status(400).json({ error: 'Missing tenant ID' });
+    }
 });
 
 app.get('/api/orders', async (req, res) => {

@@ -126,6 +126,10 @@ class BackendService {
     await this.request('/tenants', 'POST', { tenant, adminUser });
   }
 
+  async deleteTenant(tenantId: string): Promise<void> {
+    await this.request('/tenants', 'DELETE', null, { id: tenantId });
+  }
+
   async getGlobalCities(): Promise<string[]> {
     try {
       const data = await this.request('/cities', 'GET');
