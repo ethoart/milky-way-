@@ -11,6 +11,8 @@ import { Team } from './pages/Team';
 import { Leads } from './pages/Leads';
 import { SellingPipeline } from './pages/SellingPipeline';
 import { ShippingPipeline } from './pages/ShippingPipeline';
+import { ReturnManagement } from './pages/ReturnManagement';
+import { ResidualManagement } from './pages/ResidualManagement';
 import { FinancialCenter } from './pages/FinancialCenter';
 import { TodayShipped } from './pages/TodayShipped';
 import { User, UserRole, Tenant } from './types';
@@ -122,7 +124,6 @@ export default function App() {
     }
   }, [initBranding]);
 
-  // Synchronize document title with shop name
   useEffect(() => {
     const defaultTitle = user?.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way OMS';
     const displayShopName = tenant?.settings.shopName || brandedTenant?.settings.shopName || defaultTitle;
@@ -152,6 +153,8 @@ export default function App() {
         case 'selling': return <SellingPipeline tenantId={user.tenantId!} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
         case 'shipping': return <ShippingPipeline tenantId={user.tenantId!} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
         case 'today_shipped': return <TodayShipped tenantId={user.tenantId!} />;
+        case 'return_mgmt': return <ReturnManagement tenantId={user.tenantId!} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
+        case 'residual_mgmt': return <ResidualManagement tenantId={user.tenantId!} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
         case 'financials': return <FinancialCenter tenantId={user.tenantId!} />;
         case 'inventory': return <Stock tenantId={user.tenantId!} />;
         case 'returns': return <Returns tenantId={user.tenantId!} />;

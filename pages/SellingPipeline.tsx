@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/mockBackend';
 import { OrderList } from './OrderList';
-import { OrderStatus, Product } from '../types';
-import { ShoppingBag, CheckCircle, Clock, XCircle, Pause, PhoneOff, ListFilter, Calendar, Star } from 'lucide-react';
+import { Order, OrderStatus, Product } from '../types';
+import { ShoppingBag, CheckCircle, Clock, XCircle, Pause, PhoneOff, ListFilter, Calendar, Box, ChevronDown } from 'lucide-react';
 
 interface SellingPipelineProps {
   tenantId: string;
@@ -14,11 +14,15 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSe
   const [activeFilter, setActiveFilter] = useState<OrderStatus | 'ALL'>('ALL');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string>('ALL');
   const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  useEffect(() => { db.getProducts(tenantId).then(setProducts); }, [tenantId]);
+  useEffect(() => { 
+    db.getProducts(tenantId).then(setProducts); 
+    db.getOrders(tenantId).then(setOrders);
+  }, [tenantId, refreshKey]);
 
   const handleBulkShip = async (ids: string[]) => {
     if (!confirm(`Execute Bulk Dispatch for ${ids.length} orders?`)) return;
@@ -43,14 +47,39 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSe
     }
   };
 
+  // Calculate counts per status based on current product filter
+  const counts = useMemo(() => {
+    const stats = {
+      ALL: 0,
+      PENDING: 0,
+      OPEN_LEAD: 0,
+      CONFIRMED: 0,
+      HOLD: 0,
+      NO_ANSWER: 0,
+      REJECTED: 0
+    };
+    
+    orders.forEach(o => {
+        // Only count if it matches the selected product
+        if (selectedProductId !== 'ALL' && !o.items.some(i => i.productId === selectedProductId)) return;
+        
+        const s = o.status as keyof typeof stats;
+        if (stats[s] !== undefined) {
+            stats[s]++;
+            stats.ALL++;
+        }
+    });
+    return stats;
+  }, [orders, selectedProductId]);
+
   const filters = [
-    { label: 'ALL LEADS', status: 'ALL', icon: <ListFilter size={14} /> },
-    { label: 'PENDING', status: OrderStatus.PENDING, icon: <Clock size={14} /> },
-    { label: 'OPEN LEAD', status: OrderStatus.OPEN_LEAD, icon: <ShoppingBag size={14} /> },
-    { label: 'CONFIRMED', status: OrderStatus.CONFIRMED, icon: <CheckCircle size={14} /> },
-    { label: 'HOLD', status: OrderStatus.HOLD, icon: <Pause size={14} /> },
-    { label: 'NO ANSWER', status: OrderStatus.NO_ANSWER, icon: <PhoneOff size={14} /> },
-    { label: 'REJECTED', status: OrderStatus.REJECTED, icon: <XCircle size={14} /> },
+    { label: 'ALL LEADS', status: 'ALL', icon: <ListFilter size={14} />, count: counts.ALL },
+    { label: 'PENDING', status: OrderStatus.PENDING, icon: <Clock size={14} />, count: counts.PENDING },
+    { label: 'OPEN LEAD', status: OrderStatus.OPEN_LEAD, icon: <ShoppingBag size={14} />, count: counts.OPEN_LEAD },
+    { label: 'CONFIRMED', status: OrderStatus.CONFIRMED, icon: <CheckCircle size={14} />, count: counts.CONFIRMED },
+    { label: 'HOLD', status: OrderStatus.HOLD, icon: <Pause size={14} />, count: counts.HOLD },
+    { label: 'NO ANSWER', status: OrderStatus.NO_ANSWER, icon: <PhoneOff size={14} />, count: counts.NO_ANSWER },
+    { label: 'REJECTED', status: OrderStatus.REJECTED, icon: <XCircle size={14} />, count: counts.REJECTED },
   ];
 
   return (
@@ -61,17 +90,33 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSe
                 <ShoppingBag size={24} />
             </div>
             <div>
-                <h2 className="text-3xl font-black text-black tracking-tighter uppercase leading-none">Selling Terminal</h2>
+                <h2 className="text-3xl font-black text-black tracking-tighter uppercase leading-none">Milky Way Selling</h2>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Active Conversion Pipeline</p>
             </div>
         </div>
-        <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
-          <Calendar size={14} className="text-blue-600" />
-          <div className="flex items-center gap-2">
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="text-[10px] font-bold text-slate-900 outline-none uppercase bg-transparent" />
-            <span className="text-slate-300 text-[10px] font-black">TO</span>
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="text-[10px] font-bold text-slate-900 outline-none uppercase bg-transparent" />
-          </div>
+        
+        <div className="flex items-center gap-3 flex-wrap">
+            <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3 relative">
+                <Box size={14} className="text-blue-600" />
+                <select 
+                    value={selectedProductId}
+                    onChange={(e) => setSelectedProductId(e.target.value)}
+                    className="text-[10px] font-black text-slate-900 outline-none uppercase bg-transparent appearance-none pr-6 cursor-pointer"
+                >
+                    <option value="ALL">ALL PRODUCTS</option>
+                    {products.map(p => <option key={p.id} value={p.id}>{p.sku} - {p.name}</option>)}
+                </select>
+                <ChevronDown size={12} className="absolute right-4 text-slate-400 pointer-events-none" />
+            </div>
+
+            <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+                <Calendar size={14} className="text-blue-600" />
+                <div className="flex items-center gap-2">
+                    <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="text-[11px] font-bold text-slate-900 outline-none uppercase bg-transparent" />
+                    <span className="text-slate-300 text-[10px] font-black">TO</span>
+                    <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="text-[11px] font-bold text-slate-900 outline-none uppercase bg-transparent" />
+                </div>
+            </div>
         </div>
       </div>
 
@@ -80,20 +125,24 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, onSe
           <button
             key={f.status}
             onClick={() => setActiveFilter(f.status as any)}
-            className={`flex items-center gap-2 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${getFilterColor(f.status)}`}
+            className={`flex items-center gap-2 px-5 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${getFilterColor(f.status)}`}
           >
-            {f.icon} {f.label}
+            {f.icon} 
+            {f.label}
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-[9px] ${activeFilter === f.status ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                {f.count}
+            </span>
           </button>
         ))}
       </div>
 
       <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm min-h-[600px] overflow-hidden">
         <OrderList 
-          key={`${refreshKey}-${activeFilter}`}
+          key={`${refreshKey}-${activeFilter}-${selectedProductId}`}
           tenantId={tenantId} 
           onSelectOrder={onSelectOrder} 
           defaultFilter={activeFilter as any}
-          productId={selectedProductId}
+          productId={selectedProductId === 'ALL' ? null : selectedProductId}
           startDate={fromDate}
           endDate={toDate}
           onBulkAction={handleBulkShip}

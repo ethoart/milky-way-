@@ -1,5 +1,5 @@
 
-import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings, StockBatch } from '../types';
+import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, TenantSettings, StockBatch, CourierMode } from '../types';
 
 const API_BASE = '/api';
 
@@ -115,6 +115,7 @@ class BackendService {
         courierApiKey: '',
         courierApiUrl: 'https://www.fdedomestic.com/api/parcel/new_api_v1.php',
         courierClientId: '',
+        courierMode: CourierMode.STANDARD,
         showBillQr: true
       }
     };
@@ -129,18 +130,28 @@ class BackendService {
     const tenant = await this.getTenant(tenantId);
     if (!tenant) throw new Error("Sync Error: Cluster unavailable.");
 
-    let waybillId = "";
-    
-    // Fardar Express Domestic API Implementation
+    let waybillId = order.trackingNumber || "";
+    const isExisting = tenant.settings.courierMode === CourierMode.EXISTING_WAYBILL;
+    const apiUrl = isExisting 
+      ? "https://www.fdedomestic.com/api/parcel/existing_waybill_api_v1.php" 
+      : tenant.settings.courierApiUrl;
+
     if (tenant.settings.courierApiKey && tenant.settings.courierClientId) {
+        if (isExisting && !waybillId) {
+            throw new Error("Waybill ID is mandatory for Existing Waybill mode.");
+        }
+
         const formData = new URLSearchParams();
-        
-        // Data Normalization for Fardar strict validation
         const numericOrderId = order.id.replace(/\D/g, ''); 
         const numericPhone = order.customerPhone.replace(/\D/g, ''); 
 
         formData.append('api_key', tenant.settings.courierApiKey);
         formData.append('client_id', tenant.settings.courierClientId);
+        
+        if (isExisting) {
+            formData.append('waybill_id', waybillId);
+        }
+
         formData.append('order_id', numericOrderId); 
         formData.append('parcel_weight', order.parcelWeight || '1');
         formData.append('parcel_description', (order.parcelDescription || (order.items[0]?.name || 'Sample Item')).slice(0, 50));
@@ -153,7 +164,7 @@ class BackendService {
         formData.append('exchange', '0'); 
 
         try {
-            const response = await fetch(tenant.settings.courierApiUrl, {
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: formData
@@ -161,17 +172,20 @@ class BackendService {
 
             const result = await response.json();
             
-            if (Number(result.status) === 200 && result.waybill_no) {
-                waybillId = result.waybill_no;
+            if (Number(result.status) === 200) {
+                if (!isExisting && result.waybill_no) {
+                    waybillId = result.waybill_no;
+                }
             } else {
                 const statusCodeMessages: {[key: number]: string} = {
-                    201: 'Inactive Client', 202: 'Invalid order id', 203: 'Invalid weight',
-                    204: 'Invalid parcel description', 205: 'Invalid name', 206: 'Contact number 1 is invalid',
-                    207: 'Contact number 2 is invalid', 208: 'Invalid address', 209: 'Invalid City',
-                    210: 'Unsuccessful insert', 211: 'Invalid API key', 212: 'Invalid or inactive client',
-                    213: 'Invalid exchange value', 214: 'System maintain mode'
+                    201: 'Incorrect Waybill Type', 202: 'Waybill already used', 203: 'Waybill not assigned',
+                    204: 'Inactive Client', 205: 'Invalid order id', 206: 'Invalid weight',
+                    207: 'Empty parcel description', 208: 'Empty recipient name', 209: 'Invalid contact 1',
+                    210: 'Invalid contact 2', 211: 'Empty address', 212: 'Invalid amount',
+                    213: 'Invalid city', 214: 'Insert unsuccessful', 215: 'Invalid client',
+                    216: 'Invalid API key', 217: 'Invalid exchange', 218: 'System Maintenance'
                 };
-                const msg = statusCodeMessages[Number(result.status)] || result.message || "Unknown Logistics Error";
+                const msg = statusCodeMessages[Number(result.status)] || result.message || "Logistics Handshake Error";
                 throw new Error(`[Fardar ${result.status}]: ${msg}`);
             }
         } catch (apiErr: any) {
@@ -209,7 +223,7 @@ class BackendService {
       shippedAt: new Date().toISOString(),
       logs: [...(order.logs || []), { 
         id: `l-${Date.now()}`, 
-        message: `Dispatched via Fardar Express. Waybill: ${waybillId}`, 
+        message: `Dispatched via Fardar (${isExisting ? 'Existing' : 'New'} WB). WB: ${waybillId}`, 
         timestamp: new Date().toISOString(), 
         user: 'System' 
       }]

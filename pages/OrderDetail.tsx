@@ -2,21 +2,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { db } from '../services/mockBackend';
-import { Order, OrderStatus, OrderLog, Product, Tenant } from '../types';
+import { Order, OrderStatus, OrderLog, Product, Tenant, CourierMode } from '../types';
 import { 
   ArrowLeft, Truck, Check, Clock, User as UserIcon, Save, 
-  Activity, AlertCircle, Pause, MapPin, Package, Trash2, Plus, Printer, RefreshCcw
+  Activity, AlertCircle, Pause, MapPin, Package, Trash2, Plus, Printer, RefreshCcw, MessageSquare, Zap
 } from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
-import { BillPrintView } from '../components/BillPrintView';
-
-const SRI_LANKA_CITIES = [
-  "Colombo", "Gampaha", "Kalutara", "Kandy", "Matale", "Nuwara Eliya", "Galle", "Matara", "Hambantota", 
-  "Jaffna", "Kilinochchi", "Mannar", "Vavuniya", "Mullaitivu", "Batticaloa", "Ampara", "Trincomalee", 
-  "Kurunegala", "Puttalam", "Anuradhapura", "Polonnaruwa", "Badulla", "Monaragala", "Ratnapura", "Kegalle",
-  "Dehiwala-Mount Lavinia", "Moratuwa", "Negombo", "Sri Jayawardenepura Kotte", "Kaduwela", "Kolonnawa", 
-  "Chilaw", "Wattala", "Welisara", "Ja-Ela", "Paliyagoda", "Gampola", "Nawalapitiya", "Haputale"
-].sort();
+import { LabelPrintView } from '../components/LabelPrintView';
 
 interface OrderDetailProps {
   orderId: string;
@@ -31,6 +23,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const [loading, setLoading] = useState(true);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [callNote, setCallNote] = useState('');
 
   const [localFormData, setLocalFormData] = useState({ 
     customerName: '', 
@@ -38,7 +31,8 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     customerAddress: '', 
     customerCity: '', 
     parcelWeight: '1', 
-    parcelDescription: ''
+    parcelDescription: '',
+    trackingNumber: ''
   });
   
   const [items, setItems] = useState<{ productId: string; quantity: number; price: number; name: string }[]>([]);
@@ -61,7 +55,8 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
         customerAddress: data.customerAddress || '', 
         customerCity: data.customerCity || '', 
         parcelWeight: data.parcelWeight || '1', 
-        parcelDescription: data.parcelDescription || '' 
+        parcelDescription: data.parcelDescription || '',
+        trackingNumber: data.trackingNumber || ''
       });
       setItems(data.items || []);
     }
@@ -80,12 +75,26 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     printContainer.className = 'print-only';
     document.body.appendChild(printContainer);
     const root = createRoot(printContainer);
-    root.render(<BillPrintView order={{...order, ...localFormData, items, totalAmount}} settings={tenant.settings} />);
+    root.render(<LabelPrintView orders={[{...order, ...localFormData, items, totalAmount}]} settings={tenant.settings} />);
     setTimeout(() => {
         window.print();
         root.unmount();
         document.body.removeChild(printContainer);
     }, 500);
+  };
+
+  const handleAddCallNote = async () => {
+    if (!order || !callNote.trim()) return;
+    const user = localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System';
+    const log: OrderLog = { 
+      id: `call-${Date.now()}`, 
+      message: `CALL NOTE: ${callNote}`, 
+      timestamp: new Date().toISOString(), 
+      user 
+    };
+    await db.updateOrder({ ...order, logs: [...(order.logs || []), log] });
+    setCallNote('');
+    loadData();
   };
 
   const updateStatus = async (newStatus: OrderStatus) => {
@@ -97,6 +106,9 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     }
 
     if (newStatus === OrderStatus.SHIPPED) {
+      if (tenant?.settings.courierMode === CourierMode.EXISTING_WAYBILL && !localFormData.trackingNumber) {
+          return alert("Existing Waybill ID is required to dispatch.");
+      }
       setShippingLoading(true);
       try { 
         await db.shipOrder({ ...order, ...localFormData, items, totalAmount }, tenantId);
@@ -108,7 +120,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
 
     const log: OrderLog = { 
       id: `l-${Date.now()}`, 
-      message: `Status: ${newStatus}`, 
+      message: `Status Changed to ${newStatus}`, 
       timestamp: new Date().toISOString(), 
       user: localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System'
     };
@@ -128,6 +140,8 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
           case OrderStatus.HOLD: return 'bg-purple-600 text-white shadow-lg';
           case OrderStatus.NO_ANSWER: return 'bg-yellow-500 text-white shadow-lg';
           case OrderStatus.REJECTED: return 'bg-rose-600 text-white shadow-lg';
+          case OrderStatus.RESIDUAL: return 'bg-slate-900 text-white shadow-lg';
+          case OrderStatus.REARRANGE: return 'bg-indigo-600 text-white shadow-lg';
           default: return 'bg-blue-600 text-white shadow-lg';
         }
     }
@@ -135,6 +149,8 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   };
 
   if (loading || !order) return <div className="p-20 text-center font-black uppercase text-slate-300 text-xs tracking-widest">Synchronizing Node...</div>;
+
+  const isExistingMode = tenant?.settings.courierMode === CourierMode.EXISTING_WAYBILL;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-slide-in no-print">
@@ -151,7 +167,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                     onClick={handlePrintBill}
                     className="bg-white border border-slate-200 text-slate-900 px-6 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-sm flex items-center gap-3 hover:bg-slate-50 transition-all active:scale-95"
                 >
-                    <Printer size={16} /> Print Bill
+                    <Printer size={16} /> Print 2x3 Bill
                 </button>
                 <button onClick={async () => {
                     setIsSaving(true);
@@ -168,8 +184,23 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
             <div className="lg:col-span-2 space-y-8">
                 <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={16}/> Command Protocol</h3>
+                    
+                    {isExistingMode && order.status === OrderStatus.CONFIRMED && (
+                        <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-[2rem] space-y-3">
+                            <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
+                                <Zap size={14} /> Assign Waybill for Existing Stock
+                            </p>
+                            <input 
+                                className="w-full bg-white border-2 border-indigo-200 rounded-xl px-4 py-3 font-mono font-bold text-slate-900 outline-none focus:border-indigo-600"
+                                value={localFormData.trackingNumber}
+                                onChange={e => setLocalFormData({...localFormData, trackingNumber: e.target.value})}
+                                placeholder="Scan or Enter Waybill ID..."
+                            />
+                        </div>
+                    )}
+
                     <div className="flex flex-wrap gap-2">
-                        {[OrderStatus.OPEN_LEAD, OrderStatus.HOLD, OrderStatus.NO_ANSWER, OrderStatus.REJECTED].map(s => (
+                        {[OrderStatus.OPEN_LEAD, OrderStatus.HOLD, OrderStatus.NO_ANSWER, OrderStatus.REJECTED, OrderStatus.RESIDUAL, OrderStatus.REARRANGE].map(s => (
                            <button key={s} onClick={() => updateStatus(s)} className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase transition-all ${getBtnColor(s)}`}>{s.replace('_', ' ')}</button>
                         ))}
                         <button onClick={() => updateStatus(OrderStatus.CONFIRMED)} className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase shadow-xl transition-all ${order.status === OrderStatus.CONFIRMED ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>Confirm Order</button>
@@ -202,17 +233,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                             placeholder="077..." 
                           />
                         </div>
-                        <div className="space-y-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">City Hub</label>
-                          <select 
-                            className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-black outline-none appearance-none" 
-                            value={localFormData.customerCity} 
-                            onChange={e => setLocalFormData({...localFormData, customerCity: e.target.value})}
-                          >
-                              <option value="">Select Hub...</option>
-                              {SRI_LANKA_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                        </div>
                         <div className="space-y-1 md:col-span-2">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Full Address</label>
                           <textarea 
@@ -224,66 +244,46 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                         </div>
                     </div>
                 </div>
-
-                <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Package size={16}/> Order Manifest</h3>
-                        <button onClick={() => setItems([...items, { productId: products[0]?.id, name: products[0]?.name, price: products[0]?.price, quantity: 1 }])} className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase"><Plus size={14} className="inline mr-1"/> Add Sku</button>
-                    </div>
-                    <div className="space-y-4">
-                        {items.map((item, idx) => (
-                            <div key={idx} className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 flex flex-col md:flex-row items-center gap-6">
-                                <select 
-                                    className="flex-1 w-full bg-white rounded-xl px-4 py-3 text-sm font-bold border border-slate-100" 
-                                    value={item.productId} 
-                                    onChange={(e) => {
-                                        const prod = products.find(p => p.id === e.target.value);
-                                        if (prod) {
-                                            const newItems = [...items];
-                                            newItems[idx] = { ...newItems[idx], productId: prod.id, name: prod.name, price: prod.price };
-                                            setItems(newItems);
-                                        }
-                                    }}
-                                >
-                                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
-                                <div className="flex items-center gap-3">
-                                  <input 
-                                    type="number" 
-                                    className="w-20 bg-white rounded-xl px-4 py-3 text-sm font-black text-center border border-slate-100" 
-                                    value={item.quantity} 
-                                    onChange={(e) => {
-                                        const newItems = [...items];
-                                        newItems[idx].quantity = parseInt(e.target.value) || 0;
-                                        setItems(newItems);
-                                    }} 
-                                  />
-                                  <input 
-                                    type="number" 
-                                    className="w-32 bg-white rounded-xl px-4 py-3 text-sm font-black border border-slate-100" 
-                                    value={item.price} 
-                                    onChange={(e) => {
-                                        const newItems = [...items];
-                                        newItems[idx].price = parseFloat(e.target.value) || 0;
-                                        setItems(newItems);
-                                    }} 
-                                  />
-                                  <button onClick={() => setItems(items.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={18} /></button>
-                                </div>
+                
+                {order.logs && order.logs.length > 0 && (
+                   <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
+                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Audit Trail</h3>
+                      <div className="space-y-4">
+                         {order.logs.slice().reverse().map(log => (
+                            <div key={log.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
+                               <div>
+                                  <p className="text-[11px] font-black text-slate-900 uppercase">{log.message}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">{log.user}</p>
+                               </div>
+                               <span className="text-[9px] font-mono text-slate-300">{new Date(log.timestamp).toLocaleString()}</span>
                             </div>
-                        ))}
-                    </div>
-                </div>
+                         ))}
+                      </div>
+                   </div>
+                )}
             </div>
 
             <div className="space-y-8">
+                 <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MessageSquare size={16}/> Call Notes</h3>
+                    <div className="space-y-4">
+                        <textarea 
+                            value={callNote}
+                            onChange={e => setCallNote(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-[13px] font-bold outline-none focus:ring-2 focus:ring-blue-500 h-24"
+                            placeholder="Add internal feedback..."
+                        />
+                        <button onClick={handleAddCallNote} className="w-full bg-blue-600 text-white py-3 rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-blue-700">Commit Note</button>
+                    </div>
+                 </div>
+
                  <div className="bg-slate-950 text-white p-10 rounded-[3rem] shadow-2xl">
                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Grand Total Payable</p>
                     <h2 className="text-4xl font-black tracking-tighter">{formatCurrency(totalAmount)}</h2>
-                    {order.trackingNumber && (
+                    {(order.trackingNumber || localFormData.trackingNumber) && (
                         <div className="mt-6 pt-6 border-t border-white/10">
                             <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Waybill Handshake</p>
-                            <p className="text-lg font-mono font-black">{order.trackingNumber}</p>
+                            <p className="text-lg font-mono font-black">{order.trackingNumber || localFormData.trackingNumber}</p>
                         </div>
                     )}
                  </div>

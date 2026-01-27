@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/mockBackend';
 import { User, UserRole } from '../types';
-// Fixed missing 'Users' import from lucide-react
 import { Plus, Trash2, UserPlus, Shield, Mail, Key, ShieldCheck, CheckCircle2, Users } from 'lucide-react';
 
 interface TeamProps {
@@ -14,6 +13,8 @@ const AVAILABLE_PERMISSIONS = [
     { id: 'leads', label: 'Inbound Leads' },
     { id: 'shipping', label: 'Logistics Access' },
     { id: 'today_shipped', label: 'Daily Logs' },
+    { id: 'return_mgmt', label: 'Returns Hub' },
+    { id: 'residual_mgmt', label: 'Residual Hub' },
     { id: 'financials', label: 'Financial Center' },
     { id: 'inventory', label: 'Inventory Control' },
     { id: 'returns', label: 'Milky Way Scan' }
@@ -72,7 +73,6 @@ export const Team: React.FC<TeamProps> = ({ tenantId }) => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-            {/* User Addition */}
             <div className="lg:col-span-8 space-y-8">
                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-10">
                     <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center gap-3">
@@ -140,7 +140,6 @@ export const Team: React.FC<TeamProps> = ({ tenantId }) => {
                                     </button>
                                 ))}
                             </div>
-                            <p className="text-[9px] font-bold text-slate-400 italic">Note: The "Selling" section is granted by default to all Admin roles.</p>
                         </div>
                     )}
 
@@ -150,7 +149,6 @@ export const Team: React.FC<TeamProps> = ({ tenantId }) => {
                 </div>
             </div>
 
-            {/* Account List */}
             <div className="lg:col-span-4 space-y-4">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-4">Active Staff Grid</h3>
                 {users.map(u => (

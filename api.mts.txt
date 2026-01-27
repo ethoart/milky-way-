@@ -33,7 +33,12 @@ const mapStatus = (courierStatus: string): string => {
     const s = courierStatus.toLowerCase();
     if (s.includes('delivered')) return 'DELIVERED';
     if (s.includes('returned')) return 'RETURNED';
+    if (s.includes('handover')) return 'RETURN_HANDOVER';
+    if (s.includes('transfer')) return 'RETURN_TRANSFER';
+    if (s.includes('system')) return 'RETURN_AS_ON_SYSTEM';
     if (s.includes('delivery')) return 'DELIVERY';
+    if (s.includes('residual')) return 'RESIDUAL';
+    if (s.includes('rearrange')) return 'REARRANGE';
     return 'SHIPPED'; 
 };
 
@@ -48,7 +53,6 @@ const handler: Handler = async (event, context) => {
 
   try {
     const centralDb = await getCentralDb();
-    const usersCol = centralDb.collection('users');
     const tenantsCol = centralDb.collection('tenants');
 
     if (path === '/courier-webhook' && method === 'POST') {
@@ -61,22 +65,27 @@ const handler: Handler = async (event, context) => {
 
         const allTenants = await tenantsCol.find({ isActive: true }).toArray();
         for (const tenant of allTenants) {
-            const tDb = await getTenantDb(tenant.id);
-            const ordersCol = tDb.collection('orders');
-            const order = await ordersCol.findOne({ trackingNumber: waybill_id });
+            try {
+              const tDb = await getTenantDb(tenant.id);
+              const ordersCol = tDb.collection('orders');
+              const order = await ordersCol.findOne({ trackingNumber: waybill_id });
 
-            if (order) {
-                await ordersCol.updateOne({ id: order.id }, { 
-                    $set: { status: mapStatus(delivery_status || ''), courierStatus: delivery_status },
-                    $push: { logs: { id: `log-cb-${Date.now()}`, message: `EXTERNAL: ${delivery_status}`, timestamp: new Date().toISOString(), user: 'Courier API' } }
-                });
-                return { statusCode: 200, headers: { "Access-Control-Allow-Origin": "*" }, body: 'Updated' };
+              if (order) {
+                  const internalStatus = mapStatus(delivery_status || '');
+                  await ordersCol.updateOne({ id: order.id }, { 
+                      $set: { status: internalStatus, courierStatus: delivery_status },
+                      $push: { logs: { id: `log-cb-${Date.now()}`, message: `WEBHOOK [${delivery_status}]: Synced to internal node.`, timestamp: new Date().toISOString(), user: 'Courier API' } }
+                  });
+                  return { statusCode: 200, headers: { "Access-Control-Allow-Origin": "*" }, body: 'Handshake Success' };
+              }
+            } catch (e) {
+              console.error(`Tenant ${tenant.id} sync failed during webhook traversal.`);
             }
         }
-        return { statusCode: 404, body: 'Waybill Not Found' };
+        return { statusCode: 404, body: 'Waybill Reference Missing' };
     }
 
-    if (path === '/health') return { statusCode: 200, body: 'OK' };
+    if (path === '/health') return { statusCode: 200, body: 'Milky Way API Online' };
 
     return { statusCode: 404, body: 'Not Found' };
   } catch (error: any) {

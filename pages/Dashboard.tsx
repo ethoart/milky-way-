@@ -6,7 +6,7 @@ import { formatCurrency } from '../utils/helpers';
 import { 
   RefreshCcw, DollarSign, Truck, CheckCircle, RotateCcw, 
   Archive, ListFilter, Users, Calendar, TrendingUp, BarChart3,
-  PhoneOff, Pause, ShoppingBag
+  PhoneOff, Pause, ShoppingBag, PhoneForwarded
 } from 'lucide-react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, 
@@ -23,7 +23,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
   const [team, setTeam] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Time-Window Filters
   const [preset, setPreset] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM'>('TODAY');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
@@ -70,37 +69,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
         return d >= sDate && d <= eDate;
     });
 
-    // Stats Grid
     const deliveredCount = filteredOrders.filter(o => o.status === OrderStatus.DELIVERED).length;
-    const returnedCount = filteredOrders.filter(o => o.status === OrderStatus.RETURNED).length;
+    const returnedCount = filteredOrders.filter(o => [OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER].includes(o.status)).length;
     const restockedCount = filteredOrders.filter(o => o.status === OrderStatus.RETURN_COMPLETED).length;
-    const confirmedCount = filteredOrders.filter(o => o.status === OrderStatus.CONFIRMED).length;
+    const confirmedCount = filteredOrders.filter(o => [OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.DELIVERY, OrderStatus.DELIVERED].includes(o.status)).length;
     const shippedCount = filteredOrders.filter(o => o.shippedAt && new Date(o.shippedAt) >= sDate && new Date(o.shippedAt) <= eDate).length;
     const totalRevenue = filteredOrders.filter(o => o.status === OrderStatus.DELIVERED).reduce((s, o) => s + o.totalAmount, 0);
 
-    // Team Efficiency (User-wise)
-    const teamStats: { [key: string]: { name: string; confirmed: number; rejected: number; opened: number; hold: number; noAnswer: number } } = {};
-    team.forEach(u => teamStats[u.username] = { name: u.username, confirmed: 0, rejected: 0, opened: 0, hold: 0, noAnswer: 0 });
+    const teamStats: { [key: string]: { name: string; confirmed: number; rejected: number; opened: number; hold: number; noAnswer: number; residual: number } } = {};
+    team.forEach(u => teamStats[u.username] = { name: u.username, confirmed: 0, rejected: 0, opened: 0, hold: 0, noAnswer: 0, residual: 0 });
     
     filteredOrders.forEach(o => {
         const u = o.openedBy || 'System';
-        if (!teamStats[u]) teamStats[u] = { name: u, confirmed: 0, rejected: 0, opened: 0, hold: 0, noAnswer: 0 };
+        if (!teamStats[u]) teamStats[u] = { name: u, confirmed: 0, rejected: 0, opened: 0, hold: 0, noAnswer: 0, residual: 0 };
         
-        // Logical aggregation for 'Confirmed': Anything that reached confirmed or beyond
         if ([OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.DELIVERY, OrderStatus.DELIVERED].includes(o.status)) {
             teamStats[u].confirmed++;
         }
         
-        if ([OrderStatus.REJECTED, OrderStatus.RETURNED, OrderStatus.RETURN_COMPLETED].includes(o.status)) {
+        if ([OrderStatus.REJECTED, OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER, OrderStatus.RETURN_COMPLETED].includes(o.status)) {
             teamStats[u].rejected++;
         }
         
         if (o.status === OrderStatus.OPEN_LEAD) teamStats[u].opened++;
         if (o.status === OrderStatus.HOLD) teamStats[u].hold++;
         if (o.status === OrderStatus.NO_ANSWER) teamStats[u].noAnswer++;
+        if (o.status === OrderStatus.RESIDUAL || o.status === OrderStatus.REARRANGE) teamStats[u].residual++;
     });
 
-    // Trends Data
     const dailyMap: { [key: string]: { date: string; shipped: number; sales: number } } = {};
     for (let i = 13; i >= 0; i--) {
         const d = new Date();
@@ -117,7 +113,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
         }
     });
 
-    // Product Tally
     const productTally: { [key: string]: { name: string; sku: string; shipCount: number } } = {};
     filteredOrders.forEach(o => {
         if (o.shippedAt) {
@@ -221,7 +216,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-6 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+          <div className="lg:col-span-5 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
               <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-blue-50/10">
                   <h3 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2">
                       <ListFilter size={16} className="text-blue-600" /> Dispatch Manifest
@@ -243,7 +238,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
               </div>
           </div>
 
-          <div className="lg:col-span-6 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+          <div className="lg:col-span-7 bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
               <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-indigo-50/10">
                   <h3 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2">
                       <Users size={16} className="text-indigo-600" /> Team Efficiency
@@ -257,8 +252,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
                           <th className="text-center"><span className="flex items-center justify-center gap-1"><ShoppingBag size={10}/> Leads</span></th>
                           <th className="text-center"><span className="flex items-center justify-center gap-1"><PhoneOff size={10}/> N/A</span></th>
                           <th className="text-center"><span className="flex items-center justify-center gap-1"><Archive size={10}/> Rej</span></th>
-                          <th className="text-center"><span className="flex items-center justify-center gap-1"><Pause size={10}/> Hold</span></th>
-                          <th className="text-center"><span className="flex items-center justify-center gap-1"><CheckCircle size={10}/> Conf</span></th>
+                          <th className="text-center"><span className="flex items-center justify-center gap-1"><PhoneForwarded size={10}/> Residuals</span></th>
+                          <th className="text-center"><span className="flex items-center justify-center gap-1"><CheckCircle size={10}/> Confirmed</span></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
@@ -273,7 +268,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId }) => {
                                   <td className="text-center font-bold text-slate-600">{u.opened}</td>
                                   <td className="text-center font-bold text-slate-500">{u.noAnswer}</td>
                                   <td className="text-center font-bold text-rose-500">{u.rejected}</td>
-                                  <td className="text-center font-bold text-amber-500">{u.hold}</td>
+                                  <td className="text-center font-bold text-amber-500">{u.residual}</td>
                                   <td className="text-center font-bold text-emerald-600">{u.confirmed}</td>
                               </tr>
                           ))}

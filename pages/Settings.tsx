@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/mockBackend';
-import { Tenant, TenantSettings } from '../types';
-import { Save, Store, MapPin, Phone, Key, ShieldCheck, Truck, Link, Copy, CheckCircle2, QrCode } from 'lucide-react';
+import { Tenant, TenantSettings, CourierMode } from '../types';
+import { Save, Store, MapPin, Phone, Key, ShieldCheck, Truck, Link, Copy, CheckCircle2, QrCode, Zap } from 'lucide-react';
 
 interface SettingsProps {
   tenantId: string;
@@ -11,7 +11,14 @@ interface SettingsProps {
 export const Settings: React.FC<SettingsProps> = ({ tenantId }) => {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [settings, setSettings] = useState<TenantSettings>({
-      shopName: '', shopAddress: '', shopPhone: '', courierApiKey: '', courierApiUrl: '', courierClientId: '', showBillQr: true
+      shopName: '', 
+      shopAddress: '', 
+      shopPhone: '', 
+      courierApiKey: '', 
+      courierApiUrl: '', 
+      courierClientId: '', 
+      courierMode: CourierMode.STANDARD,
+      showBillQr: true
   });
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -23,7 +30,10 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId }) => {
         const t = await db.getTenant(tenantId);
         if (t) {
             setTenant(t);
-            setSettings(t.settings);
+            setSettings({
+                ...t.settings,
+                courierMode: t.settings.courierMode || CourierMode.STANDARD
+            });
         }
     };
     load();
@@ -160,6 +170,25 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId }) => {
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-8 flex items-center gap-2">
                     <Truck size={16} className="text-indigo-600"/> Fardar Express Integration
                 </h3>
+                
+                <div className="mb-8 p-6 bg-indigo-50 rounded-[2rem] border border-indigo-100 space-y-4">
+                  <p className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">Protocol Mode</p>
+                  <div className="flex gap-4">
+                    <button 
+                      onClick={() => setSettings({...settings, courierMode: CourierMode.STANDARD})}
+                      className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${settings.courierMode === CourierMode.STANDARD ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-indigo-400 border border-indigo-200 hover:bg-indigo-100'}`}
+                    >
+                      <Zap size={14} className="inline mr-2" /> Standard API (Auto WB)
+                    </button>
+                    <button 
+                      onClick={() => setSettings({...settings, courierMode: CourierMode.EXISTING_WAYBILL})}
+                      className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${settings.courierMode === CourierMode.EXISTING_WAYBILL ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-indigo-400 border border-indigo-200 hover:bg-indigo-100'}`}
+                    >
+                      <Truck size={14} className="inline mr-2" /> Existing Waybill API
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid md:grid-cols-2 gap-6 p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
                     <Field 
                         label="Courier Client ID" 
@@ -180,7 +209,7 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId }) => {
                         <Field 
                             label="Gateway Endpoint" 
                             icon={<Key size={14} />} 
-                            value={settings.courierApiUrl} 
+                            value={settings.courierMode === CourierMode.EXISTING_WAYBILL ? "https://www.fdedomestic.com/api/parcel/existing_waybill_api_v1.php" : settings.courierApiUrl} 
                             onChange={(v: string) => setSettings({...settings, courierApiUrl: v})} 
                         />
                      </div>

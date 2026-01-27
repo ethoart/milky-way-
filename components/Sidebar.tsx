@@ -13,7 +13,9 @@ import {
   CalendarCheck,
   ChevronRight,
   Globe,
-  Scan
+  Scan,
+  RotateCcw,
+  PhoneForwarded
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 
@@ -33,12 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
   const hasAccess = (pageId: string) => {
     if (user.role === UserRole.DEV_ADMIN) return true;
     if (user.role === UserRole.SUPER_ADMIN) return true;
-    
-    // Admin Staff Access Rules:
-    // 'selling' is the baseline requirement.
     if (pageId === 'selling') return true;
-    
-    // Check custom permissions granted by Super Admin
     return user.permissions?.includes(pageId);
   };
 
@@ -127,10 +124,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
               {navItem('shipping', <Truck />, 'Logistics')}
               {navItem('today_shipped', <CalendarCheck />, 'Daily Logs')}
               
+              {SectionHeader('Operations', ['return_mgmt', 'residual_mgmt'])}
+              {navItem('return_mgmt', <RotateCcw />, 'Returns Hub')}
+              {navItem('residual_mgmt', <PhoneForwarded />, 'Residual Hub')}
+
               {SectionHeader('Assets', ['financials', 'inventory', 'returns'])}
               {navItem('financials', <Wallet />, 'Financials')}
               {navItem('inventory', <Package />, 'Inventory')}
-              {navItem('returns', <Scan size={18} className="text-blue-500"/>, 'Milky Way Scan')}
+              {navItem('returns', <Scan size={18}/>, 'Milky Way Scan')}
               
               {user.role === UserRole.SUPER_ADMIN && (
                   <>

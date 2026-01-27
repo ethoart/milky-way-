@@ -15,7 +15,11 @@ export enum OrderStatus {
   SHIPPED = 'SHIPPED',
   DELIVERY = 'DELIVERY',
   RESIDUAL = 'RESIDUAL',
+  REARRANGE = 'REARRANGE',
   RETURNED = 'RETURNED', 
+  RETURN_TRANSFER = 'RETURN_TRANSFER',
+  RETURN_AS_ON_SYSTEM = 'RETURN_AS_ON_SYSTEM',
+  RETURN_HANDOVER = 'RETURN_HANDOVER',
   DELIVERED = 'DELIVERED',
   RETURN_COMPLETED = 'RETURN_COMPLETED'
 }
@@ -25,6 +29,11 @@ export enum CustomerStatus {
   REGULAR = 'REGULAR',
   RISK_ORANGE = 'RISK_ORANGE',
   RISK_RED = 'RISK_RED'
+}
+
+export enum CourierMode {
+  STANDARD = 'STANDARD',
+  EXISTING_WAYBILL = 'EXISTING_WAYBILL'
 }
 
 export interface DomainRecord {
@@ -51,6 +60,7 @@ export interface TenantSettings {
   courierApiKey: string;
   courierApiUrl: string;
   courierClientId: string;
+  courierMode: CourierMode;
   showBillQr: boolean;
 }
 
@@ -60,7 +70,7 @@ export interface User {
   email?: string;
   role: UserRole;
   tenantId?: string;
-  permissions?: string[]; // Array of page IDs like 'dashboard', 'shipping', 'financials'
+  permissions?: string[]; // Array of page IDs
 }
 
 export interface StockBatch {
