@@ -126,6 +126,19 @@ class BackendService {
     await this.request('/tenants', 'POST', { tenant, adminUser });
   }
 
+  async getGlobalCities(): Promise<string[]> {
+    try {
+      const data = await this.request('/cities', 'GET');
+      return data.cities || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async updateGlobalCities(cities: string[]): Promise<void> {
+    await this.request('/cities', 'POST', { cities });
+  }
+
   async shipOrder(order: Order, tenantId: string): Promise<Order> {
     const tenant = await this.getTenant(tenantId);
     if (!tenant) throw new Error("Sync Error: Cluster unavailable.");

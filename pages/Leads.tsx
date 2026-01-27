@@ -5,7 +5,7 @@ import { Product, Order, OrderStatus, Tenant, CourierMode } from '../types';
 import { UserPlus, FileSpreadsheet, CheckCircle2, ChevronDown, History, Package, ShieldAlert, AlertTriangle, Upload, Trash2, Database, Box, Zap, MapPin, Scale } from 'lucide-react';
 import { parseCSV, formatCurrency } from '../utils/helpers';
 
-const SRI_LANKA_CITIES = [
+const SRI_LANKA_CITIES_FALLBACK = [
   "Colombo", "Gampaha", "Kalutara", "Kandy", "Matale", "Nuwara Eliya", "Galle", "Matara", "Hambantota", 
   "Jaffna", "Kilinochchi", "Mannar", "Vavuniya", "Mullaitivu", "Batticaloa", "Ampara", "Trincomalee", 
   "Kurunegala", "Puttalam", "Anuradhapura", "Polonnaruwa", "Badulla", "Monaragala", "Ratnapura", "Kegalle",
@@ -20,6 +20,7 @@ interface LeadsProps {
 export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [cities, setCities] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<string>('System');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -43,6 +44,11 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
   useEffect(() => {
     db.getProducts(tenantId).then(setProducts);
     db.getTenant(tenantId).then(setTenant);
+    db.getGlobalCities().then(c => {
+        const cityList = c.length > 0 ? c : SRI_LANKA_CITIES_FALLBACK;
+        setCities(cityList);
+        setManualForm(prev => ({ ...prev, city: cityList.includes('Colombo') ? 'Colombo' : cityList[0] }));
+    });
     const saved = localStorage.getItem('mw_user');
     if (saved) setCurrentUser(JSON.parse(saved).username);
   }, [tenantId]);
@@ -95,7 +101,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
         address: '', 
         productId: '', 
         trackingNumber: '', 
-        city: 'Colombo', 
+        city: cities.includes('Colombo') ? 'Colombo' : cities[0], 
         weight: '1' 
     });
     setCustomerHistory(null);
@@ -128,7 +134,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
         customerName: lead.name,
         customerPhone: lead.phone,
         customerAddress: lead.address,
-        customerCity: lead.city || 'Colombo',
+        customerCity: lead.city || (cities.includes('Colombo') ? 'Colombo' : cities[0]),
         parcelWeight: '1',
         items: [{ productId: p.id, name: p.name, price: p.price, quantity: 1 }],
         totalAmount: p.price,
@@ -213,7 +219,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId }) => {
                                 value={manualForm.city} 
                                 onChange={(e) => setManualForm({...manualForm, city: e.target.value})}
                             >
-                                {SRI_LANKA_CITIES.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                                {cities.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
                             </select>
                             <MapPin className="absolute right-5 bottom-3.5 text-indigo-300 pointer-events-none" size={18} />
                         </div>

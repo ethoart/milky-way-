@@ -10,7 +10,7 @@ import { formatCurrency } from '../utils/helpers';
 import { LabelPrintView } from '../components/LabelPrintView';
 import { createPortal } from 'react-dom';
 
-const SRI_LANKA_CITIES = [
+const SRI_LANKA_CITIES_FALLBACK = [
   "Colombo", "Gampaha", "Kalutara", "Kandy", "Matale", "Nuwara Eliya", "Galle", "Matara", "Hambantota", 
   "Jaffna", "Kilinochchi", "Mannar", "Vavuniya", "Mullaitivu", "Batticaloa", "Ampara", "Trincomalee", 
   "Kurunegala", "Puttalam", "Anuradhapura", "Polonnaruwa", "Badulla", "Monaragala", "Ratnapura", "Kegalle",
@@ -28,6 +28,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const [order, setOrder] = useState<Order | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [cities, setCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -50,12 +51,16 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [data, fetchedProducts, fetchedTenant] = await Promise.all([
+      const [data, fetchedProducts, fetchedTenant, fetchedCities] = await Promise.all([
         db.getOrder(orderId, tenantId),
         db.getProducts(tenantId),
-        db.getTenant(tenantId)
+        db.getTenant(tenantId),
+        db.getGlobalCities()
       ]);
       
+      const cityList = fetchedCities.length > 0 ? fetchedCities : SRI_LANKA_CITIES_FALLBACK;
+      setCities(cityList);
+
       if (data) {
         setOrder(data);
         setProducts(fetchedProducts);
@@ -64,7 +69,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
           customerName: data.customerName || '', 
           customerPhone: data.customerPhone || '', 
           customerAddress: data.customerAddress || '', 
-          customerCity: data.customerCity || 'Colombo', 
+          customerCity: data.customerCity || (cityList.includes('Colombo') ? 'Colombo' : cityList[0]), 
           parcelWeight: data.parcelWeight || '1', 
           parcelDescription: data.parcelDescription || '',
           trackingNumber: data.trackingNumber || '',
@@ -289,7 +294,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                     value={localFormData.customerCity}
                                     onChange={e => setLocalFormData({...localFormData, customerCity: e.target.value})}
                                 >
-                                    {SRI_LANKA_CITIES.map(city => <option key={city} value={city}>{city.toUpperCase()}</option>)}
+                                    {cities.map(city => <option key={city} value={city}>{city.toUpperCase()}</option>)}
                                 </select>
                                 <MapPin size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                             </div>

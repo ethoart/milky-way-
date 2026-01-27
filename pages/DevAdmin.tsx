@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/mockBackend';
 import { Tenant, User, Order, OrderStatus, Product, UserRole, DomainRecord } from '../types';
 import { 
@@ -24,15 +24,19 @@ import {
   Lock,
   Zap,
   Activity,
-  Terminal
+  Terminal,
+  MapPin,
+  Upload
 } from 'lucide-react';
 
 export const DevAdmin: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [securityLogs, setSecurityLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'CLUSTERS' | 'DOMAINS' | 'SECURITY'>('CLUSTERS');
+  const [view, setView] = useState<'CLUSTERS' | 'DOMAINS' | 'SECURITY' | 'GLOBAL_DATA'>('CLUSTERS');
   const [copied, setCopied] = useState<string | null>(null);
+  const [globalCities, setGlobalCities] = useState<string[]>([]);
+  const cityInputRef = useRef<HTMLInputElement>(null);
   
   // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -53,18 +57,57 @@ export const DevAdmin: React.FC = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const [t, s] = await Promise.all([
+      const [t, s, c] = await Promise.all([
           db.getTenants(),
-          db.getSecurityLogs()
+          db.getSecurityLogs(),
+          db.getGlobalCities()
       ]);
       setTenants(t);
       setSecurityLogs(s);
+      setGlobalCities(c);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { load(); }, []);
+
+  const handleCityCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        const text = event.target?.result as string;
+        const lines = text.split('\n');
+        const header = lines[0].toLowerCase().split(',');
+        const cityIdx = header.indexOf('city_name');
+        
+        const finalCityIdx = cityIdx !== -1 ? cityIdx : 0;
+        const result: string[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          const parts = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+          if (parts && parts[finalCityIdx]) {
+            result.push(parts[finalCityIdx].replace(/^"|"$/g, '').trim());
+          }
+        }
+        
+        if (result.length > 0) {
+            if (confirm(`Detected ${result.length} cities. Update global registry?`)) {
+                setLoading(true);
+                await db.updateGlobalCities(result);
+                setGlobalCities(result);
+                setLoading(false);
+                alert("Global city list synchronized.");
+            }
+        } else {
+            alert("No data found in 'city_name' column.");
+        }
+    };
+    reader.readAsText(file);
+  };
 
   const openCreateModal = () => {
     setEditingTenant(null);
@@ -179,9 +222,10 @@ export const DevAdmin: React.FC = () => {
                   </button>
                 </div>
             </div>
-            <div className="flex gap-2 p-1.5 bg-white/5 rounded-2xl w-fit border border-white/10">
+            <div className="flex flex-wrap gap-2 p-1.5 bg-white/5 rounded-2xl w-fit border border-white/10">
                 <button onClick={() => setView('CLUSTERS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'CLUSTERS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Tenant Clusters</button>
                 <button onClick={() => setView('DOMAINS')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'DOMAINS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Domain Registry</button>
+                <button onClick={() => setView('GLOBAL_DATA')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'GLOBAL_DATA' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Global Data</button>
                 <button onClick={() => setView('SECURITY')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'SECURITY' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Audit Logs</button>
             </div>
         </div>
@@ -208,6 +252,64 @@ export const DevAdmin: React.FC = () => {
                     </div>
                 ))}
             </div>
+        )}
+
+        {view === 'GLOBAL_DATA' && (
+          <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-10">
+            <div className="flex items-center gap-4">
+              <div className="p-4 bg-blue-600 text-white rounded-[1.5rem] shadow-xl">
+                 <MapPin size={28} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Global Region Management</h2>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Shared City Registry for all Clusters</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+               <div className="space-y-6">
+                  <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-200">
+                    <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <Upload size={14} className="text-blue-600"/> Import City Registry (CSV)
+                    </h4>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-6 leading-relaxed">
+                      Upload a CSV file with a column named <b>city_name</b>. This list will be used by all Super Admins across the entire infrastructure.
+                    </p>
+                    <div 
+                        onClick={() => cityInputRef.current?.click()}
+                        className="border-4 border-dashed border-white rounded-[2rem] py-12 flex flex-col items-center justify-center cursor-pointer hover:border-blue-200 hover:bg-white transition-all"
+                    >
+                        <Upload size={32} className="text-slate-300 mb-3" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select CSV Payload</span>
+                        <input ref={cityInputRef} type="file" accept=".csv" onChange={handleCityCsvUpload} className="hidden" />
+                    </div>
+                  </div>
+               </div>
+
+               <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active City Registry ({globalCities.length})</h4>
+                    <button onClick={async () => { if(confirm("Purge Registry?")) { await db.updateGlobalCities([]); setGlobalCities([]); } }} className="text-rose-500 hover:bg-rose-50 p-2 rounded-xl transition-all">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-3xl p-6 max-h-[400px] overflow-y-auto no-scrollbar space-y-2 shadow-inner">
+                    {globalCities.map((city, i) => (
+                      <div key={i} className="bg-white px-4 py-2.5 rounded-xl border border-slate-200 text-[11px] font-black text-slate-700 uppercase flex items-center justify-between group">
+                        {city}
+                        <span className="text-[8px] font-mono text-slate-200 group-hover:text-slate-400">#00{i+1}</span>
+                      </div>
+                    ))}
+                    {globalCities.length === 0 && (
+                      <div className="py-20 text-center opacity-20">
+                        <Zap size={48} className="mx-auto mb-4" />
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em]">Registry Empty</p>
+                      </div>
+                    )}
+                  </div>
+               </div>
+            </div>
+          </div>
         )}
 
         {view === 'DOMAINS' && (

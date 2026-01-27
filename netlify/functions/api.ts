@@ -1,3 +1,4 @@
+
 import { Handler } from '@netlify/functions';
 import { MongoClient, ServerApiVersion } from 'mongodb';
 
@@ -28,7 +29,6 @@ async function getConnectedClient(uri: string) {
 }
 
 export const handler: Handler = async (event, context) => {
-  // Allow the process to exit immediately after sending response
   context.callbackWaitsForEmptyEventLoop = false;
 
   const headers = {
@@ -52,8 +52,21 @@ export const handler: Handler = async (event, context) => {
     const centralDb = centralClient.db(CENTRAL_DB_NAME);
     const usersCol = centralDb.collection('users');
     const tenantsCol = centralDb.collection('tenants');
+    const citiesCol = centralDb.collection('global_cities');
 
     if (path === '/health') return { statusCode: 200, headers, body: JSON.stringify({ status: 'connected' }) };
+
+    if (path === '/cities') {
+      if (method === 'GET') {
+        const cityDoc = await citiesCol.findOne({ id: 'master_list' });
+        return { statusCode: 200, headers, body: JSON.stringify({ cities: cityDoc?.cities || [] }) };
+      }
+      if (method === 'POST') {
+        const { cities } = JSON.parse(event.body || '{}');
+        await citiesCol.updateOne({ id: 'master_list' }, { $set: { cities } }, { upsert: true });
+        return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
+      }
+    }
 
     if (path === '/login' && method === 'POST') {
       const { username, password } = JSON.parse(event.body || '{}');
@@ -90,7 +103,6 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    // Precise routing to avoid 404s
     if (path === '/orders') {
       const ordersCol = activeDb.collection('orders');
       if (method === 'GET') {
