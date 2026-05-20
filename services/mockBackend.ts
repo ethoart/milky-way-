@@ -3,29 +3,58 @@ import { Order, OrderStatus, Product, Tenant, User, UserRole, CustomerStatus, Te
 
 const API_BASE = '/api';
 
+interface GetOrdersParams {
+  tenantId: string;
+  id?: string;
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  productId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 class BackendService {
   private async request(path: string, method: string = 'GET', body?: any, params?: any) {
     const url = new URL(`${window.location.origin}${API_BASE}${path}`);
     if (params) {
       Object.keys(params).forEach(key => {
         if (params[key] !== undefined && params[key] !== null) {
-          url.searchParams.append(key, params[key]);
+          url.searchParams.append(key, String(params[key]));
         }
       });
     }
+    
     try {
       const response = await fetch(url.toString(), {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
       });
+      
+      const contentType = response.headers.get("content-type");
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.details || `HTTP ${response.status}`);
+        let errorMsg = `HTTP ${response.status}`;
+        if (contentType && contentType.includes("application/json")) {
+           const errorData = await response.json();
+           errorMsg = errorData.error || errorMsg;
+        } else {
+           const text = await response.text();
+           console.error("Server returned non-JSON error:", text.slice(0, 200));
+        }
+        throw new Error(errorMsg);
       }
-      return await response.json();
+
+      if (contentType && contentType.includes("application/json")) {
+        return await response.json();
+      } else {
+        const text = await response.text();
+        console.error("Expected JSON but got:", text.slice(0, 100));
+        throw new Error("Server configuration error: Expected JSON but received HTML.");
+      }
     } catch (e: any) {
-      console.error(`Backend Request Failure [${path}]:`, e);
+      console.error(`Backend API Failure [${path}]:`, e);
       throw e;
     }
   }
@@ -38,20 +67,28 @@ class BackendService {
   }
 
   async login(username: string, password?: string): Promise<User | null> {
-    try { return await this.request('/login', 'POST', { username, password }); }
-    catch (e) { return null; }
+    return await this.request('/login', 'POST', { username, password });
   }
 
-  async getOrders(tenantId: string): Promise<Order[]> {
-    return this.request('/orders', 'GET', null, { tenantId });
-  }
-
-  async getAllOrders(): Promise<Order[]> {
-    return this.request('/orders', 'GET');
+  async getOrders(params: string | GetOrdersParams): Promise<{ data: Order[], total: number }> {
+    const actualParams = typeof params === 'string' ? { tenantId: params } : params;
+    const res = await this.request('/orders', 'GET', null, actualParams);
+    
+    if (actualParams.id) return { data: res ? [res] : [], total: res ? 1 : 0 };
+    
+    if (Array.isArray(res)) {
+      return { data: res, total: res.length };
+    }
+    
+    return { 
+      data: res.data || [], 
+      total: res.total || 0 
+    };
   }
 
   async getOrder(orderId: string, tenantId: string): Promise<Order | undefined> {
-    return this.request('/orders', 'GET', null, { id: orderId, tenantId });
+    const res = await this.getOrders({ tenantId, id: orderId });
+    return res.data[0];
   }
 
   async updateOrder(order: Order): Promise<void> {
@@ -61,6 +98,11 @@ class BackendService {
   async deleteOrder(orderId: string, tenantId: string): Promise<void> {
     await this.request('/orders', 'DELETE', null, { id: orderId, tenantId });
   }
+
+  async purgeOrders(tenantId: string): Promise<number> {
+    const res = await this.request('/orders', 'DELETE', null, { tenantId, purge: 'true' });
+    return res.count || 0;
+  }
   
   async createOrders(orders: Order[]): Promise<void> {
     if (orders.length === 0) return;
@@ -69,15 +111,53 @@ class BackendService {
   }
 
   async getProducts(tenantId: string): Promise<Product[]> {
-    const data = await this.request('/products', 'GET', null, { tenantId });
-    return data.map((p: any) => ({
-      ...p,
-      batches: p.batches || (p.stock ? [{ id: 'legacy-init', quantity: p.stock, buyingPrice: p.buyingPrice || 0, createdAt: new Date().toISOString() }] : [])
-    }));
+    return this.request('/products', 'GET', null, { tenantId });
   }
 
   async updateProduct(product: Product): Promise<void> {
     await this.request('/products', 'POST', { product, tenantId: product.tenantId }, { tenantId: product.tenantId });
+  }
+
+  async deleteProduct(productId: string, tenantId: string): Promise<void> {
+    await this.request('/products', 'DELETE', null, { id: productId, tenantId });
+  }
+
+  /**
+   * FIFO STOCK REDUCTION LOGIC
+   * Automatically iterates through batches from oldest to newest
+   */
+  async deductStockFIFO(tenantId: string, productId: string, quantityToDeduct: number): Promise<void> {
+    const products = await this.getProducts(tenantId);
+    const product = products.find(p => p.id === productId);
+    
+    if (!product) throw new Error("Product not found in registry.");
+    
+    let remainingToDeduct = quantityToDeduct;
+    const updatedBatches = [...(product.batches || [])].sort((a, b) => 
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    for (let i = 0; i < updatedBatches.length; i++) {
+        if (remainingToDeduct <= 0) break;
+        
+        const batch = updatedBatches[i];
+        if (batch.quantity >= remainingToDeduct) {
+            batch.quantity -= remainingToDeduct;
+            remainingToDeduct = 0;
+        } else {
+            remainingToDeduct -= batch.quantity;
+            batch.quantity = 0;
+        }
+    }
+
+    // IMPORTANT: Do NOT filter out zero quantity batches.
+    // Keeping them ensures 'originalQuantity' is preserved for history calculations.
+    // The UI will filter them out for 'Live Stock' view.
+    
+    await this.updateProduct({
+        ...product,
+        batches: updatedBatches
+    });
   }
 
   async getTenants(): Promise<Tenant[]> {
@@ -89,14 +169,11 @@ class BackendService {
     return tenants.find(t => t.id === tenantId);
   }
 
-  async updateTenantSettings(tenantId: string, settings: TenantSettings): Promise<void> {
-    const tenant = await this.getTenant(tenantId);
-    if (tenant) await this.updateTenant({ ...tenant, settings });
-  }
-
   async updateTenant(tenant: Tenant, adminEmail?: string, adminPass?: string): Promise<void> {
     const payload: any = { tenant };
-    if (adminEmail || adminPass) payload.adminUser = { username: adminEmail || undefined, password: adminPass || undefined };
+    if (adminEmail || adminPass) {
+        payload.adminUser = { username: adminEmail, password: adminPass };
+    }
     await this.request('/tenants', 'PUT', payload);
   }
 
@@ -131,137 +208,20 @@ class BackendService {
   }
 
   async getGlobalCities(): Promise<string[]> {
-    try {
-      const data = await this.request('/cities', 'GET');
-      return data.cities || [];
-    } catch (e) {
-      return [];
-    }
+    const data = await this.request('/cities', 'GET');
+    return data.cities || [];
   }
 
   async updateGlobalCities(cities: string[]): Promise<void> {
     await this.request('/cities', 'POST', { cities });
   }
 
-  async shipOrder(order: Order, tenantId: string): Promise<Order> {
-    const tenant = await this.getTenant(tenantId);
-    if (!tenant) throw new Error("Sync Error: Cluster unavailable.");
-
-    let waybillId = order.trackingNumber || "";
-    const isExisting = tenant.settings.courierMode === CourierMode.EXISTING_WAYBILL;
-    const apiUrl = isExisting 
-      ? "https://www.fdedomestic.com/api/parcel/existing_waybill_api_v1.php" 
-      : tenant.settings.courierApiUrl;
-
-    if (tenant.settings.courierApiKey && tenant.settings.courierClientId) {
-        if (isExisting && !waybillId) {
-            throw new Error("Waybill ID is mandatory for Existing Waybill mode.");
-        }
-
-        const formData = new URLSearchParams();
-        const numericOrderId = order.id.replace(/\D/g, ''); 
-        const numericPhone = order.customerPhone.replace(/\D/g, ''); 
-
-        formData.append('api_key', tenant.settings.courierApiKey);
-        formData.append('client_id', tenant.settings.courierClientId);
-        
-        if (isExisting) {
-            formData.append('waybill_id', waybillId);
-        }
-
-        formData.append('order_id', numericOrderId); 
-        formData.append('parcel_weight', order.parcelWeight || '1');
-        formData.append('parcel_description', (order.parcelDescription || (order.items[0]?.name || 'Sample Item')).slice(0, 50));
-        formData.append('recipient_name', order.customerName);
-        formData.append('recipient_contact_1', numericPhone);
-        formData.append('recipient_contact_2', ''); 
-        formData.append('recipient_address', order.customerAddress);
-        formData.append('recipient_city', order.customerCity || 'Colombo');
-        formData.append('amount', Math.round(order.totalAmount).toString());
-        formData.append('exchange', '0'); 
-
-        try {
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: formData
-            });
-
-            const result = await response.json();
-            
-            if (Number(result.status) === 200) {
-                if (!isExisting && result.waybill_no) {
-                    waybillId = result.waybill_no;
-                }
-            } else {
-                const statusCodeMessages: {[key: number]: string} = {
-                    201: 'Incorrect Waybill Type', 202: 'Waybill already used', 203: 'Waybill not assigned',
-                    204: 'Inactive Client', 205: 'Invalid order id', 206: 'Invalid weight',
-                    207: 'Empty parcel description', 208: 'Empty recipient name', 209: 'Invalid contact 1',
-                    210: 'Invalid contact 2', 211: 'Empty address', 212: 'Invalid amount',
-                    213: 'Invalid city', 214: 'Insert unsuccessful', 215: 'Invalid client',
-                    216: 'Invalid API key', 217: 'Invalid exchange', 218: 'System Maintenance'
-                };
-                const msg = statusCodeMessages[Number(result.status)] || result.message || "Logistics Handshake Error";
-                throw new Error(`[Fardar ${result.status}]: ${msg}`);
-            }
-        } catch (apiErr: any) {
-            throw new Error(`Logistics Bridge Failure: ${apiErr.message}`);
-        }
-    } else {
-        throw new Error("Missing Courier API Credentials in settings.");
-    }
-
-    const allProducts = await this.getProducts(tenantId);
-    for (const item of order.items) {
-        const prod = allProducts.find(p => p.id === item.productId);
-        if (prod && prod.batches) {
-            let remainingToDeduct = item.quantity;
-            const sortedBatches = [...prod.batches].sort((a, b) => 
-                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-            );
-
-            for (const batch of sortedBatches) {
-                if (remainingToDeduct <= 0) break;
-                if (batch.quantity <= 0) continue;
-                const deduction = Math.min(batch.quantity, remainingToDeduct);
-                batch.quantity -= deduction;
-                remainingToDeduct -= deduction;
-            }
-            prod.batches = sortedBatches;
-            await this.updateProduct(prod);
-        }
-    }
-    
-    const updated: Order = {
-      ...order, 
-      status: OrderStatus.SHIPPED, 
-      trackingNumber: waybillId,
-      shippedAt: new Date().toISOString(),
-      logs: [...(order.logs || []), { 
-        id: `l-${Date.now()}`, 
-        message: `Dispatched via Fardar (${isExisting ? 'Existing' : 'New'} WB). WB: ${waybillId}`, 
-        timestamp: new Date().toISOString(), 
-        user: 'System' 
-      }]
-    };
-    
-    await this.updateOrder(updated);
-    return updated;
-  }
-
-  async getAllUsers(): Promise<User[]> {
-    return this.request('/users', 'GET');
-  }
-
   async getTeamMembers(tenantId: string): Promise<User[]> {
-    const all = await this.request('/users', 'GET', null, { tenantId });
-    return all.filter((u: any) => u.tenantId === tenantId);
+    return this.request('/users', 'GET', null, { tenantId });
   }
 
   async addTeamMember(tenantId: string, username: string, role: UserRole, email: string, password?: string, permissions?: string[]): Promise<void> {
-    const user: any = { id: `u-${Date.now()}`, username, email, role, tenantId, permissions };
-    if (password) user.password = password;
+    const user: any = { id: `u-${Date.now()}`, username, email, role, tenantId, permissions, password };
     await this.request('/users', 'POST', user);
   }
 
@@ -269,59 +229,27 @@ class BackendService {
     await this.request('/users', 'DELETE', null, { id });
   }
 
-  async getSecurityLogs(): Promise<any[]> {
-    return [
-      { event: 'Node Cluster Alpha Sync', timestamp: new Date().toISOString() },
-      { event: 'Cross-Cluster Handshake', timestamp: new Date().toISOString() },
-      { event: 'Global Ledger Validated', timestamp: new Date().toISOString() }
-    ];
+  async shipOrder(order: Order, tenantId: string): Promise<Order> {
+    return this.request('/ship-order', 'POST', { order, tenantId });
   }
 
   async getCustomerHistory(phone: string, tenantId: string): Promise<any> {
     if (!phone) return { status: CustomerStatus.NEW, count: 0, returns: 0 };
-    const orders = await this.getOrders(tenantId);
-    const last8 = phone.replace(/\D/g, '').slice(-8);
-    const co = orders.filter(o => o.customerPhone && o.customerPhone.replace(/\D/g, '').slice(-8) === last8);
-    const rc = co.filter(o => o.status === OrderStatus.RETURNED || o.status === OrderStatus.RETURN_COMPLETED).length;
-    let s = CustomerStatus.NEW;
-    if (co.length > 0) s = CustomerStatus.REGULAR;
-    if (rc >= 1) s = CustomerStatus.RISK_ORANGE;
-    if (rc >= 2) s = CustomerStatus.RISK_RED;
-    return { status: s, count: co.length, returns: rc };
+    return this.request('/customer-history', 'GET', null, { phone, tenantId });
   }
 
   async getCustomerDetailedHistory(phone: string, tenantId: string): Promise<Order[]> {
     if (!phone) return [];
-    const orders = await this.getOrders(tenantId);
-    const last8 = phone.replace(/\D/g, '').slice(-8);
-    return orders
-      .filter(o => o.customerPhone && o.customerPhone.replace(/\D/g, '').slice(-8) === last8)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const res = await this.request('/customer-history-detailed', 'GET', null, { phone, tenantId });
+    return Array.isArray(res) ? res : [];
   }
 
   async processReturn(trackingOrId: string, tenantId: string): Promise<Order | null> {
-    const orders = await this.getOrders(tenantId);
-    const order = orders.find(o => o.id === trackingOrId || o.trackingNumber === trackingOrId);
-    if (order) {
-      const updatedOrder: Order = { 
-        ...order, status: OrderStatus.RETURN_COMPLETED, 
-        logs: [...(order.logs || []), { id: `l-${Date.now()}`, message: 'Restocked via Milky Way Scan', timestamp: new Date().toISOString(), user: 'System' }] 
-      };
-      
-      const allProducts = await this.getProducts(tenantId);
-      for (const item of order.items) {
-          const prod = allProducts.find(p => p.id === item.productId);
-          if (prod) {
-              const returnBatch: StockBatch = { id: `rtn-${Date.now()}`, quantity: item.quantity, buyingPrice: 0, createdAt: new Date().toISOString() };
-              prod.batches = [returnBatch, ...prod.batches];
-              await this.updateProduct(prod);
-          }
-      }
-      
-      await this.updateOrder(updatedOrder);
-      return updatedOrder;
-    }
-    return null;
+    return this.request('/process-return', 'POST', { trackingOrId, tenantId });
+  }
+
+  async getSecurityLogs(): Promise<any[]> {
+    return this.request('/security-logs', 'GET');
   }
 }
 export const db = new BackendService();

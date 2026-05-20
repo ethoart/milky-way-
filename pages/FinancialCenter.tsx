@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus, Product } from '../types';
 import { formatCurrency } from '../utils/helpers';
@@ -8,18 +8,15 @@ import {
   Calculator, 
   ArrowUpRight, 
   TrendingUp, 
-  Info, 
-  DollarSign, 
-  Package, 
-  Percent, 
-  Calendar, 
-  Users, 
   PieChart, 
   Download, 
   Settings2,
   Receipt,
-  Megaphone,
-  Printer
+  Printer,
+  Calendar,
+  Users,
+  Package,
+  RefreshCw
 } from 'lucide-react';
 
 interface FinancialCenterProps {
@@ -45,21 +42,35 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
   const [advertisingCosts, setAdvertisingCosts] = useState(0);
   const [workerCount, setWorkerCount] = useState(1);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const [o, p] = await Promise.all([db.getOrders(tenantId), db.getProducts(tenantId)]);
-      setOrders(o);
-      setProducts(p);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Fetch up to 10k orders for financial summary calculations
+      const [oRes, p] = await Promise.all([
+        db.getOrders({ tenantId, limit: 10000 }), 
+        db.getProducts(tenantId)
+      ]);
+      setOrders(oRes.data || []);
+      setProducts(p || []);
+    } catch (e) {
+      console.error("Financial sync failure", e);
+    } finally {
       setLoading(false);
-    };
-    load();
+    }
   }, [tenantId]);
+
+  useEffect(() => { load(); }, [load]);
 
   const financialData = useMemo(() => {
     const start = new Date(startDate);
     const end = new Date(endDate);
     end.setHours(23, 59, 59);
+
+    if (!Array.isArray(orders)) return {
+      grossRevenue: 0, totalCogs: 0, grossProfit: 0, deliveredCount: 0, returnedCount: 0,
+      totalDeliveryDeduction: 0, totalReturnDeduction: 0, netProfit: 0, investorShare: 0,
+      workerSharePool: 0, perWorkerProfit: 0, orderCount: 0
+    };
 
     const filtered = orders.filter(o => {
       const d = new Date(o.createdAt);
@@ -77,7 +88,10 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
     const totalCogs = deliveredOrders.reduce((sum, order) => {
       return sum + order.items.reduce((itemSum, item) => {
         const prod = products.find(p => p.id === item.productId);
-        return itemSum + (item.quantity * (prod?.buyingPrice || 0));
+        const avgBuyingPrice = prod?.batches && prod.batches.length > 0 
+          ? prod.batches.reduce((acc, b) => acc + b.buyingPrice, 0) / prod.batches.length 
+          : 0;
+        return itemSum + (item.quantity * avgBuyingPrice);
       }, 0);
     }, 0);
 
@@ -143,6 +157,12 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
               />
             </div>
           </div>
+          <button 
+            onClick={load}
+            className="bg-white text-slate-400 p-3 rounded-2xl hover:text-slate-900 border border-slate-200 transition-all active:scale-95"
+          >
+            <RefreshCw size={18} />
+          </button>
           <button 
             onClick={handlePrint}
             className="bg-black text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl"

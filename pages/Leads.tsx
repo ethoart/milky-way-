@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../services/mockBackend';
 import { Product, Order, OrderStatus, Tenant, CourierMode } from '../types';
-import { UserPlus, FileSpreadsheet, CheckCircle2, ChevronDown, History, Package, ShieldAlert, AlertTriangle, Upload, Trash2, Database, Box, Zap, MapPin, Scale } from 'lucide-react';
+import { UserPlus, FileSpreadsheet, CheckCircle2, ChevronDown, History, Package, ShieldAlert, AlertTriangle, Upload, Trash2, Database, Box, Zap, MapPin, Scale, RefreshCw } from 'lucide-react';
 import { parseCSV, formatCurrency } from '../utils/helpers';
 
 const SRI_LANKA_CITIES_FALLBACK = [
@@ -24,6 +24,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
   const [cities, setCities] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<string>('System');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
   
   const [manualForm, setManualForm] = useState({ 
     name: '', 
@@ -31,7 +32,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
     address: '', 
     productId: '',
     trackingNumber: '',
-    city: 'Colombo',
+    city: '', // Default empty to force selection
     weight: '1'
   });
   const [customerHistory, setCustomerHistory] = useState<any>(null);
@@ -42,18 +43,22 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
   const [pendingLeads, setPendingLeads] = useState<any[]>([]);
   const [csvProductId, setCsvProductId] = useState('');
 
-  useEffect(() => {
-    db.getProducts(tenantId).then(setProducts);
-    db.getTenant(tenantId).then(setTenant);
-    db.getGlobalCities().then(c => {
-        // Deduplicate cities
-        const cityList = Array.from(new Set(c.length > 0 ? c : SRI_LANKA_CITIES_FALLBACK));
-        setCities(cityList);
-        setManualForm(prev => ({ ...prev, city: cityList.includes('Colombo') ? 'Colombo' : cityList[0] }));
-    });
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    await Promise.all([
+        db.getProducts(tenantId).then(setProducts),
+        db.getTenant(tenantId).then(setTenant),
+        db.getGlobalCities().then(c => {
+            const cityList = Array.from(new Set(c.length > 0 ? c : SRI_LANKA_CITIES_FALLBACK));
+            setCities(cityList);
+        })
+    ]);
     const saved = localStorage.getItem('mw_user');
     if (saved) setCurrentUser(JSON.parse(saved).username);
+    setLoading(false);
   }, [tenantId]);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
     const normalizedPhone = manualForm.phone.replace(/\D/g, '');
@@ -69,8 +74,9 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
   }, [manualForm.phone, tenantId]);
 
   const handleManualSubmit = async () => {
-    if (!manualForm.name || !manualForm.phone || !manualForm.productId) return alert("System requires full identity and SKU.");
-    
+    if (!manualForm.name || !manualForm.phone || !manualForm.productId || !manualForm.address) return alert("CRITICAL: Name, Phone, Address, and SKU are mandatory.");
+    if (!manualForm.city) return alert("City Selection Required.");
+
     const isExistingMode = tenant?.settings.courierMode === CourierMode.EXISTING_WAYBILL;
     if (isExistingMode && !manualForm.trackingNumber) return alert("Existing Waybill ID is mandatory for this cluster mode.");
 
@@ -103,7 +109,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
         address: '', 
         productId: '', 
         trackingNumber: '', 
-        city: cities.includes('Colombo') ? 'Colombo' : cities[0], 
+        city: '', 
         weight: '1' 
     });
     setCustomerHistory(null);
@@ -116,8 +122,16 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
     const reader = new FileReader();
     reader.onload = (event) => {
         const text = event.target?.result as string;
-        const parsed = parseCSV(text);
-        setPendingLeads(parsed);
+        const cleaned = parseCSV(text);
+        
+        if (cleaned.length === 0) {
+            alert("UPLOAD FAILED: No valid records found. Ensure CSV has Name, Address, and Phone columns.");
+            return;
+        }
+
+        setPendingLeads(cleaned);
+        setMessage({ text: `${cleaned.length} valid records indexed.`, type: 'info' });
+        setTimeout(() => setMessage(null), 5000);
     };
     reader.readAsText(file);
   };
@@ -136,7 +150,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
         customerName: lead.name,
         customerPhone: lead.phone,
         customerAddress: lead.address,
-        customerCity: lead.city || (cities.includes('Colombo') ? 'Colombo' : cities[0]),
+        customerCity: lead.city || '', // Changed: No default fallback, empty forces selection later
         parcelWeight: '1',
         items: [{ productId: p.id, name: p.name, price: p.price, quantity: 1 }],
         totalAmount: p.price,
@@ -173,16 +187,23 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
             </div>
           </div>
         </div>
-        {message && (
-            <div className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest shadow-xl animate-bounce">
-                <CheckCircle2 size={16}/> {message.text}
-            </div>
-        )}
+        <div className="flex items-center gap-4">
+            {message && (
+                <div className={`flex items-center gap-3 px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl animate-bounce ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'}`}>
+                    <CheckCircle2 size={16}/> {message.text}
+                </div>
+            )}
+            <button 
+                onClick={loadData} 
+                className="p-4 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-900 shadow-sm transition-all active:scale-95"
+            >
+                <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+            </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-8 space-y-8">
-            
             <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
               <div className="flex items-center justify-between pb-6 border-b border-slate-50">
                 <div className="flex items-center gap-3">
@@ -221,6 +242,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
                                 value={manualForm.city} 
                                 onChange={(e) => setManualForm({...manualForm, city: e.target.value})}
                             >
+                                <option value="">Select City...</option>
                                 {cities.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
                             </select>
                             <MapPin className="absolute right-5 bottom-3.5 text-indigo-300 pointer-events-none" size={18} />
@@ -257,7 +279,20 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
                     placeholder="Full street address..."
                   />
                 </div>
-                
+                {!isExistingMode && (
+                    <div className="space-y-1.5 relative">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Recipient City</label>
+                        <select 
+                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-black text-slate-900 outline-none appearance-none"
+                            value={manualForm.city} 
+                            onChange={(e) => setManualForm({...manualForm, city: e.target.value})}
+                        >
+                            <option value="">Select City...</option>
+                            {cities.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                        </select>
+                        <MapPin className="absolute right-5 bottom-3.5 text-slate-400 pointer-events-none" size={18} />
+                    </div>
+                )}
                 <div className="space-y-2 relative">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SKU Assignment</label>
                   <select 
@@ -270,7 +305,6 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
                   </select>
                   <ChevronDown className="absolute right-6 bottom-4 text-slate-400 pointer-events-none" size={18} />
                 </div>
-
                 <div className="space-y-2 relative">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Parcel Weight (KG)</label>
                     <div className="relative">
@@ -291,6 +325,7 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
             </div>
 
             <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
+                {/* ... CSV SECTION REMAIN UNCHANGED ... */}
                 <div className="flex items-center justify-between pb-6 border-b border-slate-50">
                     <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-slate-950 text-white rounded-2xl flex items-center justify-center shadow-lg">

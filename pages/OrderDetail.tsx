@@ -4,19 +4,13 @@ import { db } from '../services/mockBackend';
 import { Order, OrderStatus, OrderLog, Product, Tenant, CourierMode } from '../types';
 import { 
   ArrowLeft, Truck, Check, Clock, User as UserIcon, Save, 
-  Activity, MapPin, Package, Trash2, Plus, Printer, RefreshCcw, MessageSquare, Zap, Calendar, ShoppingBag, DollarSign, Search, ChevronDown, X, History, ShoppingCart
+  Activity, MapPin, Package, Trash2, Plus, Printer, RefreshCcw, MessageSquare, Zap, Calendar, ShoppingBag, DollarSign, Search, ChevronDown, X, History, ShoppingCart, Scale, Info, CheckCircle2, History as HistoryIcon, UserCheck, ExternalLink, Phone, RotateCcw, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
-import { LabelPrintView } from '../components/LabelPrintView';
+import { BillPrintView } from '../components/BillPrintView';
 import { createPortal } from 'react-dom';
 
-const SRI_LANKA_CITIES_FALLBACK = [
-  "Colombo", "Gampaha", "Kalutara", "Kandy", "Matale", "Nuwara Eliya", "Galle", "Matara", "Hambantota", 
-  "Jaffna", "Kilinochchi", "Mannar", "Vavuniya", "Mullaitivu", "Batticaloa", "Ampara", "Trincomalee", 
-  "Kurunegala", "Puttalam", "Anuradhapura", "Polonnaruwa", "Badulla", "Monaragala", "Ratnapura", "Kegalle",
-  "Dehiwala-Mount Lavinia", "Moratuwa", "Negombo", "Sri Jayawardenepura Kotte", "Kaduwela", "Kolonnawa", 
-  "Chilaw", "Wattala", "Welisara", "Ja-Ela", "Paliyagoda", "Gampola", "Nawalapitiya", "Haputale"
-].sort();
+const SRI_LANKA_CITIES_FALLBACK = ["Colombo", "Gampaha", "Kalutara", "Kandy", "Matale", "Nuwara Eliya", "Galle", "Matara", "Hambantota", "Jaffna", "Kilinochchi", "Mannar", "Vavuniya", "Mullaitivu", "Batticaloa", "Ampara", "Trincomalee", "Kurunegala", "Puttalam", "Anuradhapura", "Polonnaruwa", "Badulla", "Monaragala", "Ratnapura", "Kegalle", "Dehiwala-Mount Lavinia", "Moratuwa", "Negombo", "Sri Jayawardenepura Kotte", "Kaduwela", "Kolonnawa", "Chilaw", "Wattala", "Welisara", "Ja-Ela", "Paliyagoda", "Gampola", "Nawalapitiya", "Haputale"].sort();
 
 interface OrderDetailProps {
   orderId: string;
@@ -33,461 +27,412 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const [loading, setLoading] = useState(true);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [callNote, setCallNote] = useState('');
   const [showPrintPortal, setShowPrintPortal] = useState(false);
 
-  // City Search States
   const [citySearch, setCitySearch] = useState('');
-  const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
   const cityDropdownRef = useRef<HTMLDivElement>(null);
 
   const [localFormData, setLocalFormData] = useState({ 
     customerName: '', 
     customerPhone: '', 
+    customerPhone2: '',
     customerAddress: '', 
     customerCity: '', 
     parcelWeight: '1', 
-    parcelDescription: '',
-    trackingNumber: '',
-    createdAt: ''
+    parcelDescription: '', 
+    trackingNumber: '', 
+    createdAt: '' 
   });
-  
   const [items, setItems] = useState<{ productId: string; quantity: number; price: number; name: string }[]>([]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [data, fetchedProducts, fetchedTenant, fetchedCities] = await Promise.all([
-        db.getOrder(orderId, tenantId),
-        db.getProducts(tenantId),
-        db.getTenant(tenantId),
-        db.getGlobalCities()
-      ]);
+      const results = await Promise.allSettled([db.getOrder(orderId, tenantId), db.getProducts(tenantId), db.getTenant(tenantId), db.getGlobalCities()]);
+      const data = results[0].status === 'fulfilled' ? (results[0].value as Order) : null;
+      const fetchedProducts = results[1].status === 'fulfilled' ? (results[1].value as Product[]) : [];
+      const fetchedTenant = results[2].status === 'fulfilled' ? (results[2].value as Tenant) : null;
+      const fetchedCities = results[3].status === 'fulfilled' ? (results[3].value as string[]) : [];
       
-      // Deduplicate cities
-      const uniqueCities = Array.from(new Set(fetchedCities.length > 0 ? fetchedCities : SRI_LANKA_CITIES_FALLBACK));
+      const uniqueCities = Array.from(new Set(fetchedCities && fetchedCities.length > 0 ? fetchedCities : SRI_LANKA_CITIES_FALLBACK));
       setCities(uniqueCities);
 
       if (data) {
         setOrder(data);
         setProducts(fetchedProducts);
         setTenant(fetchedTenant || null);
-        
-        // Load detailed purchase history for this phone
-        const history = await db.getCustomerDetailedHistory(data.customerPhone, tenantId);
-        setCustomerHistory(history.filter(h => h.id !== orderId)); // Filter out current order
+        db.getCustomerDetailedHistory(data.customerPhone, tenantId).then(h => setCustomerHistory(h.filter(x => x.id !== orderId))).catch(() => {});
 
-        const initialCity = data.customerCity || (uniqueCities.includes('Colombo') ? 'Colombo' : uniqueCities[0]);
+        const initialCity = data.customerCity || ''; 
+        setCitySearch(initialCity);
+
+        let dateVal = '';
+        if (data.createdAt) {
+          const dateObj = new Date(data.createdAt);
+          if (!isNaN(dateObj.getTime())) {
+            const offset = dateObj.getTimezoneOffset() * 60000;
+            dateVal = (new Date(dateObj.getTime() - offset)).toISOString().slice(0, 16);
+          }
+        }
+
+        // INTELLIGENT DEFAULT: Use item name if description is missing or generic
+        const defaultDesc = data.parcelDescription && data.parcelDescription !== 'Online Order' 
+            ? data.parcelDescription 
+            : (data.items?.[0]?.name || '');
+
         setLocalFormData({ 
           customerName: data.customerName || '', 
           customerPhone: data.customerPhone || '', 
+          customerPhone2: data.customerPhone2 || '',
           customerAddress: data.customerAddress || '', 
           customerCity: initialCity, 
           parcelWeight: data.parcelWeight || '1', 
-          parcelDescription: data.parcelDescription || '',
-          trackingNumber: data.trackingNumber || '',
-          createdAt: data.createdAt ? new Date(data.createdAt).toISOString().slice(0, 16) : ''
+          parcelDescription: defaultDesc, 
+          trackingNumber: data.trackingNumber || '', 
+          createdAt: dateVal 
         });
-        setCitySearch(initialCity);
         setItems(data.items || []);
       }
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [orderId, tenantId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Handle clicks outside city dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (cityDropdownRef.current && !cityDropdownRef.current.contains(event.target as Node)) {
-        setShowCityDropdown(false);
-        setCitySearch(localFormData.customerCity);
+        setIsCityDropdownOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [localFormData.customerCity]);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (order && order.status === OrderStatus.PENDING) {
+        updateStatus(OrderStatus.OPEN_LEAD);
+    }
+  }, [order?.id, order?.status]);
 
   const filteredCities = useMemo(() => {
-    if (!citySearch) return cities;
-    const query = citySearch.toLowerCase();
-    return cities
-      .filter(c => c.toLowerCase().includes(query))
-      .sort((a, b) => {
-        const aLower = a.toLowerCase();
-        const bLower = b.toLowerCase();
-        const aStarts = aLower.startsWith(query);
-        const bStarts = bLower.startsWith(query);
-        
-        if (aStarts && !bStarts) return -1;
-        if (!aStarts && bStarts) return 1;
-        return a.localeCompare(b);
-      });
+    return cities.filter(c => c.toLowerCase().includes(citySearch.toLowerCase()));
   }, [cities, citySearch]);
 
-  const highlightMatch = (text: string, query: string) => {
-    if (!query) return text;
-    const parts = text.split(new RegExp(`(${query})`, 'gi'));
-    return (
-      <span>
-        {parts.map((part, i) => 
-          part.toLowerCase() === query.toLowerCase() ? (
-            <span key={i} className="text-blue-600 bg-blue-100 px-0.5 rounded font-black">{part}</span>
-          ) : (
-            part
-          )
-        )}
-      </span>
-    );
-  };
+  const totalAmount = useMemo(() => items.reduce((sum, item) => sum + (item.price * item.quantity), 0), [items]);
 
-  const totalAmount = useMemo(() => {
-    return items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  }, [items]);
-
-  const handlePrintBill = () => {
-    setShowPrintPortal(true);
-    setTimeout(() => {
-      window.print();
-      setShowPrintPortal(false);
-    }, 500);
-  };
-
-  const handleAddCallNote = async () => {
-    if (!order || !callNote.trim()) return;
-    const user = localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System';
-    const log: OrderLog = { 
-      id: `call-${Date.now()}`, 
-      message: `CALL NOTE: ${callNote}`, 
-      timestamp: new Date().toISOString(), 
-      user 
-    };
-    await db.updateOrder({ ...order, logs: [...(order.logs || []), log] });
-    setCallNote('');
-    loadData();
-  };
-
-  const handleItemChange = (index: number, field: string, value: any) => {
-    const newItems = [...items];
-    if (field === 'productId') {
-        const prod = products.find(p => p.id === value);
-        if (prod) {
-            newItems[index] = { ...newItems[index], productId: value, name: prod.name, price: prod.price };
-        }
-    } else {
-        newItems[index] = { ...newItems[index], [field]: value };
+  const handleInventoryReduction = async () => {
+    try {
+        const reductionPromises = items.map(item => 
+            db.deductStockFIFO(tenantId, item.productId, item.quantity)
+        );
+        await Promise.all(reductionPromises);
+        console.log(">>> Inventory Protocol: Batch Reduction Successful.");
+    } catch (err) {
+        console.error(">>> Inventory Failure:", err);
     }
-    setItems(newItems);
-  };
-
-  const addItem = () => {
-    if (products.length > 0) {
-        setItems([...items, { productId: products[0].id, name: products[0].name, price: products[0].price, quantity: 1 }]);
-    }
-  };
-
-  const removeItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
   };
 
   const updateStatus = async (newStatus: OrderStatus) => {
     if (!order) return;
+    const user = localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System';
     
+    // ACTION: Confirm Stock Availability for Confirmation
     if (newStatus === OrderStatus.CONFIRMED) {
-      if (!localFormData.customerPhone || localFormData.customerPhone.trim().length < 9) return alert("Valid Phone Number Required.");
-      if (items.length === 0) return alert("Product manifest cannot be empty.");
+        for (const item of items) {
+            const product = products.find(p => p.id === item.productId);
+            const availableStock = (product?.batches || []).reduce((sum, b) => sum + b.quantity, 0);
+            if (availableStock < item.quantity) {
+                alert(`INSUFFICIENT STOCK: SKU [${product?.sku || 'UNKNOWN'}] only has ${availableStock} units available. Order cannot be confirmed.`);
+                return;
+            }
+        }
+    }
+
+    const needsStockReduction = (newStatus === OrderStatus.CONFIRMED || newStatus === OrderStatus.SHIPPED) && 
+                               order.status !== OrderStatus.CONFIRMED && 
+                               order.status !== OrderStatus.SHIPPED;
+
+    if (needsStockReduction) {
+        await handleInventoryReduction();
     }
 
     if (newStatus === OrderStatus.SHIPPED) {
-      if (tenant?.settings.courierMode === CourierMode.EXISTING_WAYBILL && !localFormData.trackingNumber) {
-          return alert("Existing Waybill ID is required to dispatch.");
-      }
+      if (order.status === OrderStatus.SHIPPED) return alert("System Warning: This lead has already been dispatched.");
+      if (order.status !== OrderStatus.CONFIRMED) return alert("System Warning: Only CONFIRMED orders can be dispatched to logistics.");
+
+      if (tenant?.settings.courierMode === CourierMode.EXISTING_WAYBILL && !localFormData.trackingNumber) return alert("Waybill ID required.");
       setShippingLoading(true);
       try { 
         await db.shipOrder({ ...order, ...localFormData, items, totalAmount }, tenantId);
+        alert(`Logistics Protocol Success: Waybill Assigned.`);
         loadData();
-      } catch (e: any) { alert(e.message); } 
+      } catch (e: any) { alert(`Logistics Handshake Error: ${e.message}`); } 
       finally { setShippingLoading(false); }
       return;
     }
-
-    const log: OrderLog = { 
-      id: `l-${Date.now()}`, 
-      message: `Status Changed to ${newStatus}`, 
-      timestamp: new Date().toISOString(), 
-      user: localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System'
-    };
     
     setIsSaving(true);
-    const updatedData: Partial<Order> = { 
-      ...order, 
-      ...localFormData, 
-      items, 
-      totalAmount, 
-      status: newStatus, 
-      logs: [...(order.logs || []), log] 
-    };
-
-    if (newStatus === OrderStatus.CONFIRMED && order.status !== OrderStatus.CONFIRMED) {
-      updatedData.confirmedAt = new Date().toISOString();
+    
+    const timestampUpdates: Partial<Order> = {};
+    if (newStatus === OrderStatus.CONFIRMED && !order.confirmedAt) {
+        timestampUpdates.confirmedAt = new Date().toISOString();
+    }
+    if (newStatus === OrderStatus.DELIVERED && !order.deliveredAt) {
+        timestampUpdates.deliveredAt = new Date().toISOString();
     }
 
-    await db.updateOrder(updatedData as Order);
+    const log: OrderLog = { id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to ${newStatus}`, timestamp: new Date().toISOString(), user };
+    
+    await db.updateOrder({ 
+        ...order, 
+        ...localFormData, 
+        ...timestampUpdates,
+        items, 
+        totalAmount, 
+        status: newStatus, 
+        logs: [...(order.logs || []), log] 
+    });
+    
     setIsSaving(false);
-    loadData();
-  };
-
-  const getBtnColor = (status: OrderStatus) => {
-    if (order?.status === status) {
-        switch(status) {
-          case OrderStatus.PENDING: return 'bg-blue-600 text-white shadow-lg';
-          case OrderStatus.OPEN_LEAD: return 'bg-sky-400 text-white shadow-lg';
-          case OrderStatus.CONFIRMED: return 'bg-emerald-600 text-white shadow-lg';
-          case OrderStatus.HOLD: return 'bg-purple-600 text-white shadow-lg';
-          case OrderStatus.NO_ANSWER: return 'bg-yellow-500 text-white shadow-lg';
-          case OrderStatus.REJECTED: return 'bg-rose-600 text-white shadow-lg';
-          case OrderStatus.RESIDUAL: return 'bg-slate-900 text-white shadow-lg';
-          case OrderStatus.REARRANGE: return 'bg-indigo-600 text-white shadow-lg';
-          default: return 'bg-blue-600 text-white shadow-lg';
-        }
-    }
-    return 'bg-slate-50 text-slate-400 hover:text-slate-600';
-  };
-
-  const getStatusStyle = (status: OrderStatus) => {
-    switch (status) {
-        case OrderStatus.DELIVERED: return 'text-emerald-600 bg-emerald-50';
-        case OrderStatus.RETURNED:
-        case OrderStatus.RETURN_COMPLETED: return 'text-rose-600 bg-rose-50';
-        case OrderStatus.SHIPPED: return 'text-blue-600 bg-blue-50';
-        default: return 'text-slate-500 bg-slate-100';
+    
+    if (newStatus === OrderStatus.OPEN_LEAD) {
+        setOrder(prev => prev ? { ...prev, status: OrderStatus.OPEN_LEAD, logs: [...(prev.logs || []), log] } : null);
+    } else {
+        loadData();
     }
   };
 
-  if (loading || !order) return <div className="p-20 text-center font-black uppercase text-slate-300 text-xs tracking-widest">Synchronizing Node...</div>;
+  const openWhatsApp = (phoneNum: string) => {
+    if (!phoneNum) return;
+    const cleanPhone = phoneNum.replace(/\D/g, '');
+    const formattedPhone = cleanPhone.startsWith('0') ? '94' + cleanPhone.slice(1) : cleanPhone;
+    const msg = `Hi ${localFormData.customerName}, this is from ${tenant?.settings.shopName || 'Milky Way'}. Regarding your order #${orderId.slice(-6).toUpperCase()}, the status is currently ${order?.status}.`;
+    window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
 
-  const isExistingMode = tenant?.settings.courierMode === CourierMode.EXISTING_WAYBILL;
+  const handleItemChange = (idx: number, field: string, val: any) => {
+    const next = [...items];
+    if (field === 'productId') {
+        const prod = products.find(p => p.id === val);
+        if (prod) next[idx] = { ...next[idx], productId: val, name: prod.name, price: prod.price };
+    } else {
+        next[idx] = { ...next[idx], [field]: val };
+    }
+    setItems(next);
+  };
+
+  const addItem = () => {
+    if (products.length === 0) return;
+    setItems([...items, { productId: products[0].id, name: products[0].name, price: products[0].price, quantity: 1 }]);
+  };
+
+  const removeItem = (idx: number) => {
+    setItems(items.filter((_, i) => i !== idx));
+  };
+
+  const selectCity = (city: string) => {
+    setLocalFormData({ ...localFormData, customerCity: city });
+    setCitySearch(city);
+    setIsCityDropdownOpen(false);
+  };
+
+  const getStatusBadgeClass = (status: OrderStatus) => {
+    switch(status) {
+      case OrderStatus.DELIVERED: return 'bg-emerald-50 text-emerald-600 border-emerald-100';
+      case OrderStatus.REJECTED: return 'bg-rose-50 text-rose-600 border-rose-100';
+      case OrderStatus.RETURNED: return 'bg-amber-50 text-amber-600 border-amber-100';
+      case OrderStatus.SHIPPED: return 'bg-blue-50 text-blue-600 border-blue-100';
+      case OrderStatus.TRANSFER: return 'bg-indigo-50 text-indigo-600 border-indigo-100';
+      default: return 'bg-slate-50 text-slate-500 border-slate-100';
+    }
+  };
+
+  // UPDATED: Buttons keep their color always. Active status gets a visual boost (ring/scale).
+  const getActionBtnClass = (targetStatus: OrderStatus, activeClass: string) => {
+      const isActive = order?.status === targetStatus;
+      
+      // Base styles for all buttons (keep them colorful/visible)
+      let baseStyle = `${activeClass} hover:opacity-90`;
+
+      if (isActive) {
+          // Extra prominence for the selected status
+          return `${baseStyle} ring-4 ring-offset-2 ring-slate-200 shadow-xl scale-105 opacity-100 font-extrabold`;
+      }
+      
+      // Default state - still colorful, just normal weight/size
+      return `${baseStyle} opacity-80 hover:scale-105 transition-all`;
+  };
+
+  if (loading || !order) return <div className="p-20 text-center font-black uppercase text-slate-300">Synchronizing...</div>;
+
+  const isConfirmed = order.status === OrderStatus.CONFIRMED;
+  const isShipped = order.status === OrderStatus.SHIPPED;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-slide-in no-print">
-        {/* Header Controls */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-slide-in no-print px-2">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex items-center gap-4">
-                <button onClick={onBack} className="p-4 bg-white border border-slate-100 rounded-3xl text-black shadow-sm hover:bg-slate-50 transition-all active:scale-90"><ArrowLeft size={20} /></button>
+                <button onClick={onBack} className="p-4 bg-white border border-slate-100 rounded-3xl text-black shadow-sm hover:bg-slate-50 transition-all"><ArrowLeft size={20} /></button>
                 <div>
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase leading-none">Lead Terminal #{order.id.slice(-6)}</h1>
-                    <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-2">Current State: {order.status} • Value: {formatCurrency(totalAmount)}</div>
+                    <div className="flex items-center gap-3">
+                        <h1 className="text-3xl font-black text-slate-900 uppercase leading-none tracking-tight">Node #{order.id.slice(-6)}</h1>
+                        <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest border border-blue-100">LOG LOCKED</span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-2">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                            <Calendar size={12} className="text-blue-500" /> <span className="text-slate-900">{new Date(order.createdAt).toLocaleString()}</span>
+                        </p>
+                    </div>
                 </div>
             </div>
             <div className="flex gap-2">
-                <button 
-                    onClick={handlePrintBill}
-                    className="bg-white border border-slate-200 text-slate-900 px-6 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-sm flex items-center gap-3 hover:bg-slate-50 transition-all active:scale-95"
-                >
-                    <Printer size={16} /> Print 2x3 Grid
+                <button onClick={() => loadData()} className="p-4 bg-white border border-slate-200 text-slate-400 hover:text-slate-900 rounded-2xl shadow-sm transition-all active:scale-95">
+                    <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
                 </button>
-                <button onClick={async () => {
-                    setIsSaving(true);
-                    await db.updateOrder({ ...order, ...localFormData, items, totalAmount });
-                    setIsSaving(false);
-                    alert("Lead synchronization complete.");
-                }} className="bg-black text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl flex items-center gap-3 active:scale-95 transition-all">
-                    {isSaving ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />} Force Save
+                <button onClick={() => { setShowPrintPortal(true); setTimeout(() => { window.print(); setShowPrintPortal(false); }, 500); }} className="bg-white border border-slate-200 text-slate-900 px-6 py-4 rounded-2xl font-black uppercase text-[10px] flex items-center gap-3 shadow-sm hover:border-blue-600 transition-all"><Printer size={16} /> Print Bill</button>
+                <button onClick={async () => { setIsSaving(true); await db.updateOrder({ ...order, ...localFormData, items, totalAmount }); setIsSaving(false); alert("Registry updated."); }} className="bg-slate-950 text-white px-8 py-4 rounded-2xl font-black uppercase text-[10px] flex items-center gap-3 shadow-2xl active:scale-95 transition-all">
+                    {isSaving ? <RefreshCcw size={16} className="animate-spin" /> : <Save size={16} />} Commit Changes
                 </button>
             </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-8">
-                {/* Command Deck */}
-                <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={16}/> Pipeline Command</h3>
-                    
-                    {isExistingMode && (
-                        <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-[2rem] space-y-3 mb-4">
-                            <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
-                                <Search size={14} /> Waybill ID Search & Assign
-                            </p>
-                            <div className="relative">
-                                <input 
-                                    className="w-full bg-white border-2 border-indigo-200 rounded-xl px-4 py-3 font-mono font-black text-slate-900 outline-none focus:border-indigo-600 shadow-sm"
-                                    value={localFormData.trackingNumber}
-                                    onChange={e => setLocalFormData({...localFormData, trackingNumber: e.target.value})}
-                                    placeholder="Enter or Scan Fardar Waybill..."
-                                />
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-300">
-                                    <Truck size={18} />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="flex flex-wrap gap-2">
-                        {[OrderStatus.OPEN_LEAD, OrderStatus.HOLD, OrderStatus.NO_ANSWER, OrderStatus.REJECTED, OrderStatus.RESIDUAL, OrderStatus.REARRANGE].map(s => (
-                           <button key={s} onClick={() => updateStatus(s)} className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase transition-all ${getBtnColor(s)}`}>{s.replace('_', ' ')}</button>
-                        ))}
-                        <button onClick={() => updateStatus(OrderStatus.CONFIRMED)} className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase shadow-xl transition-all ${order.status === OrderStatus.CONFIRMED ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>Confirm Order</button>
-                        {(order.status === OrderStatus.CONFIRMED || order.status === OrderStatus.SHIPPED) && (
-                             <button onClick={() => updateStatus(OrderStatus.SHIPPED)} disabled={shippingLoading} className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase flex items-center gap-3 hover:bg-black transition-all shadow-2xl">
-                                <Truck size={20} className="text-blue-400" /> {shippingLoading ? 'SYNCING API...' : 'Handover to Fardar'}
-                             </button>
+                <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
+                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-2"><Activity size={16} className="text-blue-600"/> Handshake Protocol</h3>
+                    <div className="flex flex-wrap gap-3">
+                        {(!isConfirmed && !isShipped) ? (
+                            <>
+                                <button 
+                                    onClick={() => updateStatus(OrderStatus.NO_ANSWER)} 
+                                    className={`px-5 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.NO_ANSWER, 'bg-amber-400 text-black')}`}
+                                >
+                                    No Answer
+                                </button>
+                                <button 
+                                    onClick={() => updateStatus(OrderStatus.REJECTED)} 
+                                    className={`px-5 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.REJECTED, 'bg-rose-600 text-white')}`}
+                                >
+                                    Rejected
+                                </button>
+                                <button 
+                                    onClick={() => updateStatus(OrderStatus.CONFIRMED)} 
+                                    className={`px-10 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.CONFIRMED, 'bg-emerald-500 text-white')}`}
+                                >
+                                    CONFIRM ORDER
+                                </button>
+                                <button 
+                                    onClick={() => updateStatus(OrderStatus.HOLD)} 
+                                    className={`px-5 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.HOLD, 'bg-purple-600 text-white')}`}
+                                >
+                                    Hold
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                {isConfirmed && (
+                                    <button onClick={() => updateStatus(OrderStatus.SHIPPED)} disabled={shippingLoading} className={`px-12 py-5 rounded-[2rem] font-black text-[14px] uppercase flex items-center gap-3 shadow-2xl transition-all bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 animate-pulse`}>
+                                        <Truck size={24} /> {shippingLoading ? 'SYNCHRONIZING...' : 'TRANSMIT TO LOGISTICS'}
+                                    </button>
+                                )}
+                                {isShipped && (
+                                    <div className="px-10 py-4 bg-indigo-700 text-white rounded-[2rem] font-black text-[12px] uppercase flex items-center gap-3 shadow-xl">
+                                        <CheckCircle2 size={20} /> Transmitted Successfully
+                                    </div>
+                                )}
+                                <button onClick={() => updateStatus(OrderStatus.OPEN_LEAD)} className="px-5 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all bg-slate-200 text-slate-600 hover:bg-slate-300 flex items-center gap-2"><RotateCcw size={14} /> Reset Status</button>
+                            </>
                         )}
                     </div>
                 </div>
 
-                {/* Identity Deck */}
                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><UserIcon size={16}/> Consignee Identity Deck</h3>
+                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><UserIcon size={16} className="text-blue-600"/> Recipient Mapping</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Full Legal Name</label>
-                          <input 
-                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm" 
-                            value={localFormData.customerName} 
-                            onChange={e => setLocalFormData({...localFormData, customerName: e.target.value})} 
-                            placeholder="Type Consignee Name..." 
-                          />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Consignee Name</label>
+                            <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold outline-none focus:ring-2 focus:ring-blue-600" value={localFormData.customerName} onChange={e => setLocalFormData({...localFormData, customerName: e.target.value})} />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Contact Handset No</label>
-                          <input 
-                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm" 
-                            value={localFormData.customerPhone} 
-                            onChange={e => setLocalFormData({...localFormData, customerPhone: e.target.value})} 
-                            placeholder="077xxxxxxx" 
-                          />
-                        </div>
-                        <div className="space-y-1.5 md:col-span-2">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Physical Delivery Address</label>
-                          <textarea 
-                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 font-bold text-slate-900 outline-none min-h-[100px] focus:ring-2 focus:ring-blue-500 transition-all shadow-sm" 
-                            value={localFormData.customerAddress} 
-                            onChange={e => setLocalFormData({...localFormData, customerAddress: e.target.value})} 
-                            placeholder="Detailed Street Address..." 
-                          />
-                        </div>
-                        
-                        <div className="space-y-1.5 relative" ref={cityDropdownRef}>
-                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Target Distribution City</label>
-                            <div className="relative">
-                                <input 
-                                    type="text"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm pr-10"
-                                    value={citySearch}
-                                    onFocus={() => { setShowCityDropdown(true); }}
-                                    onChange={(e) => { setCitySearch(e.target.value); setShowCityDropdown(true); }}
-                                    placeholder="Search & Select City..."
-                                />
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                                  {citySearch !== localFormData.customerCity && citySearch !== '' && (
-                                    <X size={14} className="text-slate-300 cursor-pointer hover:text-rose-500" onClick={() => { setCitySearch(localFormData.customerCity); setShowCityDropdown(false); }} />
-                                  )}
-                                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${showCityDropdown ? 'rotate-180' : ''}`} />
-                                </div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Primary Contact</label>
+                            <div className="flex gap-2">
+                                <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold outline-none focus:ring-2 focus:ring-blue-600" value={localFormData.customerPhone} onChange={e => setLocalFormData({...localFormData, customerPhone: e.target.value})} />
+                                <button onClick={() => openWhatsApp(localFormData.customerPhone)} className="p-3.5 bg-emerald-500 text-white rounded-2xl hover:bg-emerald-600 transition-all shadow-lg flex items-center justify-center shrink-0">
+                                    <MessageSquare size={18} />
+                                </button>
                             </div>
-                            
-                            {showCityDropdown && (
-                              <div className="absolute z-[100] left-0 right-0 mt-2 bg-white border border-slate-100 rounded-[1.5rem] shadow-2xl max-h-[300px] overflow-y-auto no-scrollbar animate-slide-in">
-                                {filteredCities.length > 0 ? (
-                                  filteredCities.map((city) => (
-                                    <div 
-                                      key={city} 
-                                      className={`px-6 py-3.5 text-xs font-black uppercase cursor-pointer hover:bg-slate-50 transition-colors flex items-center justify-between ${localFormData.customerCity === city ? 'bg-blue-50 text-blue-600' : 'text-slate-700'}`}
-                                      onClick={() => {
-                                        setLocalFormData({...localFormData, customerCity: city});
-                                        setCitySearch(city);
-                                        setShowCityDropdown(false);
-                                      }}
-                                    >
-                                      {highlightMatch(city, citySearch)}
-                                      {localFormData.customerCity === city && <Check size={14} />}
-                                    </div>
-                                  ))
-                                ) : (
-                                  <div className="px-6 py-8 text-center">
-                                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No matching regions</p>
-                                    <button 
-                                      onClick={() => {
-                                        const customCity = citySearch.trim();
-                                        if (customCity) {
-                                          setLocalFormData({...localFormData, customerCity: customCity});
-                                          setCitySearch(customCity);
-                                          setShowCityDropdown(false);
-                                        }
-                                      }}
-                                      className="mt-3 text-[10px] font-black text-blue-600 uppercase underline"
-                                    >
-                                      Use "{citySearch}" anyway
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Alt Contact</label>
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 pl-12 font-bold outline-none focus:ring-2 focus:ring-blue-600" value={localFormData.customerPhone2} onChange={e => setLocalFormData({...localFormData, customerPhone2: e.target.value})} />
+                                    <Phone size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                </div>
+                                <button onClick={() => openWhatsApp(localFormData.customerPhone2 || '')} className="p-3.5 bg-emerald-500 text-white rounded-2xl hover:bg-emerald-600 transition-all shadow-lg flex items-center justify-center shrink-0">
+                                    <MessageSquare size={18} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="space-y-1.5 relative" ref={cityDropdownRef}>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">City Hub</label>
+                            <div className="relative">
+                                <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold outline-none focus:ring-2 focus:ring-blue-600" value={citySearch} onFocus={() => setIsCityDropdownOpen(true)} onChange={e => { setCitySearch(e.target.value); setIsCityDropdownOpen(true); }} placeholder="Search city..." />
+                                <MapPin className="absolute right-5 bottom-3.5 text-slate-400" size={18} />
+                            </div>
+                            {isCityDropdownOpen && (
+                                <div className="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-[200px] overflow-y-auto no-scrollbar">
+                                    {filteredCities.map(c => <button key={c} onClick={() => selectCity(c)} className="w-full text-left px-5 py-3 text-[13px] font-bold hover:bg-blue-50 uppercase border-b border-slate-50">{c}</button>)}
+                                </div>
                             )}
                         </div>
-
-                        <div className="space-y-1.5">
-                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Arrival Timestamp</label>
-                            <div className="relative">
-                                <input 
-                                    type="datetime-local"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-900 outline-none shadow-sm"
-                                    value={localFormData.createdAt}
-                                    onChange={e => setLocalFormData({...localFormData, createdAt: e.target.value})}
-                                />
-                                <Calendar size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                            </div>
+                        <div className="md:col-span-2 space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Address</label>
+                            <textarea className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 font-bold outline-none min-h-[100px]" value={localFormData.customerAddress} onChange={e => setLocalFormData({...localFormData, customerAddress: e.target.value})} />
+                        </div>
+                        
+                        <div className="md:col-span-2 space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Content Description</label>
+                            <input 
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+                                value={localFormData.parcelDescription} 
+                                onChange={(e) => setLocalFormData({...localFormData, parcelDescription: e.target.value})} 
+                                placeholder="Product content..." 
+                            />
                         </div>
                     </div>
                 </div>
 
-                {/* Inventory Deck */}
                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><ShoppingBag size={16}/> Product Manifest</h3>
-                        <button onClick={addItem} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-100 transition-all">
-                            <Plus size={14}/> Add SKU
-                        </button>
+                        <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><Package size={16} className="text-blue-600"/> Order Payload</h3>
+                        <button onClick={addItem} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all"><Plus size={14}/> Add Item</button>
                     </div>
                     
                     <div className="space-y-4">
+                        {items.length === 0 && <div className="py-10 text-center text-slate-300 uppercase text-[10px] font-black tracking-widest border-2 border-dashed border-slate-50 rounded-3xl">Payload Empty</div>}
                         {items.map((item, idx) => (
-                            <div key={idx} className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200 grid grid-cols-1 md:grid-cols-12 gap-4 items-end animate-slide-in">
-                                <div className="md:col-span-6 space-y-1.5">
-                                    <label className="text-[8px] font-black text-slate-400 uppercase ml-1">SKU Identity</label>
-                                    <select 
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-xs shadow-sm"
-                                        value={item.productId}
-                                        onChange={(e) => handleItemChange(idx, 'productId', e.target.value)}
-                                    >
-                                        {products.map(p => <option key={p.id} value={p.id}>{p.sku} - {p.name}</option>)}
+                            <div key={idx} className="p-6 bg-slate-50 border border-slate-100 rounded-[2rem] flex flex-col md:flex-row items-center gap-6 group hover:border-blue-200 transition-all">
+                                <div className="flex-1 w-full space-y-1.5">
+                                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Product SKU</label>
+                                    <select className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none appearance-none" value={item.productId} onChange={e => handleItemChange(idx, 'productId', e.target.value)}>
+                                        {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                     </select>
                                 </div>
-                                <div className="md:col-span-2 space-y-1.5">
-                                    <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Units</label>
-                                    <input 
-                                        type="number"
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-xs shadow-sm"
-                                        value={item.quantity}
-                                        onChange={(e) => handleItemChange(idx, 'quantity', parseInt(e.target.value) || 1)}
-                                    />
+                                <div className="w-full md:w-32 space-y-1.5">
+                                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Price (LKR)</label>
+                                    <input type="number" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black outline-none" value={item.price} onChange={e => handleItemChange(idx, 'price', parseFloat(e.target.value) || 0)} />
                                 </div>
-                                <div className="md:col-span-3 space-y-1.5">
-                                    <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Unit Price (LKR)</label>
-                                    <div className="relative">
-                                        <input 
-                                            type="number"
-                                            className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-4 py-2.5 font-bold text-xs shadow-sm"
-                                            value={item.price}
-                                            onChange={(e) => handleItemChange(idx, 'price', parseFloat(e.target.value) || 0)}
-                                        />
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[9px]">Rs.</span>
-                                    </div>
+                                <div className="w-full md:w-24 space-y-1.5">
+                                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Quantity</label>
+                                    <input type="number" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black outline-none text-center" value={item.quantity} onChange={e => handleItemChange(idx, 'quantity', parseInt(e.target.value) || 0)} />
                                 </div>
-                                <div className="md:col-span-1 flex justify-center pb-2">
-                                    <button onClick={() => removeItem(idx)} className="text-slate-300 hover:text-rose-500 transition-colors p-2"><Trash2 size={18}/></button>
+                                <div className="flex flex-col items-end pt-4 md:pt-0">
+                                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Subtotal</p>
+                                    <p className="text-sm font-black text-slate-900">{formatCurrency(item.price * item.quantity)}</p>
                                 </div>
+                                <button onClick={() => removeItem(idx)} className="p-3 text-slate-300 hover:text-rose-600 transition-all"><Trash2 size={16}/></button>
                             </div>
                         ))}
                     </div>
@@ -495,120 +440,81 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
             </div>
 
             <div className="space-y-8">
-                 {/* Detailed Purchase History (User Request) */}
-                 <div className="bg-slate-900 text-white p-8 rounded-[3rem] border border-white/5 shadow-2xl space-y-6">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
-                            <History size={16}/> Purchase Lifecycle
-                        </h3>
-                        <span className="px-3 py-1 bg-blue-600 rounded-full text-[9px] font-black uppercase">
-                            {customerHistory.length} Previous
-                        </span>
-                    </div>
-
-                    <div className="space-y-3 max-h-[300px] overflow-y-auto no-scrollbar pr-1">
-                        {customerHistory.length > 0 ? customerHistory.map(hist => (
-                            <div key={hist.id} className="p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all group">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                        <p className="text-[11px] font-black text-white uppercase truncate max-w-[120px]">
-                                            {hist.items[0]?.name || 'Unknown SKU'}
-                                        </p>
-                                        <p className="text-[8px] font-bold text-slate-500 uppercase">
-                                            {new Date(hist.createdAt).toLocaleDateString()} • {formatCurrency(hist.totalAmount)}
-                                        </p>
-                                    </div>
-                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getStatusStyle(hist.status)}`}>
-                                        {hist.status.replace('_', ' ')}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-2 opacity-40 group-hover:opacity-100 transition-opacity">
-                                    <ShoppingCart size={10} className="text-blue-400" />
-                                    <span className="text-[8px] font-mono text-slate-400 uppercase tracking-tighter">#{hist.id.slice(-8)}</span>
-                                </div>
-                            </div>
-                        )) : (
-                            <div className="py-10 text-center opacity-20">
-                                <Zap size={40} className="mx-auto mb-4" />
-                                <p className="text-[10px] font-black uppercase tracking-[0.2em]">New Node Entry</p>
-                            </div>
-                        )}
-                    </div>
-                 </div>
-
-                 {/* Interaction Registry */}
-                 <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MessageSquare size={16}/> Interaction Registry</h3>
+                <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
+                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><HistoryIcon size={16} className="text-blue-600"/> Customer Intelligence Nexus</h3>
                     <div className="space-y-4">
-                        <textarea 
-                            value={callNote}
-                            onChange={e => setCallNote(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-[13px] font-bold outline-none focus:ring-2 focus:ring-blue-500 h-24 shadow-inner"
-                            placeholder="Commit feedback or call log..."
-                        />
-                        <button onClick={handleAddCallNote} className="w-full bg-blue-600 text-white py-3 rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-blue-700 active:scale-95 transition-all">Log Note</button>
-                    </div>
-                 </div>
-
-                 {/* Financial Summary */}
-                 <div className="bg-slate-950 text-white p-10 rounded-[3rem] shadow-2xl border border-white/5 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600 rounded-full blur-[80px] opacity-20"></div>
-                    <div className="relative z-10">
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-2"><DollarSign size={12}/> Net Payable Amount</p>
-                        <h2 className="text-4xl font-black tracking-tighter">{formatCurrency(totalAmount)}</h2>
-                        
-                        {(order.trackingNumber || localFormData.trackingNumber) && (
-                            <div className="mt-8 pt-8 border-t border-white/10 space-y-1">
-                                <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Handshake ID</p>
-                                <p className="text-xl font-mono font-black">{order.trackingNumber || localFormData.trackingNumber}</p>
-                                {order.courierStatus && (
-                                    <p className="text-[8px] font-black text-emerald-400 uppercase mt-1">Status: {order.courierStatus}</p>
-                                )}
+                        {customerHistory.length === 0 ? (
+                            <div className="py-10 text-center flex flex-col items-center gap-3 opacity-30">
+                                <UserCheck size={40} className="text-slate-300" />
+                                <p className="text-[10px] font-black uppercase tracking-widest">New Customer Entry</p>
                             </div>
+                        ) : (
+                            customerHistory.map(h => (
+                                <div key={h.id} className="p-6 bg-slate-50 border border-slate-100 rounded-[2rem] flex items-center justify-between group hover:bg-white hover:shadow-lg transition-all">
+                                    <div className="flex items-center gap-4">
+                                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border font-black text-[14px] ${getStatusBadgeClass(h.status)}`}>
+                                            <ShoppingBag size={20} />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-black text-slate-900">REF #{h.id.slice(-6).toUpperCase()}</span>
+                                                <span className={`px-2 py-0.5 border rounded-lg text-[8px] font-black uppercase tracking-tight ${getStatusBadgeClass(h.status)}`}>{h.status}</span>
+                                            </div>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{new Date(h.createdAt).toLocaleDateString()} • {h.items[0]?.name || 'Item'}</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-sm font-black text-slate-900">{formatCurrency(h.totalAmount)}</p>
+                                        <p className="text-[9px] font-black text-blue-600 uppercase mt-0.5">Value Locked</p>
+                                    </div>
+                                </div>
+                            ))
                         )}
-
-                        <div className="mt-8 grid grid-cols-2 gap-4">
-                            <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
-                                <p className="text-[8px] font-black text-slate-500 uppercase mb-1">SKU Count</p>
-                                <p className="text-lg font-black">{items.length}</p>
-                            </div>
-                            <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
-                                <p className="text-[8px] font-black text-slate-500 uppercase mb-1">Scale Mass</p>
-                                <p className="text-lg font-black">{localFormData.parcelWeight} KG</p>
-                            </div>
-                        </div>
                     </div>
-                 </div>
+                </div>
 
-                 {/* History Registry */}
-                 {order.logs && order.logs.length > 0 && (
-                   <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
-                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><RefreshCcw size={16}/> Node Audit Trail</h3>
-                      <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2 no-scrollbar">
-                         {order.logs.slice().reverse().map(log => (
-                            <div key={log.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-start gap-4 hover:bg-white transition-colors">
-                               <div>
-                                  <p className="text-[11px] font-black text-slate-900 uppercase leading-tight">{log.message}</p>
-                                  <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">Handled By: {log.user}</p>
-                               </div>
-                               <span className="text-[8px] font-mono text-slate-300 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                            </div>
-                         ))}
-                      </div>
-                   </div>
+                <div className="bg-slate-950 text-white p-10 rounded-[3rem] shadow-2xl relative border border-white/5 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600/10 blur-[100px] -translate-y-1/2 translate-x-1/2"></div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-2 relative z-10">Total Amount</p>
+                    <h2 className="text-4xl font-black tracking-tighter text-blue-400 relative z-10">{formatCurrency(totalAmount)}</h2>
+                    <div className="mt-6 flex items-center gap-4 relative z-10">
+                        <div className="px-3 py-1 bg-white/5 border border-white/10 rounded-xl text-[9px] font-black uppercase text-slate-400">Items: {items.length}</div>
+                        <div className="px-3 py-1 bg-white/5 border border-white/10 rounded-xl text-[9px] font-black uppercase text-slate-400">Total Units: {items.reduce((a,b) => a + b.quantity, 0)}</div>
+                    </div>
+                </div>
+
+                {order.trackingNumber && (
+                    <div className="bg-blue-600 text-white p-10 rounded-[3rem] shadow-2xl space-y-4">
+                        <div className="flex items-center gap-2 opacity-60">
+                            <Truck size={16} />
+                            <h4 className="text-[10px] font-black uppercase tracking-widest">Logistics Waybill</h4>
+                        </div>
+                        <h3 className="text-2xl font-black font-mono tracking-tighter">{order.trackingNumber}</h3>
+                        <p className="text-[10px] font-bold uppercase opacity-60">Handshake timestamp: {new Date(order.shippedAt || order.createdAt).toLocaleString()}</p>
+                        <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-80 mt-2">API Waybill ID Verified</p>
+                    </div>
                 )}
+
+                <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
+                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><History size={16} className="text-blue-600"/> Audit Registry</h3>
+                    <div className="space-y-4 max-h-[450px] overflow-y-auto no-scrollbar">
+                        {order.logs?.slice().reverse().map(log => (
+                            <div key={log.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-4">
+                                <div className="w-8 h-8 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-[10px] font-black text-blue-600 shrink-0 shadow-sm">{log.user.slice(0, 1).toUpperCase()}</div>
+                                <div className="flex-1">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="text-[9px] font-black text-slate-900 uppercase">{log.user}</span>
+                                        <span className="text-[8px] font-bold text-slate-400">{new Date(log.timestamp).toLocaleString()}</span>
+                                    </div>
+                                    <p className="text-[11px] font-bold text-slate-600 uppercase tracking-tight leading-relaxed">{log.message}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             </div>
         </div>
-
-        {/* Print Portal */}
-        {showPrintPortal && tenant && (
-          createPortal(
-            <div className="print-only">
-               <LabelPrintView orders={[{...order, ...localFormData, items, totalAmount}]} settings={tenant.settings} />
-            </div>,
-            document.body
-          )
-        )}
+        {showPrintPortal && tenant && createPortal(<div className="print-only"><BillPrintView order={{...order, ...localFormData, items, totalAmount}} settings={tenant.settings} /></div>, document.body)}
     </div>
   );
 };

@@ -36,13 +36,13 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
                 overflow: hidden;
             }
             .label-item { 
-                border: 0.1pt dashed #ddd; /* Extremely subtle cutting guide */
+                border: 0.1pt dashed #ddd;
                 padding: 6mm 7mm; 
                 display: flex; 
                 flex-direction: column; 
                 justify-content: space-between; 
                 overflow: hidden;
-                height: 99mm; /* Exact A4/3 height */
+                height: 99mm;
                 background: white;
             }
         }
@@ -57,59 +57,57 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
             return (
               <div key={order.id} className="label-item">
                 <div className="flex flex-col gap-1">
-                  {/* To Section */}
                   <div className="space-y-0.5">
                     <p className="text-[12px] font-normal leading-none mb-1">To:</p>
-                    <h2 className="text-[16px] font-black leading-tight uppercase truncate">
-                      {order.customerName} ({productName})
-                    </h2>
-                    <p className="text-[12px] font-bold leading-tight mt-1 line-clamp-2 min-h-[2em]">
+                    <div className="text-[15px] leading-tight uppercase">
+                      <span className="font-black">{order.customerName}</span>
+                      <span className="font-black ml-1">({productName})</span>
+                    </div>
+                    <p className="text-[15px] font-normal leading-tight mt-1 line-clamp-2 min-h-[2em]">
                       {order.customerAddress} {order.customerCity ? `[${order.customerCity.toUpperCase()}]` : ''}
                     </p>
-                    <p className="text-[19px] font-black mt-2 tracking-tighter">
-                      {order.customerPhone}
-                    </p>
+                    <div className="mt-2">
+                        <p className="text-[18px] font-black tracking-tighter leading-none">
+                          {order.customerPhone}{order.customerPhone2 ? ` / ${order.customerPhone2}` : ''}
+                        </p>
+                    </div>
                   </div>
 
-                  {/* COD Section */}
                   <div className="mt-3 mb-1">
-                    <h1 className="text-[26px] font-black tracking-tighter leading-none">
+                    <h1 className="text-[34px] font-black tracking-tighter leading-none">
                       COD: Rs.{order.totalAmount.toLocaleString()}
                     </h1>
                   </div>
 
-                  <div className="border-t-[1pt] border-black border-dashed my-3 w-full opacity-30"></div>
+                  <div className="border-t-[1pt] border-black border-dashed my-2 w-full opacity-30"></div>
 
-                  {/* From Section */}
                   <div className="space-y-0.5">
-                    <p className="text-[11px] font-normal leading-none mb-1">From:</p>
-                    <p className="text-[14px] font-black uppercase leading-tight truncate">{settings.shopName}</p>
-                    <p className="text-[10px] font-bold text-gray-700 leading-tight line-clamp-1">{settings.shopAddress}</p>
-                    <p className="text-[11px] font-black leading-none">{settings.shopPhone}</p>
-                    <p className="text-[8px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">Cluster Ref: {order.id}</p>
+                    <p className="text-[10px] font-normal leading-none mb-1">From:</p>
+                    <p className="text-[12px] font-black uppercase leading-tight truncate">{settings.shopName}</p>
+                    <p className="text-[9px] font-bold text-gray-700 leading-tight line-clamp-1">{settings.shopAddress}</p>
+                    <p className="text-[10px] font-black leading-none">{settings.shopPhone}</p>
+                    <p className="text-[7px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">OMS Ref: {order.id}</p>
                   </div>
                 </div>
 
-                {/* Barcode Section */}
-                <div className="flex flex-col items-center mt-auto pb-2">
+                <div className="flex flex-col items-center mt-auto pb-1">
                   <Barcode 
                     value={displayId} 
-                    width={1.6} 
-                    height={40} 
-                    fontSize={11} 
+                    width={1.5} 
+                    height={35} 
+                    fontSize={10} 
                     font="monospace" 
                     background="transparent"
                     format="CODE128"
                     margin={0}
                   />
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] mt-1 leading-none">
+                  <p className="text-[9px] font-black uppercase tracking-[0.3em] mt-1 leading-none">
                     {displayId}
                   </p>
                 </div>
               </div>
             );
           })}
-          {/* Fill remaining slots in 2x3 grid with empty items to prevent layout shift */}
           {Array.from({ length: 6 - orders.slice(pageIdx * 6, (pageIdx + 1) * 6).length }).map((_, i) => (
             <div key={`empty-${i}`} className="label-item opacity-0"></div>
           ))}

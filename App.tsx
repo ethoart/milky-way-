@@ -17,7 +17,7 @@ import { FinancialCenter } from './pages/FinancialCenter';
 import { TodayShipped } from './pages/TodayShipped';
 import { User, UserRole, Tenant } from './types';
 import { db } from './services/mockBackend';
-import { Lock, User as UserIcon, Menu, Globe, Shield } from 'lucide-react';
+import { Lock, User as UserIcon, Menu, Globe } from 'lucide-react';
 
 const LoginPage = ({ onLogin, branding }: { onLogin: (u: string, p: string) => Promise<void>, branding?: Tenant }) => {
   const [username, setUsername] = useState('');
@@ -32,14 +32,14 @@ const LoginPage = ({ onLogin, branding }: { onLogin: (u: string, p: string) => P
     try {
       setLoading(true);
       await onLogin(username, password);
-    } catch (e) {
-      alert('Authentication failed. Please check your credentials.');
+    } catch (e: any) {
+      alert(e.message || 'Authentication failed.');
     } finally {
       setLoading(false);
     }
   }
 
-  const shopName = branding?.settings.shopName || 'Milky Way';
+  const shopName = branding?.settings.shopName || 'Milky Way OMS';
   const logoUrl = branding?.settings.logoUrl;
 
   return (
@@ -95,13 +95,14 @@ export default function App() {
   const initBranding = useCallback(async () => {
     try {
       const tenants = await db.getTenants();
-      const currentHost = window.location.hostname.toLowerCase();
-      const currentHostNoWww = currentHost.replace('www.', '');
+      const currentHost = window.location.hostname.toLowerCase().trim();
+      const currentHostNoWww = currentHost.replace(/^www\./, '');
       
       const match = tenants.find(t => {
-          if (t.domain?.toLowerCase() === currentHost || t.domain?.toLowerCase() === currentHostNoWww) return true;
+          const tDomain = t.domain?.toLowerCase().trim();
+          if (tDomain && (tDomain === currentHost || tDomain === currentHostNoWww)) return true;
           return (t.domainRecords || []).some(r => {
-              const host = r.host.toLowerCase();
+              const host = r.host.toLowerCase().trim();
               return (host === currentHost || host === currentHostNoWww) && r.isActive;
           });
       });
@@ -111,6 +112,13 @@ export default function App() {
       console.error("Branding sync failure", e);
     }
   }, []);
+
+  const refreshTenant = useCallback(async () => {
+    if (user?.tenantId) {
+      const t = await db.getTenant(user.tenantId);
+      if (t) setTenant(t);
+    }
+  }, [user?.tenantId]);
 
   useEffect(() => {
     initBranding();
@@ -123,6 +131,17 @@ export default function App() {
         if (u.role === UserRole.DEV_ADMIN) setCurrentPage('dev_dashboard');
     }
   }, [initBranding]);
+
+  // Deep Link Observer for Ctrl + Click functionality
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get('orderId');
+    if (orderId && user) {
+      setSelectedOrderId(orderId);
+      setCurrentPage('order_detail');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [user]);
 
   useEffect(() => {
     const defaultTitle = user?.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way OMS';
@@ -144,7 +163,7 @@ export default function App() {
 
   if (!user) return <LoginPage onLogin={handleLogin} branding={brandedTenant || undefined} />;
 
-  const defaultTitle = user.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way';
+  const defaultTitle = user.role === UserRole.DEV_ADMIN ? 'Master Console' : 'Milky Way OMS';
   const displayShopName = tenant?.settings.shopName || brandedTenant?.settings.shopName || defaultTitle;
 
   const renderPage = () => {
@@ -161,7 +180,7 @@ export default function App() {
         case 'financials': return <FinancialCenter tenantId={user.tenantId!} shopName={displayShopName} />;
         case 'inventory': return <Stock tenantId={user.tenantId!} shopName={displayShopName} />;
         case 'returns': return <Returns tenantId={user.tenantId!} shopName={displayShopName} />;
-        case 'settings': return <Settings tenantId={user.tenantId!} shopName={displayShopName} />;
+        case 'settings': return <Settings tenantId={user.tenantId!} shopName={displayShopName} onRefreshBranding={refreshTenant} />;
         case 'team': return <Team tenantId={user.tenantId!} shopName={displayShopName} />;
         case 'dev_dashboard': return <DevAdmin />;
         case 'dev_tenants': return <DevAdmin />;

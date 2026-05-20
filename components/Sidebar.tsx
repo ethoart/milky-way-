@@ -35,7 +35,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
   const hasAccess = (pageId: string) => {
     if (user.role === UserRole.DEV_ADMIN) return true;
     if (user.role === UserRole.SUPER_ADMIN) return true;
-    if (pageId === 'selling') return true;
+    // Admins get access to pipeline, scan terminals and operational tools
+    if (user.role === UserRole.ADMIN) {
+        const adminPages = ['dashboard', 'leads', 'selling', 'shipping', 'today_shipped', 'return_mgmt', 'residual_mgmt', 'inventory', 'returns'];
+        if (adminPages.includes(pageId)) return true;
+    }
     return user.permissions?.includes(pageId);
   };
 
@@ -58,7 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
       >
         <div className="flex items-center gap-3">
           <span className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}>
-            {React.cloneElement(icon as React.ReactElement, { size: 18 })}
+            {React.cloneElement(icon as React.ReactElement<any>, { size: 18 })}
           </span>
           <span className="text-[13px] font-semibold tracking-tight">{label}</span>
         </div>
@@ -101,9 +105,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
           )}
           <div className="flex flex-col">
             <h1 className="text-[15px] font-black text-slate-900 tracking-tight uppercase leading-none truncate max-w-[140px]">
-              {shopName || 'Milky Way'}
+              {shopName || 'Milky Way OMS'}
             </h1>
-            <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest mt-0.5">OMS CLUSTER</span>
+            <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest mt-0.5">Enterprise Hub</span>
           </div>
         </div>
 
@@ -126,12 +130,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
               
               {SectionHeader('Operations', ['return_mgmt', 'residual_mgmt'])}
               {navItem('return_mgmt', <RotateCcw />, 'Returns Hub')}
-              {navItem('residual_mgmt', <PhoneForwarded />, 'Residual Hub')}
+              {navItem('residual_mgmt', <PhoneForwarded />, 'Reschedule Hub')}
 
               {SectionHeader('Assets', ['financials', 'inventory', 'returns'])}
               {navItem('financials', <Wallet />, 'Financials')}
               {navItem('inventory', <Package />, 'Inventory')}
-              {navItem('returns', <Scan size={18}/>, 'Milky Way Scan')}
+              {navItem('returns', <Scan size={18}/>, 'Milky Way OMS')}
               
               {user.role === UserRole.SUPER_ADMIN && (
                   <>

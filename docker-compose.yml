@@ -1,22 +1,35 @@
+
 version: '3.8'
 
 services:
-  milky-way-oms:
-    build: .
-    container_name: milkyway_oms_engine
+  milky-way-app:
+    build: 
+      context: .
+      dockerfile: Dockerfile.txt
+    container_name: milkyway_app
     restart: always
     environment:
       - MONGODB_URI=${MONGODB_URI}
       - PORT=8080
-    mem_limit: 700m
-    # Port 8080 is internal to the docker network, Cloudflare will bridge it.
+    networks:
+      - mw-network
+    deploy:
+      resources:
+        limits:
+          memory: 768M
 
-  tunnel:
+  milky-way-tunnel:
     image: cloudflare/cloudflared:latest
-    container_name: cloudflare_bridge
+    container_name: milkyway_tunnel
     restart: always
     environment:
       - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
     command: tunnel --no-autoupdate run
     depends_on:
-      - milky-way-oms
+      - milky-way-app
+    networks:
+      - mw-network
+
+networks:
+  mw-network:
+    driver: bridge

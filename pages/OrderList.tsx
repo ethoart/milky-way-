@@ -1,148 +1,262 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency } from '../utils/helpers';
-import { Search, ChevronRight, Layers, AlertCircle, Zap, Trash2, CheckSquare, Square, Truck, Loader2, Printer, UserPlus, Users } from 'lucide-react';
+import { Search, ChevronRight, Trash2, CheckSquare, Square, Truck, Printer, ExternalLink, ChevronLeft, Loader2 } from 'lucide-react';
 
 interface OrderListProps {
   tenantId: string;
   onSelectOrder: (orderId: string) => void;
-  defaultFilter?: OrderStatus | 'ALL' | 'TODAY_SHIPPED';
+  status?: OrderStatus | 'ALL' | 'TODAY_SHIPPED';
   productId?: string | null;
   startDate?: string;
   endDate?: string;
   logisticsOnly?: boolean;
   onBulkAction?: (orderIds: string[]) => void;
+  onRefresh?: () => void;
+  data?: Order[]; // OPTIONAL: Pass pre-filtered data to skip internal fetching
 }
 
 export const OrderList: React.FC<OrderListProps> = ({ 
-  tenantId, onSelectOrder, defaultFilter = 'ALL', productId, startDate, endDate, logisticsOnly = false, onBulkAction 
+  tenantId, 
+  onSelectOrder, 
+  status = 'ALL', 
+  productId, 
+  startDate, 
+  endDate, 
+  logisticsOnly = false, 
+  onBulkAction, 
+  onRefresh,
+  data: externalData
 }) => {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [limit] = useState(50);
+  
   const [customerHistories, setCustomerHistories] = useState<{[key: string]: any}>({});
-  const [activeStatus, setActiveStatus] = useState<OrderStatus | 'ALL' | 'TODAY_SHIPPED'>(defaultFilter);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [bulkProgressMsg, setBulkProgressMsg] = useState('');
 
-  useEffect(() => { 
-    setActiveStatus(defaultFilter); 
-    setSelectedIds([]); 
-  }, [defaultFilter]);
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedIds([]);
+  }, [status, productId, startDate, endDate, debouncedSearch, externalData]);
 
-  const loadData = async () => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const fetchedOrders = await db.getOrders(tenantId);
-      setOrders(fetchedOrders);
+      let finalOrders: Order[] = [];
+      let total = 0;
+
+      if (externalData) {
+          // CLIENT-SIDE MODE (Parent provides filtered data)
+          let filtered = [...externalData];
+          
+          // Apply Search
+          if (debouncedSearch) {
+              const term = debouncedSearch.toLowerCase();
+              filtered = filtered.filter(o => 
+                  o.id.toLowerCase().includes(term) ||
+                  o.customerName.toLowerCase().includes(term) ||
+                  o.customerPhone.includes(term) ||
+                  (o.trackingNumber || '').toLowerCase().includes(term)
+              );
+          }
+
+          // Status Filter (if not handled by parent or for extra safety)
+          if (status !== 'ALL') {
+             if (status === 'LOGISTICS_ALL') {
+                 // Handled by parent usually, but fallback here
+             } else {
+                 filtered = filtered.filter(o => o.status === status);
+             }
+          }
+
+          // Sort (Newest First)
+          filtered.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+          total = filtered.length;
+          finalOrders = filtered.slice((currentPage - 1) * limit, currentPage * limit);
+          
+      } else {
+          // SERVER-SIDE MODE (Standard Fetch)
+          const response = await db.getOrders({
+            tenantId,
+            page: currentPage,
+            limit,
+            search: debouncedSearch,
+            status: status,
+            productId: productId || undefined,
+            startDate,
+            endDate
+          });
+          finalOrders = response.data;
+          total = response.total;
+      }
+
+      setOrders(finalOrders);
+      setTotalCount(total);
       
-      const uniquePhones = [...new Set(fetchedOrders.slice(0, 50).map(o => o.customerPhone))];
-      const historyPromises = uniquePhones.map(async (phone) => {
-        const h = await db.getCustomerHistory(phone, tenantId);
-        return { phone, h };
-      });
-      
-      const results = await Promise.all(historyPromises);
-      const historyMap: any = {};
-      results.forEach(res => historyMap[res.phone] = res.h);
-      setCustomerHistories(historyMap);
+      if (finalOrders.length > 0) {
+        const uniquePhones = [...new Set(finalOrders.map(o => o.customerPhone))];
+        const historyResults = await Promise.all(uniquePhones.map(async (phone) => {
+          const h = await db.getCustomerHistory(phone, tenantId);
+          return { phone, h };
+        }));
+        
+        const historyMap: any = {};
+        historyResults.forEach(res => { 
+          historyMap[res.phone.slice(-8)] = res.h; 
+        });
+        setCustomerHistories(historyMap);
+      }
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [tenantId, currentPage, limit, debouncedSearch, status, productId, startDate, endDate, externalData]);
 
-  useEffect(() => { loadData(); }, [tenantId]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  const filteredOrders = useMemo(() => {
-    let result = [...orders];
-    if (logisticsOnly) {
-      const logicSts = [OrderStatus.SHIPPED, OrderStatus.DELIVERY, OrderStatus.RESIDUAL, OrderStatus.RETURNED, OrderStatus.DELIVERED, OrderStatus.RETURN_COMPLETED];
-      result = result.filter(o => logicSts.includes(o.status));
+  const handleOrderClick = (e: React.MouseEvent, orderId: string) => {
+    if (e.ctrlKey || e.metaKey) {
+      const url = `${window.location.origin}${window.location.pathname}?orderId=${orderId}`;
+      window.open(url, '_blank');
+    } else {
+      onSelectOrder(orderId);
     }
-    return result.filter(o => {
-      let matchesStatus = activeStatus === 'ALL' || (activeStatus === 'TODAY_SHIPPED' ? (o.shippedAt && new Date(o.shippedAt).toDateString() === new Date().toDateString()) : o.status === activeStatus);
-      if (productId && !o.items.some(item => item.productId === productId)) return false;
-      const orderDate = new Date(o.createdAt);
-      if (startDate && orderDate < new Date(startDate)) return false;
-      if (endDate && orderDate > new Date(endDate + 'T23:59:59')) return false;
-      const normalizedSearch = search.toLowerCase();
-      return matchesStatus && (o.customerName.toLowerCase().includes(normalizedSearch) || o.id.includes(normalizedSearch) || o.customerPhone.includes(normalizedSearch));
-    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [orders, activeStatus, search, startDate, endDate, productId, logisticsOnly]);
+  };
 
-  const handleOrderClick = async (order: Order) => {
-    if (order.status === OrderStatus.PENDING) {
-        const currentUser = localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System';
-        const updated: Order = {
-            ...order,
-            status: OrderStatus.OPEN_LEAD,
-            openedBy: currentUser,
-            logs: [...(order.logs || []), { id: `log-view-${Date.now()}`, message: `Node Opened for Processing by ${currentUser}`, timestamp: new Date().toISOString(), user: currentUser }]
-        };
-        await db.updateOrder(updated);
+  const handleBulkDelete = async () => {
+    if (!confirm(`CRITICAL: Registry Wipe. Permanent removal of ${selectedIds.length} nodes. Continue?`)) return;
+    setBulkProcessing(true);
+    setBulkProgressMsg('EXECUTING WIPE...');
+    try {
+      await db.deleteOrder(selectedIds.join(','), tenantId);
+      setSelectedIds([]);
+      await loadData();
+      if (onRefresh) onRefresh();
+      alert(`Wipe Successful: Clusters purged.`);
+    } catch (e: any) {
+      alert(`Protocol Denied: ${e.message}`);
+    } finally { 
+      setBulkProcessing(false); 
+      setBulkProgressMsg('');
     }
-    onSelectOrder(order.id);
   };
 
-  const toggleSelect = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const handleBulkShip = async () => {
+    if (!confirm(`Logistics Sync: Transmit selected leads to Courier? Note: Only CONFIRMED orders will be processed.`)) return;
+    setBulkProcessing(true);
+    
+    let successCount = 0;
+    let failCount = 0;
+    let skipCount = 0;
+    let lastError = '';
+
+    const targetIds = [...selectedIds];
+    for (let i = 0; i < targetIds.length; i++) {
+        const id = targetIds[i];
+        const order = orders.find(o => o.id === id);
+        
+        if (order) {
+            if (order.status !== OrderStatus.CONFIRMED) {
+                console.warn(`Skipping ${order.id}: Status is ${order.status}, expected CONFIRMED.`);
+                skipCount++;
+                continue;
+            }
+
+            setBulkProgressMsg(`SHIPPING ${i+1}/${targetIds.length}: ${order.customerName}`);
+            try {
+                await db.shipOrder(order, tenantId);
+                successCount++;
+            } catch (err: any) {
+                failCount++;
+                lastError = err.message;
+                console.error(`FDE Handshake failed for ${order.id}:`, err);
+            }
+            await new Promise(r => setTimeout(r, 800));
+        }
+    }
+
+    setBulkProcessing(false);
+    setBulkProgressMsg('');
+    
+    let summary = `Logistics Summary:\n- Processed: ${successCount}\n- Failed: ${failCount}\n- Skipped (Not Confirmed/Already Shipped): ${skipCount}`;
+    if (failCount > 0) summary += `\n\nLast Error: ${lastError}`;
+    alert(summary);
+    
+    setSelectedIds([]);
+    await loadData();
+    if (onRefresh) onRefresh();
   };
 
-  const toggleAll = () => {
-    setSelectedIds(selectedIds.length === filteredOrders.length ? [] : filteredOrders.map(o => o.id));
-  };
-
-  const handleDelete = async (e: React.MouseEvent, orderId: string) => {
-    e.stopPropagation();
-    if (!confirm("Confirm Record Destruction?")) return;
-    await db.deleteOrder(orderId, tenantId);
-    loadData();
+  const toggleSelectAll = () => {
+    if (selectedIds.length === orders.length && orders.length > 0) setSelectedIds([]);
+    else setSelectedIds(orders.map(o => o.id));
   };
 
   const getStatusColor = (status: OrderStatus) => {
     switch(status) {
       case OrderStatus.PENDING: return 'bg-blue-600 text-white';
-      case OrderStatus.OPEN_LEAD: return 'bg-sky-400 text-white';
-      case OrderStatus.CONFIRMED: return 'bg-emerald-600 text-white';
-      case OrderStatus.HOLD: return 'bg-purple-600 text-white';
-      case OrderStatus.NO_ANSWER: return 'bg-yellow-500 text-white';
+      case OrderStatus.OPEN_LEAD: return 'bg-sky-500 text-white';
+      case OrderStatus.CONFIRMED: return 'bg-emerald-500 text-white';
       case OrderStatus.REJECTED: return 'bg-rose-600 text-white';
+      case OrderStatus.NO_ANSWER: return 'bg-amber-400 text-black';
       case OrderStatus.SHIPPED: return 'bg-indigo-600 text-white';
+      case OrderStatus.HOLD: return 'bg-purple-600 text-white';
+      case OrderStatus.RETURN_TRANSFER: return 'bg-indigo-500 text-white';
+      case OrderStatus.TRANSFER: return 'bg-indigo-600 text-white';
       default: return 'bg-slate-200 text-slate-600';
     }
   };
 
+  const getStatusDisplay = (status: OrderStatus) => {
+      if (status === OrderStatus.RESIDUAL) return 'RESCHEDULE';
+      if (status === OrderStatus.RETURN_TRANSFER) return 'RETURN TRANSFER';
+      return status.replace('_', ' ');
+  };
+
+  const totalPages = Math.ceil(totalCount / limit);
+
   return (
     <div className="flex flex-col h-full bg-white animate-slide-in relative">
       {selectedIds.length > 0 && (
-        <div className="absolute top-0 left-0 right-0 z-20 bg-slate-900 text-white p-4 flex items-center justify-between animate-slide-in shadow-2xl rounded-b-2xl">
-          <div className="flex items-center gap-4 pl-4">
-            <span className="text-xs font-black uppercase tracking-widest">{selectedIds.length} Records Locked</span>
+        <div className="absolute top-0 left-0 right-0 z-20 bg-slate-950 text-white p-4 flex items-center justify-between shadow-2xl rounded-b-2xl border-b border-white/10">
+          <div className="flex items-center gap-4 ml-4">
+              {bulkProcessing ? <Loader2 className="animate-spin text-blue-400" size={20}/> : <CheckSquare className="text-blue-500" size={20}/>}
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black uppercase tracking-widest">{selectedIds.length} Nodes Locked</span>
+                {bulkProgressMsg && <span className="text-[8px] font-bold text-blue-400 uppercase animate-pulse">{bulkProgressMsg}</span>}
+              </div>
           </div>
           <div className="flex gap-2">
-            {onBulkAction && (
-              <button 
-                onClick={() => { onBulkAction(selectedIds); setSelectedIds([]); }} 
-                className="bg-blue-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg"
-              >
-                {activeStatus === OrderStatus.CONFIRMED ? <Truck size={14} /> : <Printer size={14} />} 
-                {activeStatus === OrderStatus.CONFIRMED ? 'Dispatch Selection' : 'Print Selection'}
+            {status === OrderStatus.CONFIRMED && (
+              <button disabled={bulkProcessing} onClick={handleBulkShip} className="bg-blue-600 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50">
+                <Truck size={14} /> Bulk Ship
               </button>
             )}
-            <button 
-              onClick={async () => {
-                if (!confirm(`Purge ${selectedIds.length} records?`)) return;
-                for (const id of selectedIds) await db.deleteOrder(id, tenantId);
-                setSelectedIds([]);
-                loadData();
-              }}
-              className="bg-rose-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-rose-700 transition-all"
-            >
-              <Trash2 size={14} /> Delete
+            {onBulkAction && (
+              <button disabled={bulkProcessing} onClick={() => { onBulkAction(selectedIds); setSelectedIds([]); }} className="bg-slate-800 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:bg-black transition-all disabled:opacity-50">
+                <Printer size={14} /> Label Print
+              </button>
+            )}
+            <button disabled={bulkProcessing} onClick={handleBulkDelete} className="bg-rose-600 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 hover:bg-rose-700 transition-all disabled:opacity-50">
+              <Trash2 size={14} /> Wipe Registry
             </button>
-            <button onClick={() => setSelectedIds([])} className="bg-white/10 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/20 transition-all">Dismiss</button>
+            <button disabled={bulkProcessing} onClick={() => setSelectedIds([])} className="bg-white/10 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase disabled:opacity-30">Cancel</button>
           </div>
         </div>
       )}
@@ -150,12 +264,22 @@ export const OrderList: React.FC<OrderListProps> = ({
       <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-50/20">
         <div className="relative flex-1 md:w-80">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input placeholder="Search identifiers..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-white border border-slate-200 pl-11 pr-4 py-3 rounded-2xl outline-none text-[13px] font-bold focus:ring-2 focus:ring-blue-500 transition-all shadow-sm" />
+            <input 
+              placeholder="Registry Search..." 
+              value={search} 
+              onChange={(e) => setSearch(e.target.value)} 
+              className="w-full bg-white border border-slate-200 pl-11 pr-4 py-3 rounded-2xl outline-none text-[13px] font-bold focus:ring-2 focus:ring-blue-500 shadow-sm" 
+            />
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={toggleAll} className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-200 transition-all">
-            {selectedIds.length === filteredOrders.length ? <CheckSquare size={14}/> : <Square size={14}/>} {selectedIds.length === filteredOrders.length ? 'Deselect' : 'Select All'}
-          </button>
+        <div className="flex items-center gap-4">
+            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              Total: {totalCount.toLocaleString()} Nodes
+            </div>
+            <div className="flex items-center gap-1">
+               <button disabled={currentPage === 1 || isLoading} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="p-2 rounded-lg hover:bg-slate-200 disabled:opacity-30"><ChevronLeft size={16}/></button>
+               <span className="text-[11px] font-black text-slate-900 bg-white border border-slate-200 px-3 py-1 rounded-lg">Page {currentPage} of {totalPages || 1}</span>
+               <button disabled={currentPage === totalPages || totalPages === 0 || isLoading} onClick={() => setCurrentPage(p => p + 1)} className="p-2 rounded-lg hover:bg-slate-200 disabled:opacity-30"><ChevronRight size={16}/></button>
+            </div>
         </div>
       </div>
 
@@ -163,63 +287,67 @@ export const OrderList: React.FC<OrderListProps> = ({
         <table className="w-full text-left compact-table">
           <thead className="sticky top-0 bg-white/95 backdrop-blur-sm z-10 border-b border-slate-100">
             <tr>
-              <th className="w-12"></th>
-              <th className="w-24">Node</th>
-              <th>Identity</th>
-              <th className="text-center">Intel</th>
-              <th>Amount</th>
-              <th className="text-center">Pipeline</th>
+              <th className="w-12 text-center" onClick={toggleSelectAll}>
+                <div className={`cursor-pointer ${selectedIds.length === orders.length && orders.length > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
+                   {selectedIds.length === orders.length && orders.length > 0 ? <CheckSquare size={18}/> : <Square size={18}/>}
+                </div>
+              </th>
+              <th>Reference / Waybill</th>
+              <th>Consignee</th>
+              <th className="text-center">History Intel</th>
+              <th>Total</th>
+              <th className="text-center">Status</th>
               <th className="text-right pr-6">Action</th>
             </tr>
           </thead>
           <tbody className={`divide-y divide-slate-100 ${isLoading ? 'opacity-50' : ''}`}>
-            {filteredOrders.map((order) => {
-              const history = customerHistories[order.customerPhone];
+            {orders.length === 0 && !isLoading && (
+              <tr><td colSpan={7} className="py-20 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">No Records Found</td></tr>
+            )}
+            {orders.map((order) => {
+              const last8 = order.customerPhone.slice(-8);
+              const history = customerHistories[last8];
               const isSelected = selectedIds.includes(order.id);
-              const hasReturns = history?.returns > 0;
-              const isRepeat = history?.count >= 2;
-              
               return (
-                <tr key={order.id} className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/50' : ''}`} onClick={() => handleOrderClick(order)}>
-                  <td onClick={(e) => toggleSelect(e, order.id)} className="text-center">
+                <tr key={order.id} className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/50' : ''}`} onClick={(e) => handleOrderClick(e, order.id)}>
+                  <td onClick={(e) => { e.stopPropagation(); setSelectedIds(prev => prev.includes(order.id) ? prev.filter(x => x !== order.id) : [...prev, order.id]); }} className="text-center">
                     <div className={`p-1 transition-all ${isSelected ? 'text-blue-600' : 'text-slate-300'}`}>
                       {isSelected ? <CheckSquare size={18}/> : <Square size={18}/>}
                     </div>
                   </td>
-                  <td><span className="font-mono text-[10px] font-bold text-slate-400">#{order.id.slice(-6)}</span></td>
                   <td>
                     <div className="flex flex-col">
-                      <span className={`text-[13px] font-black tracking-tight uppercase ${hasReturns ? 'text-rose-600 bg-rose-50 px-1 rounded' : 'text-slate-900'}`}>
-                        {order.customerName}
-                      </span>
+                        <span className="font-mono text-[10px] font-bold text-slate-400">#{order.id.slice(-8)}</span>
+                        {order.trackingNumber && (
+                            <span className="text-[9px] font-black text-blue-600 mt-0.5 tracking-wider">{order.trackingNumber}</span>
+                        )}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="flex flex-col">
+                      <span className="text-[13px] font-black uppercase text-slate-900">{order.customerName}</span>
                       <span className="text-[10px] font-bold text-slate-400">{order.customerPhone}</span>
                     </div>
                   </td>
                   <td className="text-center">
                       <div className="flex flex-col gap-1 items-center">
-                        {hasReturns && (
-                          <div className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[8px] font-black uppercase inline-flex items-center gap-1">
-                            <AlertCircle size={10} /> {history.returns} RETURNS
-                          </div>
-                        )}
-                        {isRepeat && (
-                          <div className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[8px] font-black uppercase inline-flex items-center gap-1">
-                            <Users size={10} /> REPEAT ({history.count})
-                          </div>
-                        )}
-                        {!hasReturns && !isRepeat && <span className="text-[10px] font-bold text-slate-300">-</span>}
+                        {history?.returns > 0 ? (
+                          <div className="bg-rose-600 text-white px-2 py-0.5 rounded text-[8px] font-black uppercase">RISK ({history.returns})</div>
+                        ) : history?.count >= 2 ? (
+                          <div className="bg-blue-600 text-white px-2 py-0.5 rounded text-[8px] font-black uppercase">REPEAT ({history.count})</div>
+                        ) : <span className="text-[10px] font-bold text-slate-300">-</span>}
                       </div>
                   </td>
                   <td><span className="text-sm font-black text-slate-900">{formatCurrency(order.totalAmount)}</span></td>
                   <td className="text-center">
-                    <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-sm border border-black/5 ${getStatusColor(order.status)}`}>
-                      {order.status.replace('_', ' ')}
+                    <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>
+                        {getStatusDisplay(order.status)}
                     </span>
                   </td>
                   <td className="text-right pr-6">
                     <div className="flex items-center justify-end gap-2">
-                        <button onClick={(e) => handleDelete(e, order.id)} className="p-2.5 rounded-xl text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
-                        <button className="p-2.5 rounded-xl bg-slate-50 text-slate-400 group-hover:text-blue-600 group-hover:bg-blue-50 transition-all"><ChevronRight size={16}/></button>
+                        <ExternalLink size={14} className="text-slate-300 group-hover:text-blue-600 transition-all" />
+                        <button className="p-2.5 rounded-xl bg-slate-50 text-slate-400 group-hover:text-blue-600 transition-all"><ChevronRight size={16}/></button>
                     </div>
                   </td>
                 </tr>
@@ -227,12 +355,14 @@ export const OrderList: React.FC<OrderListProps> = ({
             })}
           </tbody>
         </table>
-        {filteredOrders.length === 0 && !isLoading && (
-          <div className="p-32 text-center opacity-20 uppercase font-black text-xs tracking-[0.5em] flex flex-col items-center gap-6">
-            <Zap size={60} strokeWidth={1} />
-            Logs Empty
+      </div>
+      
+      <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Showing {orders.length} of {totalCount.toLocaleString()} results</div>
+          <div className="flex items-center gap-2">
+            <button disabled={currentPage === 1 || isLoading} onClick={() => setCurrentPage(1)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-[10px] font-black uppercase hover:bg-slate-200 disabled:opacity-30">First</button>
+            <button disabled={currentPage === totalPages || totalPages === 0 || isLoading} onClick={() => setCurrentPage(totalPages)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-[10px] font-black uppercase hover:bg-slate-200 disabled:opacity-30">Last</button>
           </div>
-        )}
       </div>
     </div>
   );

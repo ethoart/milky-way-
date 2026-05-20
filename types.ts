@@ -13,6 +13,7 @@ export enum OrderStatus {
   HOLD = 'HOLD',
   CONFIRMED = 'CONFIRMED',
   SHIPPED = 'SHIPPED',
+  TRANSFER = 'TRANSFER', // Added for forward logistics hub transfer
   DELIVERY = 'DELIVERY',
   RESIDUAL = 'RESIDUAL',
   REARRANGE = 'REARRANGE',
@@ -62,6 +63,7 @@ export interface TenantSettings {
   courierClientId: string;
   courierMode: CourierMode;
   showBillQr: boolean;
+  cloudflareToken?: string; // New field for domain sync
 }
 
 export interface User {
@@ -75,9 +77,11 @@ export interface User {
 
 export interface StockBatch {
   id: string;
-  quantity: number;
+  quantity: number; // Current remaining
+  originalQuantity?: number; // Initial added amount
   buyingPrice: number;
   createdAt: string;
+  isReturn?: boolean;
 }
 
 export interface Product {
@@ -102,6 +106,7 @@ export interface Order {
   tenantId: string;
   customerName: string;
   customerPhone: string;
+  customerPhone2?: string;
   customerAddress: string;
   customerCity?: string;
   parcelWeight?: string;
@@ -112,6 +117,8 @@ export interface Order {
   createdAt: string;
   confirmedAt?: string;
   shippedAt?: string; 
+  deliveredAt?: string;
+  returnCompletedAt?: string; // New field for restocking analytics
   trackingNumber?: string;
   courierStatus?: string;
   isPrinted: boolean;
