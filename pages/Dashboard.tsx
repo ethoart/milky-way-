@@ -132,7 +132,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
     const dEnd = new Date(endDate || today);
     for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
         const slDate = getSLDateString(d);
-        dailyMap[slDate] = { date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), sales: 0, shipped: 0 };
+        const formatOptions: any = { month: 'short', day: 'numeric' };
+        if (preset === 'ALL' || preset === 'YEAR' || dStart.getFullYear() !== dEnd.getFullYear()) {
+            formatOptions.year = '2-digit';
+        }
+        dailyMap[slDate] = { 
+            date: d.toLocaleDateString('en-US', formatOptions), 
+            monthKey: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+            sales: 0, 
+            shipped: 0 
+        };
     }
 
     (orders || []).forEach(o => {
@@ -203,6 +212,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
         if (shipIsInRange) {
           shippedCount++;
           shippedValue += o.totalAmount;
+          if (dailyMap[shipDate!]) dailyMap[shipDate!].shipped += o.totalAmount;
           
           o.items.forEach(item => {
             filteredShippedProducts[item.name] = (filteredShippedProducts[item.name] || 0) + item.quantity;
@@ -333,6 +343,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
         }
     });
 
+    let trendsList = Object.values(dailyMap);
+    if (preset === 'ALL' || preset === 'YEAR') {
+        const monthlyAgg: any = {};
+        trendsList.forEach((t: any) => {
+            if (!monthlyAgg[t.monthKey]) {
+                monthlyAgg[t.monthKey] = { date: t.monthKey, sales: 0, shipped: 0 };
+            }
+            monthlyAgg[t.monthKey].sales += t.sales;
+            monthlyAgg[t.monthKey].shipped += t.shipped;
+        });
+        trendsList = Object.values(monthlyAgg);
+    }
+
     return {
         stats: { 
           deliveredCount, deliveredValue,
@@ -348,12 +371,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
         },
         today: { todayOrders, todayRevenue, todayShippedCount, todayReturnsCount, todayDeliveredCount },
         manifest: Object.entries(filteredShippedProducts).sort((a,b) => b[1] - a[1]),
-        scannedReturnManifest: Object.entries(scannedReturnProducts).sort((a,b) => b[1].count - a[1].count),
-        trends: Object.values(dailyMap),
+        scannedReturnManifest: Object.entries(scannedReturnProducts).sort((a:any,b:any) => b[1].count - a[1].count),
+        trends: trendsList,
         products: Object.values(productStats),
         teamLeaderboard: Object.values(teamStats).sort((a,b) => b.confirms - a.confirms)
     };
-  }, [orders, products, team, startDate, endDate]);
+  }, [orders, products, team, startDate, endDate, preset]);
 
   const statsCards = [
     { label: 'Delivered', count: dashboardData.stats.deliveredCount, value: dashboardData.stats.deliveredValue, sub: 'Orders Settled', icon: <PackageCheck/>, col: 'bg-emerald-50 text-emerald-600', trend: 'Value Realized' },

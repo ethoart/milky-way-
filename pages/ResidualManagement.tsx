@@ -26,7 +26,7 @@ export const ResidualManagement: React.FC<ResidualManagementProps> = ({ tenantId
   useEffect(() => {
     const fetchData = async () => {
         const [fetchedOrders, fetchedProducts] = await Promise.all([
-            db.getOrders({ tenantId, limit: 10000 }),
+            db.getOrders({ tenantId, limit: 1000000 }),
             db.getProducts(tenantId)
         ]);
         setOrders(fetchedOrders.data || []);

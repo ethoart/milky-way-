@@ -47,7 +47,7 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
     try {
       // Fetch up to 10k orders for financial summary calculations
       const [oRes, p] = await Promise.all([
-        db.getOrders({ tenantId, limit: 10000 }), 
+        db.getOrders({ tenantId, limit: 1000000 }), 
         db.getProducts(tenantId)
       ]);
       setOrders(oRes.data || []);

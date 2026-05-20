@@ -33,7 +33,7 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, sh
     setLoading(true);
     try {
         const [fetchedOrders, fetchedTenant] = await Promise.all([
-            db.getOrders({ tenantId, limit: 5000, status: 'LOGISTICS_ALL' }), // Fetch active logistics pool
+            db.getOrders({ tenantId, limit: 1000000, status: 'LOGISTICS_ALL' }), // Fetch active logistics pool
             db.getTenant(tenantId)
         ]);
         setOrders(fetchedOrders.data || []);
