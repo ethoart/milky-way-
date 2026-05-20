@@ -218,8 +218,15 @@ app.get('/api/orders', async (req, res) => {
         
         if (status && status !== 'ALL') {
             if (status === 'TODAY_SHIPPED') {
-                const dateToMatch = startDate || new Date().toISOString().split('T')[0];
-                query.shippedAt = { $regex: `^${dateToMatch}` };
+                const dateToMatch = startDate;
+                if (dateToMatch) {
+                    // SL Time is UTC+5:30. So SL Midnight is previous day 18:30:00 UTC.
+                    const startUtc = new Date(`${dateToMatch}T00:00:00+05:30`).toISOString();
+                    const endUtc = new Date(`${dateToMatch}T23:59:59.999+05:30`).toISOString();
+                    query.shippedAt = { $gte: startUtc, $lte: endUtc };
+                } else {
+                    query.status = 'SHIPPED';
+                }
             } else if (status === 'LOGISTICS_ALL') {
                 query.status = { 
                     $in: [

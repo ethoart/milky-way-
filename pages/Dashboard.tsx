@@ -50,7 +50,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
     setLoading(true);
     try {
       const [orderRes, fetchedProducts, fetchedTeam] = await Promise.all([
-          db.getOrders({ tenantId, limit: 1000000 }), 
+          db.getOrders({ tenantId, limit: 10000 }), 
           db.getProducts(tenantId),
           db.getTeamMembers(tenantId)
       ]);

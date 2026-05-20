@@ -31,7 +31,7 @@ export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, sh
 
   const load = async () => {
     const [fetchedOrders, fetchedProducts] = await Promise.all([
-        db.getOrders({ tenantId, limit: 1000000 }),
+        db.getOrders({ tenantId, limit: 10000 }),
         db.getProducts(tenantId)
     ]);
     setOrders(fetchedOrders.data || []);

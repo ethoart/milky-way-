@@ -29,7 +29,7 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }
                 tenantId, 
                 status: 'TODAY_SHIPPED', 
                 startDate: targetDate, 
-                limit: 1000 
+                limit: 2000 
             }),
             db.getTenant(tenantId)
         ]);

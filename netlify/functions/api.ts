@@ -294,9 +294,14 @@ export const handler: Handler = async (event, context) => {
         const query: any = { tenantId };
         if (status !== 'ALL') {
           if (status === 'TODAY_SHIPPED') {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            query.shippedAt = { $gte: today.toISOString() };
+            const dateToMatch = startDate;
+            if (dateToMatch) {
+              const startUtc = new Date(`${dateToMatch}T00:00:00+05:30`).toISOString();
+              const endUtc = new Date(`${dateToMatch}T23:59:59.999+05:30`).toISOString();
+              query.shippedAt = { $gte: startUtc, $lte: endUtc };
+            } else {
+              query.status = 'SHIPPED';
+            }
           } else if (status === 'LOGISTICS_ALL') {
             // New Filter: Only show active logistic statuses (excluding pipeline)
             query.status = { 

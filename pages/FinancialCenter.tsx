@@ -16,7 +16,11 @@ import {
   Calendar,
   Users,
   Package,
-  RefreshCw
+  RefreshCw,
+  Edit2,
+  X,
+  Save,
+  Tag
 } from 'lucide-react';
 
 interface FinancialCenterProps {
@@ -41,13 +45,17 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
   const [manualExpenses, setManualExpenses] = useState(0);
   const [advertisingCosts, setAdvertisingCosts] = useState(0);
   const [workerCount, setWorkerCount] = useState(1);
+  
+  // Modal State
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editSellingPrice, setEditSellingPrice] = useState(0);
+  const [editBuyingPrice, setEditBuyingPrice] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch up to 10k orders for financial summary calculations
       const [oRes, p] = await Promise.all([
-        db.getOrders({ tenantId, limit: 1000000 }), 
+        db.getOrders({ tenantId, limit: 10000 }), 
         db.getProducts(tenantId)
       ]);
       setOrders(oRes.data || []);
@@ -61,6 +69,32 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
 
   useEffect(() => { load(); }, [load]);
 
+  const handleEditProduct = (p: Product) => {
+      setEditingProduct(p);
+      setEditSellingPrice(p.price || 0);
+      const avgBuying = p.batches && p.batches.length > 0 
+          ? p.batches.reduce((acc, b) => acc + b.buyingPrice, 0) / p.batches.length 
+          : 0;
+      setEditBuyingPrice(avgBuying);
+  };
+
+  const handleSaveProductPricing = async () => {
+      if (!editingProduct) return;
+      const updatedProduct = { ...editingProduct, price: editSellingPrice };
+      if (updatedProduct.batches) {
+          updatedProduct.batches = updatedProduct.batches.map(b => ({ ...b, buyingPrice: editBuyingPrice }));
+      }
+      
+      try {
+          await db.updateProduct(updatedProduct);
+          setProducts(products.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+          setEditingProduct(null);
+      } catch (e) {
+          console.error("Failed to update product pricing", e);
+          alert("Failed to update pricing.");
+      }
+  };
+
   const financialData = useMemo(() => {
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -69,7 +103,7 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
     if (!Array.isArray(orders)) return {
       grossRevenue: 0, totalCogs: 0, grossProfit: 0, deliveredCount: 0, returnedCount: 0,
       totalDeliveryDeduction: 0, totalReturnDeduction: 0, netProfit: 0, investorShare: 0,
-      workerSharePool: 0, perWorkerProfit: 0, orderCount: 0
+      workerSharePool: 0, perWorkerProfit: 0, orderCount: 0, productLedger: []
     };
 
     const filtered = orders.filter(o => {
@@ -83,17 +117,51 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
       o.status === OrderStatus.RETURN_COMPLETED
     );
 
+    // Build Product Ledger
+    const pLedger = products.map(p => {
+        let soldQty = 0;
+        let returnedQty = 0;
+        let productRevenue = 0;
+
+        deliveredOrders.forEach(o => {
+            o.items.forEach(i => {
+                if (i.productId === p.id) {
+                    soldQty += i.quantity;
+                    productRevenue += (i.quantity * (i.price || p.price || 0));
+                }
+            });
+        });
+
+        returnedOrders.forEach(o => {
+            o.items.forEach(i => {
+                if (i.productId === p.id) {
+                    returnedQty += i.quantity;
+                }
+            });
+        });
+
+        const avgBuyingPrice = p.batches && p.batches.length > 0 
+          ? p.batches.reduce((acc, b) => acc + b.buyingPrice, 0) / p.batches.length 
+          : 0;
+
+        const cogs = soldQty * avgBuyingPrice;
+        const gp = productRevenue - cogs;
+
+        return {
+            ...p,
+            avgBuyingPrice,
+            soldQty,
+            returnedQty,
+            revenue: productRevenue,
+            grossProfit: gp,
+            cogs
+        };
+    }).sort((a,b) => b.revenue - a.revenue);
+
     const grossRevenue = deliveredOrders.reduce((s, o) => s + o.totalAmount, 0);
     
-    const totalCogs = deliveredOrders.reduce((sum, order) => {
-      return sum + order.items.reduce((itemSum, item) => {
-        const prod = products.find(p => p.id === item.productId);
-        const avgBuyingPrice = prod?.batches && prod.batches.length > 0 
-          ? prod.batches.reduce((acc, b) => acc + b.buyingPrice, 0) / prod.batches.length 
-          : 0;
-        return itemSum + (item.quantity * avgBuyingPrice);
-      }, 0);
-    }, 0);
+    // For overall COGS, use what we actually sold
+    const totalCogs = pLedger.reduce((sum, pl) => sum + pl.cogs, 0);
 
     const deliveredCount = deliveredOrders.length;
     const returnedCount = returnedOrders.length;
@@ -120,7 +188,8 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
       investorShare,
       workerSharePool,
       perWorkerProfit,
-      orderCount: filtered.length
+      orderCount: filtered.length,
+      productLedger: pLedger
     };
   }, [orders, products, startDate, endDate, deliveryFee, returnFee, manualExpenses, advertisingCosts, workerCount]);
 
@@ -349,6 +418,58 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
         </div>
       </div>
 
+      <div className="modern-card overflow-hidden bg-white shadow-sm border border-slate-100 print:hidden">
+         <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+           <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+             <Tag size={16} className="text-blue-600" /> Product Financials
+           </h3>
+         </div>
+         <div className="overflow-x-auto">
+           <table className="w-full text-left whitespace-nowrap">
+             <thead>
+               <tr className="border-b-2 border-slate-900 text-[10px] font-black uppercase text-slate-500">
+                 <th className="py-4 px-6 bg-slate-50 text-slate-900">SKU / Product</th>
+                 <th className="py-4 px-6 text-center border-l border-slate-100">Avg Buy Price</th>
+                 <th className="py-4 px-6 text-center">Sell Price</th>
+                 <th className="py-4 px-6 text-center border-l border-slate-100 bg-slate-50/50">Sold Qty</th>
+                 <th className="py-4 px-6 text-right">Revenue</th>
+                 <th className="py-4 px-6 text-right bg-rose-50/30 text-rose-600">COGS</th>
+                 <th className="py-4 px-6 text-right bg-emerald-50/50 text-emerald-900">Gross Profit (Est)</th>
+                 <th className="py-4 px-4 text-center">Actions</th>
+               </tr>
+             </thead>
+             <tbody className="divide-y divide-slate-100 uppercase font-black text-xs">
+               {financialData.productLedger.map(pl => (
+                 <tr key={pl.id} className="hover:bg-slate-50/50 transition-colors">
+                   <td className="py-4 px-6">
+                     <span className="text-[10px] text-blue-600 tracking-widest block">{pl.sku}</span>
+                     <span className="text-slate-900 mt-1">{pl.name}</span>
+                   </td>
+                   <td className="py-4 px-6 text-center border-l border-slate-100 text-slate-400">{formatCurrency(pl.avgBuyingPrice)}</td>
+                   <td className="py-4 px-6 text-center text-slate-900">{formatCurrency(pl.price || 0)}</td>
+                   <td className="py-4 px-6 text-center border-l border-slate-100 bg-slate-50/50">
+                       <span className="bg-white px-3 py-1 rounded-lg border border-slate-200 text-slate-900">{pl.soldQty}</span>
+                   </td>
+                   <td className="py-4 px-6 text-right text-slate-900">{formatCurrency(pl.revenue)}</td>
+                   <td className="py-4 px-6 text-right text-rose-600 bg-rose-50/30">({formatCurrency(pl.cogs)})</td>
+                   <td className="py-4 px-6 text-right text-emerald-700 bg-emerald-50/50">{formatCurrency(pl.grossProfit)}</td>
+                   <td className="py-4 px-4 text-center">
+                     <button onClick={() => handleEditProduct(pl)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
+                       <Edit2 size={16} />
+                     </button>
+                   </td>
+                 </tr>
+               ))}
+               {financialData.productLedger.length === 0 && (
+                   <tr>
+                       <td colSpan={8} className="py-12 text-center text-slate-300">No products sold in this period</td>
+                   </tr>
+               )}
+             </tbody>
+           </table>
+         </div>
+      </div>
+
       <div className="hidden print:block fixed inset-0 bg-white p-12 z-[9999]">
         <div className="flex justify-between items-start mb-12 border-b-2 border-slate-900 pb-8">
             <div>
@@ -413,6 +534,58 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
             <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">{shopName} Internal Auditor | Generated {new Date().toLocaleString()}</p>
         </div>
       </div>
+
+      {editingProduct && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex justify-center items-center p-4 print:hidden" onClick={() => setEditingProduct(null)}>
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-slide-up" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">Edit Pricing</h3>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{editingProduct.sku} - {editingProduct.name}</p>
+              </div>
+              <button onClick={() => setEditingProduct(null)} className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-200 rounded-xl transition-all">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Average Buying Price</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">LKR</span>
+                  <input 
+                    type="number"
+                    value={editBuyingPrice}
+                    onChange={e => setEditBuyingPrice(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-4 font-black text-lg outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition-all"
+                  />
+                </div>
+                <p className="text-[9px] font-bold text-slate-400 mt-2 uppercase">Updates cost in all stock batches</p>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Selling Price</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">LKR</span>
+                  <input 
+                    type="number"
+                    value={editSellingPrice}
+                    onChange={e => setEditSellingPrice(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-4 font-black text-lg outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button onClick={() => setEditingProduct(null)} className="px-6 py-3 rounded-2xl font-black text-xs uppercase text-slate-500 hover:bg-slate-200 transition-all">Cancel</button>
+              <button 
+                onClick={handleSaveProductPricing}
+                className="bg-black text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-all shadow-xl flex items-center gap-2"
+              >
+                <Save size={16} /> Save Pricing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
