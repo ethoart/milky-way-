@@ -13,11 +13,6 @@ export default defineConfig({
         },
       },
     },
-    rolldownOptions: {
-      output: {
-        codeSplitting: true,
-      },
-    },
   },
   server: {
     host: true
