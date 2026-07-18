@@ -6,13 +6,6 @@ export default defineConfig({
   build: {
     target: 'esnext',
     chunkSizeWarningLimit: 1500,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'lucide-react', 'recharts'],
-        },
-      },
-    },
   },
   server: {
     host: true
