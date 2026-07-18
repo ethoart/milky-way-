@@ -29,101 +29,24 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, sh
   });
   const [endDate, setEndDate] = useState(getSLDateString());
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-        const [fetchedOrders, fetchedTenant] = await Promise.all([
-            db.getOrders({ tenantId, limit: 10000, status: 'LOGISTICS_ALL' }), // Fetch active logistics pool
-            db.getTenant(tenantId)
-        ]);
-        setOrders(fetchedOrders.data || []);
-        if (fetchedTenant) setTenantSettings(fetchedTenant.settings);
-    } catch (e) {
-        console.error("Logistics sync failed", e);
-    } finally {
-        setLoading(false);
-    }
-  }, [tenantId, refreshKey]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    db.getTenant(tenantId).then(t => { if(t) setTenantSettings(t.settings) });
+    db.getOrderCounts({ tenantId, startDate, endDate, dateField: "shippedAt" }).then(setCounts);
+  }, [tenantId, refreshKey, startDate, endDate]);
 
-  useEffect(() => { load(); }, [load]);
 
-  const filteredOrders = useMemo(() => {
-      let filtered = orders;
 
-      // 1. Filter by Status
-      if (activeFilter !== 'LOGISTICS_ALL' && activeFilter !== 'TODAY_SHIPPED') {
-          filtered = filtered.filter(o => o.status === activeFilter);
-      } else if (activeFilter === 'TODAY_SHIPPED') {
-          const today = getSLDateString();
-          filtered = filtered.filter(o => {
-              const shipped = o.shippedAt ? getSLDateString(new Date(o.shippedAt)) : '';
-              return shipped === today;
-          });
-      }
 
-      // 2. Filter by Date (Activity Based)
-      // We only apply date filter if explicit dates are set. 
-      // For 'LOGISTICS_ALL', we might want to see everything active, 
-      // but for performance and relevance, filtering by activity date is better.
-      if (startDate || endDate) {
-          filtered = filtered.filter(o => {
-              const activityDate = getSLDateString(new Date(getOrderActivityDate(o)));
-              if (startDate && activityDate < startDate) return false;
-              if (endDate && activityDate > endDate) return false;
-              return true;
-          });
-      }
 
-      // 3. Sort by Activity Date (Newest First)
-      return filtered.sort((a, b) => {
-          const dateA = new Date(getOrderActivityDate(a)).getTime();
-          const dateB = new Date(getOrderActivityDate(b)).getTime();
-          return dateB - dateA;
-      });
-  }, [orders, activeFilter, startDate, endDate]);
 
-  const counts = useMemo(() => {
-      const stats: Record<string, number> = {
-          LOGISTICS_ALL: 0,
-          TODAY_SHIPPED: 0,
-          [OrderStatus.SHIPPED]: 0,
-          [OrderStatus.TRANSFER]: 0,
-          [OrderStatus.RETURN_TRANSFER]: 0,
-          [OrderStatus.DELIVERY]: 0,
-          [OrderStatus.DELIVERED]: 0,
-          [OrderStatus.RESIDUAL]: 0,
-          [OrderStatus.RETURNED]: 0,
-          [OrderStatus.RETURN_COMPLETED]: 0
-      };
 
-      const today = getSLDateString();
 
-      // Count based on the date-filtered set (to match view) or all orders?
-      // Usually counts should reflect the current date filter context.
-      orders.forEach(o => {
-          // Date Filter Check
-          const activityDate = getSLDateString(new Date(getOrderActivityDate(o)));
-          if (startDate && activityDate < startDate) return;
-          if (endDate && activityDate > endDate) return;
-
-          stats.LOGISTICS_ALL++;
-          
-          if (stats[o.status] !== undefined) {
-              stats[o.status]++;
-          }
-
-          const shippedDate = o.shippedAt ? getSLDateString(new Date(o.shippedAt)) : '';
-          if (shippedDate === today) {
-              stats.TODAY_SHIPPED++;
-          }
-      });
-
-      return stats;
-  }, [orders, startDate, endDate]);
+  const logisticsTotal = (counts[OrderStatus.SHIPPED] || 0) + (counts[OrderStatus.TRANSFER] || 0) + (counts[OrderStatus.RETURN_TRANSFER] || 0) + (counts[OrderStatus.DELIVERY] || 0) + (counts[OrderStatus.DELIVERED] || 0) + (counts[OrderStatus.RESIDUAL] || 0) + (counts[OrderStatus.RETURNED] || 0) + (counts[OrderStatus.RETURN_COMPLETED] || 0);
 
   const filters = [
-    { label: 'ALL LOGISTICS', status: 'LOGISTICS_ALL', icon: <ListFilter size={14} />, count: counts.LOGISTICS_ALL },
-    { label: 'TODAY DISPATCHED', status: 'TODAY_SHIPPED', icon: <Calendar size={14} />, count: counts.TODAY_SHIPPED },
+    { label: 'ALL LOGISTICS', status: 'LOGISTICS_ALL', icon: <ListFilter size={14} />, count: logisticsTotal },
+    { label: 'TODAY DISPATCHED', status: 'TODAY_SHIPPED', icon: <Calendar size={14} />, count: 0 },
     { label: 'SHIPPED', status: OrderStatus.SHIPPED, icon: <Truck size={14} />, count: counts[OrderStatus.SHIPPED] },
     { label: 'TRANSFER', status: OrderStatus.TRANSFER, icon: <ArrowRightLeft size={14} />, count: counts[OrderStatus.TRANSFER] }, 
     { label: 'RETURN TRANSFER', status: OrderStatus.RETURN_TRANSFER, icon: <ArrowRightLeft size={14} className="rotate-180"/>, count: counts[OrderStatus.RETURN_TRANSFER] },
@@ -143,10 +66,11 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, sh
     const root = createRoot(printContainer);
     
     // Find orders from local state first to avoid refetch
-    const ordersToPrint = ids.map(id => orders.find(o => o.id === id)).filter(Boolean) as Order[];
+    const res = await db.getOrders({ tenantId, id: ids.join(",") });
+    const ordersToPrint = res.data || [];
     
     root.render(
-      <div className="space-y-10">
+      <div className="grid grid-cols-3 gap-0 w-[210mm] mx-auto">
         {ordersToPrint.map(o => <BillPrintView key={o.id} order={o} settings={tenantSettings} />)}
       </div>
     );
@@ -232,7 +156,7 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, sh
           key={refreshKey}
           tenantId={tenantId} 
           onSelectOrder={onSelectOrder} 
-          data={filteredOrders}
+          
           logisticsOnly={true} 
           onBulkAction={handleBulkPrint}
           onRefresh={() => setRefreshKey(prev => prev + 1)}

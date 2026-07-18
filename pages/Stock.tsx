@@ -53,7 +53,7 @@ export const Stock: React.FC<StockProps> = ({ tenantId, shopName }) => {
       
       if (view === 'HISTORY') {
           // Fetch larger sample for accurate history aggregation
-          const orderData = await db.getOrders({ tenantId, limit: 10000 });
+          const orderData = await db.getOrders({ tenantId, limit: 5000 });
           setOrders(orderData.data || []);
       }
     } catch (e) {

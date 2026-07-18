@@ -22,6 +22,7 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [globalStats, setGlobalStats] = useState<any>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [team, setTeam] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,11 +50,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
     if (!tenantId) return;
     setLoading(true);
     try {
-      const [orderRes, fetchedProducts, fetchedTeam] = await Promise.all([
-          db.getOrders({ tenantId, limit: 10000 }), 
+      const [orderRes, fetchedProducts, fetchedTeam, fetchedStats] = await Promise.all([
+          db.getOrders({ tenantId, limit: 5000 }), 
           db.getProducts(tenantId),
-          db.getTeamMembers(tenantId)
+          db.getTeamMembers(tenantId),
+          db.getDashboardStats({ tenantId, startDate, endDate })
       ]);
+      setGlobalStats(fetchedStats?.stats || null);
+
       setOrders(orderRes.data || []);
       setProducts(fetchedProducts || []);
       setTeam(fetchedTeam || []);
@@ -101,6 +105,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
       rejects: number; 
       noAnswers: number; 
       openLeads: number;
+      rescheduledDelivered: number;
+      rescheduledReturned: number;
     } } = {};
 
     // Process Inventory Data
@@ -125,7 +131,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
       confirms: 0, 
       rejects: 0, 
       noAnswers: 0, 
-      openLeads: 0 
+      openLeads: 0,
+      rescheduledDelivered: 0,
+      rescheduledReturned: 0
     });
 
     const dStart = new Date(startDate || today);
@@ -245,7 +253,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
 
         // CREATED STATS (Leads/Sales Count based on Creation)
         if (createIsInRange) {
-          if (o.status === OrderStatus.RETURNED || o.status === OrderStatus.REJECTED) {
+          if ([OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER, OrderStatus.RETURN_COMPLETED].includes(o.status)) {
             returnedCount++;
             returnedValue += o.totalAmount;
           }
@@ -340,6 +348,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
                 const user = findLatestLogUserInRange('OPEN_LEAD');
                 if (user && teamStats[user]) teamStats[user].openLeads++;
             }
+
+            if (o.rescheduledBy && teamStats[o.rescheduledBy]) {
+                const isDelivered = o.status === OrderStatus.DELIVERED;
+                const isReturned = [OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER, OrderStatus.RETURN_COMPLETED].includes(o.status);
+                
+                if (isDelivered) {
+                    teamStats[o.rescheduledBy].rescheduledDelivered++;
+                } else if (isReturned) {
+                    teamStats[o.rescheduledBy].rescheduledReturned++;
+                }
+            }
         }
     });
 
@@ -357,13 +376,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
     }
 
     return {
-        stats: { 
+        stats: globalStats ? globalStats : { 
           deliveredCount, deliveredValue,
           returnedCount, returnedValue,
           confirmedCount, confirmedValue,
           shippedCount, shippedValue,
           restockCount, restockValue
         },
+
         inventory: {
             count: inventoryTotalCount,
             cost: inventoryCostValue,
@@ -376,7 +396,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
         products: Object.values(productStats),
         teamLeaderboard: Object.values(teamStats).sort((a,b) => b.confirms - a.confirms)
     };
-  }, [orders, products, team, startDate, endDate, preset]);
+  }, [orders, products, team, startDate, endDate, preset, globalStats]);
 
   const statsCards = [
     { label: 'Delivered', count: dashboardData.stats.deliveredCount, value: dashboardData.stats.deliveredValue, sub: 'Orders Settled', icon: <PackageCheck/>, col: 'bg-emerald-50 text-emerald-600', trend: 'Value Realized' },
@@ -600,6 +620,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
                             <div className="text-center">
                                 <p className="text-[8px] font-black text-blue-400 uppercase mb-1">Open</p>
                                 <p className="text-xs font-black text-white">{formatFullNumber(user.openLeads)}</p>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5">
+                            <div className="text-center bg-emerald-500/10 rounded-xl p-2 border border-emerald-500/20">
+                                <p className="text-[8px] font-black text-emerald-500 uppercase mb-1">Resched. DLV</p>
+                                <p className="text-xs font-black text-emerald-400">{formatFullNumber(user.rescheduledDelivered)}</p>
+                            </div>
+                            <div className="text-center bg-rose-500/10 rounded-xl p-2 border border-rose-500/20">
+                                <p className="text-[8px] font-black text-rose-500 uppercase mb-1">Resched. RTN</p>
+                                <p className="text-xs font-black text-rose-400">{formatFullNumber(user.rescheduledReturned)}</p>
                             </div>
                         </div>
                     </div>

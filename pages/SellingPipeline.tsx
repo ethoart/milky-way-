@@ -15,40 +15,25 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, shop
   const [activeFilter, setActiveFilter] = useState<OrderStatus | 'ALL'>('ALL');
   const [selectedProductId, setSelectedProductId] = useState<string>('ALL');
   const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [counts, setCounts] = useState({ ALL: 0, PENDING: 0, OPEN_LEAD: 0, CONFIRMED: 0, HOLD: 0, NO_ANSWER: 0, REJECTED: 0 });
   const [refreshKey, setRefreshKey] = useState(0);
-  
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   useEffect(() => { 
     db.getProducts(tenantId).then(setProducts); 
-    // Fetch a larger sample for count calculation to ensure accuracy
-    db.getOrders({ tenantId, limit: 10000 }).then(res => setOrders(res.data || []));
-  }, [tenantId, refreshKey]);
-
-  const counts = useMemo(() => {
-    const stats = { ALL: 0, PENDING: 0, OPEN_LEAD: 0, CONFIRMED: 0, HOLD: 0, NO_ANSWER: 0, REJECTED: 0 };
-    if (orders && orders.length > 0) {
-      orders.forEach(o => {
-          if (selectedProductId !== 'ALL' && !o.items.some(i => i.productId === selectedProductId)) return;
-          
-          const created = o.createdAt.split('T')[0];
-          if (startDate && created < startDate) return;
-          if (endDate && created > endDate) return;
-
-          // Always increment ALL to match the OrderList 'ALL' behavior
-          stats.ALL++;
-
-          // Increment specific selling buckets
-          const s = o.status as keyof typeof stats;
-          if (s !== 'ALL' && stats[s] !== undefined) {
-              stats[s]++;
-          }
-      });
-    }
-    return stats;
-  }, [orders, selectedProductId, startDate, endDate]);
+    db.getOrderCounts({ tenantId, productId: selectedProductId, startDate, endDate }).then(res => {
+        setCounts({
+            ALL: res.ALL || 0,
+            PENDING: res.PENDING || 0,
+            OPEN_LEAD: res.OPEN_LEAD || 0,
+            CONFIRMED: res.CONFIRMED || 0,
+            HOLD: res.HOLD || 0,
+            NO_ANSWER: res.NO_ANSWER || 0,
+            REJECTED: res.REJECTED || 0
+        });
+    });
+  }, [tenantId, refreshKey, selectedProductId, startDate, endDate]);
 
   const filters = [
     { label: 'ALL LEADS', status: 'ALL', icon: <ListFilter size={14} />, count: counts.ALL },

@@ -42,7 +42,9 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     parcelWeight: '1', 
     parcelDescription: '', 
     trackingNumber: '', 
-    createdAt: '' 
+    createdAt: '',
+    rescheduleNote: '',
+    rescheduledBy: ''
   });
   const [items, setItems] = useState<{ productId: string; quantity: number; price: number; name: string }[]>([]);
 
@@ -90,7 +92,9 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
           parcelWeight: data.parcelWeight || '1', 
           parcelDescription: defaultDesc, 
           trackingNumber: data.trackingNumber || '', 
-          createdAt: dateVal 
+          createdAt: dateVal,
+          rescheduleNote: data.rescheduleNote || '',
+          rescheduledBy: data.rescheduledBy || ''
         });
         setItems(data.items || []);
       }
@@ -347,6 +351,32 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                     </div>
                 </div>
 
+                {(order?.status === OrderStatus.RESIDUAL || order?.status === OrderStatus.REARRANGE || order?.rescheduleNote) && (
+                    <div className="bg-amber-50/50 p-10 rounded-[3rem] border border-amber-100 shadow-sm space-y-6">
+                        <h3 className="text-[11px] font-black text-amber-600 uppercase tracking-[0.2em] flex items-center gap-2 mb-2"><RotateCcw size={16}/> Reschedule Assignment</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-amber-700 uppercase tracking-widest ml-1">Assign User</label>
+                                <input 
+                                    className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3.5 font-bold outline-none focus:ring-2 focus:ring-amber-500" 
+                                    placeholder="Username handling reschedule..."
+                                    value={localFormData.rescheduledBy} 
+                                    onChange={e => setLocalFormData({...localFormData, rescheduledBy: e.target.value})} 
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-amber-700 uppercase tracking-widest ml-1">Reschedule Note</label>
+                                <input 
+                                    className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3.5 font-bold outline-none focus:ring-2 focus:ring-amber-500" 
+                                    placeholder="Reason, customer preference..."
+                                    value={localFormData.rescheduleNote} 
+                                    onChange={e => setLocalFormData({...localFormData, rescheduleNote: e.target.value})} 
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
                     <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><UserIcon size={16} className="text-blue-600"/> Recipient Mapping</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -514,7 +544,12 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                 </div>
             </div>
         </div>
-        {showPrintPortal && tenant && createPortal(<div className="print-only"><BillPrintView order={{...order, ...localFormData, items, totalAmount}} settings={tenant.settings} /></div>, document.body)}
+        {showPrintPortal && tenant && createPortal(
+            <div className="print-only grid grid-cols-3 gap-0 w-[210mm] mx-auto">
+                <BillPrintView order={{...order, ...localFormData, items, totalAmount}} settings={tenant.settings} />
+            </div>, 
+            document.body
+        )}
     </div>
   );
 };

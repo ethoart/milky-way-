@@ -55,7 +55,7 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
     setLoading(true);
     try {
       const [oRes, p] = await Promise.all([
-        db.getOrders({ tenantId, limit: 10000 }), 
+        db.getOrders({ tenantId, limit: 5000 }), 
         db.getProducts(tenantId)
       ]);
       setOrders(oRes.data || []);

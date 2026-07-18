@@ -13,13 +13,14 @@ interface ReturnManagementProps {
 }
 
 export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, shopName, onSelectOrder }) => {
-  const [activeFilter, setActiveFilter] = useState<OrderStatus | 'ALL'>('ALL');
+  const [activeFilter, setActiveFilter] = useState<OrderStatus | 'RETURN_ALL'>('RETURN_ALL');
   const [scanInput, setScanInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string>('ALL');
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const scanRef = useRef<HTMLInputElement>(null);
   
   // Date Filters (Default to today for activity-based view)
@@ -30,11 +31,10 @@ export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, sh
   const [scanResult, setScanResult] = useState<{ msg: string, type: 'success' | 'warning' | 'error' } | null>(null);
 
   const load = async () => {
-    const [fetchedOrders, fetchedProducts] = await Promise.all([
-        db.getOrders({ tenantId, limit: 10000 }),
-        db.getProducts(tenantId)
-    ]);
-    setOrders(fetchedOrders.data || []);
+    const fetchedProducts = await db.getProducts(tenantId);
+    setProducts(fetchedProducts || []);
+    db.getOrderCounts({ tenantId, productId: selectedProductId, startDate, endDate, dateField: "shippedAt" }).then(setCounts);
+
     setProducts(fetchedProducts || []);
   };
 
@@ -85,60 +85,23 @@ export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, sh
   };
 
   // Base list of orders filtered by Date and Product (Shared by Stats and List)
-  const baseFilteredOrders = useMemo(() => {
-      return orders.filter(o => {
-          // 1. Must be a return status
-          const returnStatuses = [
-              OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, 
-              OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER, 
-              OrderStatus.RETURN_COMPLETED
-          ];
-          if (!returnStatuses.includes(o.status)) return false;
+  const filteredCounts = { 
+    ALL: (counts[OrderStatus.RETURNED] || 0) + (counts[OrderStatus.RETURN_TRANSFER] || 0) + (counts[OrderStatus.RETURN_AS_ON_SYSTEM] || 0) + (counts[OrderStatus.RETURN_HANDOVER] || 0) + (counts[OrderStatus.RETURN_COMPLETED] || 0),
+    RETURNED: counts[OrderStatus.RETURNED] || 0,
+    RETURN_TRANSFER: counts[OrderStatus.RETURN_TRANSFER] || 0,
+    RETURN_AS_ON_SYSTEM: counts[OrderStatus.RETURN_AS_ON_SYSTEM] || 0,
+    RETURN_HANDOVER: counts[OrderStatus.RETURN_HANDOVER] || 0,
+    RETURN_COMPLETED: counts[OrderStatus.RETURN_COMPLETED] || 0
+  };
 
-          // 2. Product Filter
-          if (selectedProductId !== 'ALL' && !o.items.some(i => i.productId === selectedProductId)) return false;
-
-          // 3. Date Filter (Activity Based)
-          const activityDate = getSLDateString(new Date(getOrderActivityDate(o)));
-          if (startDate && activityDate < startDate) return false;
-          if (endDate && activityDate > endDate) return false;
-
-          return true;
-      });
-  }, [orders, startDate, endDate, selectedProductId]);
-
-  // List to display (further filtered by Active Tab)
-  const displayOrders = useMemo(() => {
-      if (activeFilter === 'ALL') return baseFilteredOrders;
-      return baseFilteredOrders.filter(o => o.status === activeFilter);
-  }, [baseFilteredOrders, activeFilter]);
-
-  // Statistics Counts (derived from baseFilteredOrders)
-  const counts = useMemo(() => {
-    const stats = {
-      ALL: 0,
-      RETURNED: 0,
-      RETURN_TRANSFER: 0,
-      RETURN_AS_ON_SYSTEM: 0,
-      RETURN_HANDOVER: 0,
-      RETURN_COMPLETED: 0
-    };
-    
-    baseFilteredOrders.forEach(o => {
-        stats.ALL++;
-        const s = o.status as keyof typeof stats;
-        if (stats[s] !== undefined) stats[s]++;
-    });
-    return stats;
-  }, [baseFilteredOrders]);
 
   const filters = [
-    { label: 'ALL RETURNS', status: 'ALL', icon: <ListFilter size={14}/>, count: counts.ALL },
-    { label: 'RETURNED', status: OrderStatus.RETURNED, icon: <RotateCcw size={14}/>, count: counts.RETURNED },
-    { label: 'RETURN TRANSFER', status: OrderStatus.RETURN_TRANSFER, icon: <ArrowRightLeft size={14}/>, count: counts.RETURN_TRANSFER },
-    { label: 'AS ON SYSTEM', status: OrderStatus.RETURN_AS_ON_SYSTEM, icon: <History size={14}/>, count: counts.RETURN_AS_ON_SYSTEM },
-    { label: 'PENDING (HANDOVER)', status: OrderStatus.RETURN_HANDOVER, icon: <ClipboardCheck size={14}/>, count: counts.RETURN_HANDOVER },
-    { label: 'COMPLETED', status: OrderStatus.RETURN_COMPLETED, icon: <CheckCircle size={14}/>, count: counts.RETURN_COMPLETED },
+    { label: 'ALL RETURNS', status: 'RETURN_ALL', icon: <ListFilter size={14}/>, count: filteredCounts.ALL },
+    { label: 'RETURNED', status: OrderStatus.RETURNED, icon: <RotateCcw size={14}/>, count: filteredCounts.RETURNED },
+    { label: 'RETURN TRANSFER', status: OrderStatus.RETURN_TRANSFER, icon: <ArrowRightLeft size={14}/>, count: filteredCounts.RETURN_TRANSFER },
+    { label: 'AS ON SYSTEM', status: OrderStatus.RETURN_AS_ON_SYSTEM, icon: <History size={14}/>, count: filteredCounts.RETURN_AS_ON_SYSTEM },
+    { label: 'PENDING (HANDOVER)', status: OrderStatus.RETURN_HANDOVER, icon: <ClipboardCheck size={14}/>, count: filteredCounts.RETURN_HANDOVER },
+    { label: 'COMPLETED', status: OrderStatus.RETURN_COMPLETED, icon: <CheckCircle size={14}/>, count: filteredCounts.RETURN_COMPLETED },
   ];
 
   return (

@@ -70,11 +70,23 @@ class BackendService {
     return await this.request('/login', 'POST', { username, password });
   }
 
+  async getOrderCounts(params: any): Promise<any> {
+    return this.request('/orders/counts', 'GET', null, params);
+  }
+
+  async getDashboardStats(params: any): Promise<any> {
+    return this.request('/orders/dashboard-stats', 'GET', null, params);
+  }
+
   async getOrders(params: string | GetOrdersParams): Promise<{ data: Order[], total: number }> {
     const actualParams = typeof params === 'string' ? { tenantId: params } : params;
     const res = await this.request('/orders', 'GET', null, actualParams);
     
-    if (actualParams.id) return { data: res ? [res] : [], total: res ? 1 : 0 };
+    if (actualParams.id) {
+        if (actualParams.id.includes(",")) return res;
+        return { data: res ? [res] : [], total: res ? 1 : 0 };
+    }
+
     
     if (Array.isArray(res)) {
       return { data: res, total: res.length };

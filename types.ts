@@ -123,5 +123,7 @@ export interface Order {
   courierStatus?: string;
   isPrinted: boolean;
   openedBy?: string;
+  rescheduleNote?: string;
+  rescheduledBy?: string;
   logs?: OrderLog[];
 }
