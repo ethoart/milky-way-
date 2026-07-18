@@ -5,6 +5,19 @@ export default defineConfig({
   plugins: [react()],
   build: {
     target: 'esnext',
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'lucide-react', 'recharts'],
+        },
+      },
+    },
+    rolldownOptions: {
+      output: {
+        codeSplitting: true,
+      },
+    },
   },
   server: {
     host: true
