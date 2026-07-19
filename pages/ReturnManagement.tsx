@@ -50,7 +50,11 @@ export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, sh
     const end = new Date();
     const start = new Date();
     if (preset === 'WEEK') start.setDate(end.getDate() - 7);
-    if (preset === 'MONTH') start.setMonth(end.getMonth() - 1);
+    if (preset === 'MONTH') {
+        start.setDate(1);
+        end.setMonth(end.getMonth() + 1);
+        end.setDate(0);
+    }
     if (preset === 'YEAR') start.setFullYear(end.getFullYear() - 1);
     
     setStartDate(getSLDateString(start));

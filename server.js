@@ -410,7 +410,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             if (o.logs && Array.isArray(o.logs)) {
                 o.logs.forEach(log => {
                     const uname = log.user;
-                    if (!uname || uname === 'System' || uname === 'DEV_ADMIN') return;
+                    if (!uname || ['System', 'DEV_ADMIN', 'Courier System', 'OMS Connector', 'OMS Scanner'].includes(uname)) return;
                     
                     const logDate = log.timestamp ? new Date(log.timestamp) : new Date(o.createdAt || new Date());
                     const logSLDate = getSLDateString(logDate);
