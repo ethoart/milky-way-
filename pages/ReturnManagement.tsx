@@ -63,7 +63,8 @@ export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, sh
     setIsProcessing(true);
     setScanResult(null);
     try {
-      const result: any = await db.processReturn(scanInput, tenantId);
+      const currentUser = localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System';
+      const result: any = await db.processReturn(scanInput, tenantId, currentUser);
       if (result) {
         if (result.alreadyProcessed) {
             setScanResult({ msg: `ALREADY SCANNED: ${result.customerName}`, type: 'warning' });

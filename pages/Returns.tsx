@@ -118,6 +118,7 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId, shopName }) => {
   }, [scanMode]);
 
   const handleScanProcess = async (code: string) => {
+    const currentUser = localStorage.getItem('mw_user') ? JSON.parse(localStorage.getItem('mw_user')!).username : 'System';
     if (isProcessing) return;
     setIsProcessing(true);
     setError(null);
@@ -131,19 +132,21 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId, shopName }) => {
       let result: any = null;
       
       if (operation === 'RETURN') {
-          result = await db.processReturn(cleanCode, tenantId);
+          result = await db.processReturn(cleanCode, tenantId, currentUser);
           if (result && result.alreadyProcessed) {
               setAlreadyScanned(true);
           }
       } else if (operation === 'DISPATCH') {
           const order = await db.getOrder(cleanCode, tenantId);
           if (order) {
-              result = await db.shipOrder(order, tenantId);
+              result = await db.shipOrder(order, tenantId, currentUser);
           }
       } else if (operation === 'DELIVERY') {
           const order = await db.getOrder(cleanCode, tenantId);
           if (order) {
               const updated = { ...order, status: OrderStatus.DELIVERED, deliveredAt: new Date().toISOString() };
+              if (!updated.logs) updated.logs = [];
+              updated.logs.push({ id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to DELIVERED`, timestamp: new Date().toISOString(), user: currentUser });
               await db.updateOrder(updated);
               result = updated;
           }

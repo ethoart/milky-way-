@@ -241,8 +241,8 @@ class BackendService {
     await this.request('/users', 'DELETE', null, { id });
   }
 
-  async shipOrder(order: Order, tenantId: string): Promise<Order> {
-    return this.request('/ship-order', 'POST', { order, tenantId });
+  async shipOrder(order: Order, tenantId: string, user?: string): Promise<Order> {
+    return this.request('/ship-order', 'POST', { order, tenantId, user });
   }
 
   async getCustomerHistory(phone: string, tenantId: string): Promise<any> {
@@ -256,8 +256,8 @@ class BackendService {
     return Array.isArray(res) ? res : [];
   }
 
-  async processReturn(trackingOrId: string, tenantId: string): Promise<Order | null> {
-    return this.request('/process-return', 'POST', { trackingOrId, tenantId });
+  async processReturn(trackingOrId: string, tenantId: string, user?: string): Promise<Order | null> {
+    return this.request('/process-return', 'POST', { trackingOrId, tenantId, user });
   }
 
   async getSecurityLogs(): Promise<any[]> {

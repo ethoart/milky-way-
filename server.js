@@ -259,12 +259,6 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         });
         
         const teamStats = {};
-        users.forEach(u => {
-            teamStats[u.username] = { 
-                name: u.username, interactions: 0, confirms: 0, rejects: 0, 
-                noAnswers: 0, openLeads: 0, rescheduledDelivered: 0, rescheduledReturned: 0 
-            };
-        });
 
         const allOrders = await col.find({ tenantId }).toArray();
         
@@ -281,7 +275,14 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             const shipDate = o.shippedAt ? getSLDateString(new Date(o.shippedAt)) : null;
             const confirmDate = o.confirmedAt ? getSLDateString(new Date(o.confirmedAt)) : null;
             const deliverDate = o.deliveredAt ? getSLDateString(new Date(o.deliveredAt)) : null;
-            const returnCompletedDate = o.returnCompletedAt ? getSLDateString(new Date(o.returnCompletedAt)) : (o.status === 'RETURN_COMPLETED' ? getSLDateString(new Date(o.createdAt || new Date())) : null);
+            
+            let inferredReturnDate = null;
+            if (o.status === 'RETURN_COMPLETED' && !o.returnCompletedAt && o.logs) {
+                const returnLog = o.logs.find(l => l.message && l.message.includes('RETURN_COMPLETED'));
+                if (returnLog && returnLog.timestamp) inferredReturnDate = returnLog.timestamp;
+            }
+            const returnCompletedDate = o.returnCompletedAt ? getSLDateString(new Date(o.returnCompletedAt)) : (o.status === 'RETURN_COMPLETED' ? getSLDateString(new Date(inferredReturnDate || o.createdAt || new Date())) : null);
+
 
             const createIsInRange = createDate && createDate >= (startDate || "2000-01-01") && createDate <= (endDate || "2099-12-31");
             const shipIsInRange = shipDate && shipDate >= (startDate || "2000-01-01") && shipDate <= (endDate || "2099-12-31");
@@ -406,11 +407,9 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
 
             // Team Stats from Logs
             if (o.logs && Array.isArray(o.logs)) {
-                // To avoid double counting interactions on the same order, track if user interacted
-                const interactedUsers = new Set();
                 o.logs.forEach(log => {
                     const uname = log.user;
-                    if (!uname) return;
+                    if (!uname || uname === 'System' || uname === 'DEV_ADMIN') return;
                     if (!teamStats[uname]) {
                         teamStats[uname] = { 
                             name: uname, interactions: 0, confirms: 0, rejects: 0, 
@@ -418,20 +417,17 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                         };
                     }
                     
-                    const logDate = log.timestamp ? new Date(log.timestamp) : new Date(o.createdAt);
+                    const logDate = log.timestamp ? new Date(log.timestamp) : new Date(o.createdAt || new Date());
                     const logSLDate = getSLDateString(logDate);
                     const logIsInRange = logSLDate >= (startDate || logSLDate) && logSLDate <= (endDate || logSLDate);
                     
                     if (logIsInRange) {
-                        if (!interactedUsers.has(uname)) {
-                            teamStats[uname].interactions++;
-                            interactedUsers.add(uname);
-                        }
+                        teamStats[uname].interactions++;
                         const msg = log.message || '';
                         if (msg.includes('CONFIRMED')) teamStats[uname].confirms++;
                         if (msg.includes('REJECTED')) teamStats[uname].rejects++;
                         if (msg.includes('NO_ANSWER')) teamStats[uname].noAnswers++;
-                        if (msg.includes('OPEN_LEAD')) teamStats[uname].openLeads++;
+                        if (msg.includes('OPEN_LEAD') || msg.includes('Manual Creation') || msg.includes('System Ingestion')) teamStats[uname].openLeads++;
                         if (msg.includes('DELIVERED')) teamStats[uname].rescheduledDelivered++;
                         if (msg.includes('RETURN_COMPLETED')) teamStats[uname].rescheduledReturned++;
                     }
@@ -732,10 +728,17 @@ app.delete('/api/tenants', async (req, res) => {
 app.post('/api/ship-order', async (req, res) => {
     try {
         const { tenantId } = req.query;
-        const { order } = req.body;
+        const { order, user } = req.body;
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
         const db = await getTenantDb(tenantId);
-        await db.collection('orders').updateOne({ id: order.id }, { $set: { ...clean(order), tenantId } }, { upsert: true });
+        const existing = await db.collection('orders').findOne({ id: order.id, tenantId });
+        let updatedOrder = { ...order };
+        if (existing) {
+            updatedOrder = { ...existing, ...order, status: 'SHIPPED', shippedAt: new Date().toISOString() };
+            if (!updatedOrder.logs) updatedOrder.logs = [];
+            updatedOrder.logs.push({ id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to SHIPPED`, timestamp: new Date().toISOString(), user: user || 'System' });
+        }
+        await db.collection('orders').updateOne({ id: order.id }, { $set: { ...clean(updatedOrder), tenantId } }, { upsert: true });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -753,13 +756,15 @@ app.get('/api/customer-history-detailed', async (req, res) => {
 app.post('/api/process-return', async (req, res) => {
     try {
         const { tenantId } = req.query;
-        const { trackingOrId } = req.body;
+        const { trackingOrId, user } = req.body;
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
         const db = await getTenantDb(tenantId);
         const order = await db.collection('orders').findOne({ tenantId, $or: [{ id: trackingOrId }, { trackingNumber: trackingOrId }] });
         if (!order) return res.status(404).json({ error: 'Not Found' });
         order.status = 'RETURN_COMPLETED';
         order.returnCompletedAt = new Date().toISOString();
+        if (!order.logs) order.logs = [];
+        order.logs.push({ id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to RETURN_COMPLETED`, timestamp: order.returnCompletedAt, user: user || 'System' });
         await db.collection('orders').updateOne({ id: order.id }, { $set: { ...clean(order), tenantId } });
         res.json(clean(order));
     } catch (e) { res.status(500).json({ error: e.message }); }
