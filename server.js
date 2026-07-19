@@ -245,7 +245,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
             if (r._id === 'CONFIRMED') { stats.confirmedCount = r.count; stats.confirmedValue = r.value; }
             if (r._id === 'SHIPPED') { stats.shippedCount = r.count; stats.shippedValue = r.value; }
-            if (r._id === 'RESIDUAL') { stats.restockCount = r.count; stats.restockValue = r.value; } // simplistic mapping
+            if (r._id === 'RETURN_COMPLETED') { stats.restockCount = r.count; stats.restockValue = r.value; }
         });
 
         res.json({ stats, inventory: { totalCount: 0, costValue: 0, retailValue: 0 }, dailyMap: {}, productStats: {}, teamStats: {}, todayRevenue: 0, todayDeliveredCount: 0, todayShippedCount: 0, todayReturnsCount: 0 });
@@ -344,18 +344,53 @@ app.get('/api/orders', async (req, res) => {
         if (productId) query['items.productId'] = productId;
         
         if (!query.shippedAt && (startDate || endDate)) {
-            query.createdAt = {};
-            if (startDate) query.createdAt.$gte = startDate;
-            if (endDate) query.createdAt.$lte = endDate + 'T23:59:59';
+            const dateMatch = {};
+            if (startDate) dateMatch.$gte = startDate;
+            if (endDate) dateMatch.$lte = endDate + 'T23:59:59';
+            
+            // To ensure we get all relevant orders for the dashboard, match any of the activity dates
+            if (query.$or) {
+                // If there's already an $or (like search), we need to use $and
+                const existingOr = query.$or;
+                delete query.$or;
+                query.$and = [
+                    { $or: existingOr },
+                    { $or: [ { createdAt: dateMatch }, { shippedAt: dateMatch }, { deliveredAt: dateMatch }, { confirmedAt: dateMatch } ] }
+                ];
+            } else {
+                query.$or = [
+                    { createdAt: dateMatch },
+                    { shippedAt: dateMatch },
+                    { deliveredAt: dateMatch },
+                    { confirmedAt: dateMatch }
+                ];
+            }
         }
 
         if (search) {
-            query.$or = [
+            const searchOr = [
                 { id: { $regex: search, $options: 'i' } },
                 { customerName: { $regex: search, $options: 'i' } },
                 { customerPhone: { $regex: search, $options: 'i' } },
                 { trackingNumber: { $regex: search, $options: 'i' } }
             ];
+            
+            if (query.$or) {
+                const existingOr = query.$or;
+                delete query.$or;
+                if (query.$and) {
+                    query.$and.push({ $or: searchOr });
+                } else {
+                    query.$and = [
+                        { $or: existingOr },
+                        { $or: searchOr }
+                    ];
+                }
+            } else if (query.$and) {
+                query.$and.push({ $or: searchOr });
+            } else {
+                query.$or = searchOr;
+            }
         }
 
         const p = parseInt(page) || 1;

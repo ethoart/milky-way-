@@ -28,7 +28,7 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
             .label-page { 
                 page-break-after: always; 
                 display: grid; 
-                grid-template-columns: 1fr 1fr; 
+                grid-template-columns: repeat(3, 1fr); 
                 grid-template-rows: repeat(3, 1fr); 
                 height: 297mm;
                 width: 210mm;
@@ -37,7 +37,7 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
             }
             .label-item { 
                 border: 0.1pt dashed #ddd;
-                padding: 6mm 7mm; 
+                padding: 4mm 5mm; 
                 display: flex; 
                 flex-direction: column; 
                 justify-content: space-between; 
@@ -48,9 +48,9 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
         }
       `}</style>
       
-      {Array.from({ length: Math.ceil(orders.length / 6) }).map((_, pageIdx) => (
+      {Array.from({ length: Math.ceil(orders.length / 9) }).map((_, pageIdx) => (
         <div key={pageIdx} className="label-page">
-          {orders.slice(pageIdx * 6, (pageIdx + 1) * 6).map((order) => {
+          {orders.slice(pageIdx * 9, (pageIdx + 1) * 9).map((order) => {
             const displayId = order.trackingNumber || order.id;
             const productName = order.items[0]?.name || 'Item';
             
@@ -59,7 +59,7 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
                 <div className="flex flex-col gap-1">
                   <div className="space-y-0.5">
                     <p className="text-[12px] font-normal leading-none mb-1">To:</p>
-                    <div className="text-[15px] leading-tight uppercase">
+                    <div className="text-[12px] leading-tight uppercase">
                       <span className="font-black">{order.customerName}</span>
                       <span className="font-black ml-1">({productName})</span>
                     </div>
@@ -67,14 +67,14 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
                       {order.customerAddress} {order.customerCity ? `[${order.customerCity.toUpperCase()}]` : ''}
                     </p>
                     <div className="mt-2">
-                        <p className="text-[18px] font-black tracking-tighter leading-none">
+                        <p className="text-[14px] font-black tracking-tighter leading-none">
                           {order.customerPhone}{order.customerPhone2 ? ` / ${order.customerPhone2}` : ''}
                         </p>
                     </div>
                   </div>
 
                   <div className="mt-3 mb-1">
-                    <h1 className="text-[34px] font-black tracking-tighter leading-none">
+                    <h1 className="text-[24px] font-black tracking-tighter leading-none">
                       COD: Rs.{order.totalAmount.toLocaleString()}
                     </h1>
                   </div>
@@ -108,7 +108,7 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
               </div>
             );
           })}
-          {Array.from({ length: 6 - orders.slice(pageIdx * 6, (pageIdx + 1) * 6).length }).map((_, i) => (
+          {Array.from({ length: 9 - orders.slice(pageIdx * 9, (pageIdx + 1) * 9).length }).map((_, i) => (
             <div key={`empty-${i}`} className="label-item opacity-0"></div>
           ))}
         </div>

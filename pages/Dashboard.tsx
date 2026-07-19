@@ -27,7 +27,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
   const [team, setTeam] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [preset, setPreset] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'ALL'>('ALL');
+  const [preset, setPreset] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'ALL'>('MONTH');
   const [startDate, setStartDate] = useState('2020-01-01');
   const [endDate, setEndDate] = useState(getSLDateString());
 
@@ -44,14 +44,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
     setEndDate(getSLDateString(new Date()));
   }, []);
 
-  useEffect(() => { applyPreset('ALL'); }, [applyPreset]);
+  useEffect(() => { applyPreset('MONTH'); }, [applyPreset]);
 
   const fetchData = useCallback(async () => {
     if (!tenantId) return;
     setLoading(true);
     try {
       const [orderRes, fetchedProducts, fetchedTeam, fetchedStats] = await Promise.all([
-          db.getOrders({ tenantId, limit: 5000 }), 
+          db.getOrders({ tenantId, limit: 10000, startDate, endDate }), 
           db.getProducts(tenantId),
           db.getTeamMembers(tenantId),
           db.getDashboardStats({ tenantId, startDate, endDate })
@@ -62,7 +62,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
       setProducts(fetchedProducts || []);
       setTeam(fetchedTeam || []);
     } finally { setLoading(false); }
-  }, [tenantId]);
+  }, [tenantId, startDate, endDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -376,7 +376,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
     }
 
     return {
-        stats: globalStats ? globalStats : { 
+        stats: { 
           deliveredCount, deliveredValue,
           returnedCount, returnedValue,
           confirmedCount, confirmedValue,
