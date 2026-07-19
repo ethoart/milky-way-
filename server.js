@@ -260,7 +260,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         
         const teamStats = {};
 
-        const allOrders = await col.find({ tenantId }).toArray();
+        const allOrders = await col.find({ tenantId }).project({ createdAt: 1, shippedAt: 1, confirmedAt: 1, deliveredAt: 1, returnCompletedAt: 1, status: 1, totalAmount: 1, items: 1, 'logs.message': 1, 'logs.user': 1, 'logs.timestamp': 1 }).toArray();
         
         let deliveredCount = 0, returnedCount = 0, confirmedCount = 0, shippedCount = 0, restockCount = 0;
         let deliveredValue = 0, returnedValue = 0, confirmedValue = 0, shippedValue = 0, restockValue = 0;
