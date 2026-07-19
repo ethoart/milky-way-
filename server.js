@@ -215,7 +215,8 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
         const products = await db.collection('products').find({ tenantId }).toArray();
-        const users = await db.collection('users').find({ tenantId }).toArray();
+        const centralDb = await connectCentral();
+        const users = await centralDb.collection('users').find({ tenantId }).toArray();
         
         const dailyMap = {};
         const dStart = startDate ? new Date(startDate) : new Date(new Date().setDate(new Date().getDate() - 30));
@@ -280,7 +281,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             const shipDate = o.shippedAt ? getSLDateString(new Date(o.shippedAt)) : null;
             const confirmDate = o.confirmedAt ? getSLDateString(new Date(o.confirmedAt)) : null;
             const deliverDate = o.deliveredAt ? getSLDateString(new Date(o.deliveredAt)) : null;
-            const returnCompletedDate = o.returnCompletedAt ? getSLDateString(new Date(o.returnCompletedAt)) : null;
+            const returnCompletedDate = o.returnCompletedAt ? getSLDateString(new Date(o.returnCompletedAt)) : (o.status === 'RETURN_COMPLETED' ? getSLDateString(new Date(o.createdAt || new Date())) : null);
 
             const createIsInRange = createDate && createDate >= (startDate || "2000-01-01") && createDate <= (endDate || "2099-12-31");
             const shipIsInRange = shipDate && shipDate >= (startDate || "2000-01-01") && shipDate <= (endDate || "2099-12-31");
@@ -403,30 +404,38 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 });
             }
 
-            // Team Stats
-            if (createIsInRange) {
-                const uname = o.createdBy || 'unknown';
-                if (!teamStats[uname]) {
-                    teamStats[uname] = { 
-                        name: uname, interactions: 0, confirms: 0, rejects: 0, 
-                        noAnswers: 0, openLeads: 0, rescheduledDelivered: 0, rescheduledReturned: 0 
-                    };
-                }
-                teamStats[uname].interactions++;
-                if (o.status === 'CONFIRMED') teamStats[uname].confirms++;
-                if (o.status === 'REJECTED') teamStats[uname].rejects++;
-                if (o.status === 'NO_ANSWER') teamStats[uname].noAnswers++;
-                if (o.status === 'OPEN_LEAD') teamStats[uname].openLeads++;
-            }
-
-            // Deliveries and returns team stats
-            if (deliverIsInRange && o.createdBy) {
-                if (!teamStats[o.createdBy]) teamStats[o.createdBy] = { name: o.createdBy, interactions: 0, confirms: 0, rejects: 0, noAnswers: 0, openLeads: 0, rescheduledDelivered: 0, rescheduledReturned: 0 };
-                teamStats[o.createdBy].rescheduledDelivered++;
-            }
-            if (returnCompletedIsInRange && o.createdBy) {
-                if (!teamStats[o.createdBy]) teamStats[o.createdBy] = { name: o.createdBy, interactions: 0, confirms: 0, rejects: 0, noAnswers: 0, openLeads: 0, rescheduledDelivered: 0, rescheduledReturned: 0 };
-                teamStats[o.createdBy].rescheduledReturned++;
+            // Team Stats from Logs
+            if (o.logs && Array.isArray(o.logs)) {
+                // To avoid double counting interactions on the same order, track if user interacted
+                const interactedUsers = new Set();
+                o.logs.forEach(log => {
+                    const uname = log.user;
+                    if (!uname) return;
+                    if (!teamStats[uname]) {
+                        teamStats[uname] = { 
+                            name: uname, interactions: 0, confirms: 0, rejects: 0, 
+                            noAnswers: 0, openLeads: 0, rescheduledDelivered: 0, rescheduledReturned: 0 
+                        };
+                    }
+                    
+                    const logDate = log.timestamp ? new Date(log.timestamp) : new Date(o.createdAt);
+                    const logSLDate = getSLDateString(logDate);
+                    const logIsInRange = logSLDate >= (startDate || logSLDate) && logSLDate <= (endDate || logSLDate);
+                    
+                    if (logIsInRange) {
+                        if (!interactedUsers.has(uname)) {
+                            teamStats[uname].interactions++;
+                            interactedUsers.add(uname);
+                        }
+                        const msg = log.message || '';
+                        if (msg.includes('CONFIRMED')) teamStats[uname].confirms++;
+                        if (msg.includes('REJECTED')) teamStats[uname].rejects++;
+                        if (msg.includes('NO_ANSWER')) teamStats[uname].noAnswers++;
+                        if (msg.includes('OPEN_LEAD')) teamStats[uname].openLeads++;
+                        if (msg.includes('DELIVERED')) teamStats[uname].rescheduledDelivered++;
+                        if (msg.includes('RETURN_COMPLETED')) teamStats[uname].rescheduledReturned++;
+                    }
+                });
             }
         });
 
@@ -750,6 +759,7 @@ app.post('/api/process-return', async (req, res) => {
         const order = await db.collection('orders').findOne({ tenantId, $or: [{ id: trackingOrId }, { trackingNumber: trackingOrId }] });
         if (!order) return res.status(404).json({ error: 'Not Found' });
         order.status = 'RETURN_COMPLETED';
+        order.returnCompletedAt = new Date().toISOString();
         await db.collection('orders').updateOne({ id: order.id }, { $set: { ...clean(order), tenantId } });
         res.json(clean(order));
     } catch (e) { res.status(500).json({ error: e.message }); }

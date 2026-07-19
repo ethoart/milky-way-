@@ -81,8 +81,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
               
           const scannedReturnManifest = Object.values(pStats)
               .filter((p: any) => p.returned > 0)
-              .map((p: any) => [p.name, p.returned] as [string, number])
-              .sort((a, b) => b[1] - a[1]);
+              .map((p: any) => [p.name, { sku: p.sku, count: p.returned }] as [string, any])
+              .sort((a, b) => b[1].count - a[1].count);
 
           setDashboardData({ manifest, scannedReturnManifest,
               globalStats: fetchedStats.stats,
