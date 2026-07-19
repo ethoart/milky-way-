@@ -147,7 +147,7 @@ function parseMultipartData(rawBody) {
     return result;
 }
 
-app.get('/api/health', (req, res) => res.json({ status: 'connected' }));
+app.get('/api/health', (req, res) => res.json({ status: 'connected', env: Object.keys(process.env).join(',') }));
 
 app.post('/api/login', async (req, res) => {
     try {
@@ -489,8 +489,8 @@ app.delete('/api/products', async (req, res) => {
 
 app.get('/api/tenants', async (req, res) => {
     try {
-        if (!centralDb) return res.status(500).json({ error: 'Central DB not connected' });
-        const tenants = await centralDb.collection('tenants').find({}).toArray();
+        const db = await connectCentral();
+        const tenants = await db.collection('tenants').find({}).toArray();
         res.json(tenants.map(clean));
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -498,10 +498,10 @@ app.get('/api/tenants', async (req, res) => {
 app.post('/api/tenants', async (req, res) => {
     try {
         const { tenant, adminUser } = req.body;
-        if (!centralDb) return res.status(500).json({ error: 'Central DB not connected' });
-        await centralDb.collection('tenants').updateOne({ id: tenant.id }, { $set: clean(tenant) }, { upsert: true });
+        const db = await connectCentral();
+        await db.collection('tenants').updateOne({ id: tenant.id }, { $set: clean(tenant) }, { upsert: true });
         if (adminUser) {
-            await centralDb.collection('users').updateOne({ id: adminUser.id }, { $set: clean(adminUser) }, { upsert: true });
+            await db.collection('users').updateOne({ id: adminUser.id }, { $set: clean(adminUser) }, { upsert: true });
         }
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -510,8 +510,8 @@ app.post('/api/tenants', async (req, res) => {
 app.put('/api/tenants', async (req, res) => {
     try {
         const { id, settings } = req.body;
-        if (!centralDb) return res.status(500).json({ error: 'Central DB not connected' });
-        await centralDb.collection('tenants').updateOne({ id }, { $set: { settings } });
+        const db = await connectCentral();
+        await db.collection('tenants').updateOne({ id }, { $set: { settings } });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -519,8 +519,8 @@ app.put('/api/tenants', async (req, res) => {
 app.delete('/api/tenants', async (req, res) => {
     try {
         const { id } = req.query;
-        if (!centralDb) return res.status(500).json({ error: 'Central DB not connected' });
-        await centralDb.collection('tenants').deleteOne({ id });
+        const db = await connectCentral();
+        await db.collection('tenants').deleteOne({ id });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

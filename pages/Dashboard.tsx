@@ -4,7 +4,7 @@ import { Order, OrderStatus, Product, User } from '../types';
 import { db } from '../services/mockBackend';
 import { formatCurrency, formatFullNumber, getSLDateString, getReturnCompletionDate } from '../utils/helpers';
 import { 
-  RefreshCcw, DollarSign, Truck, RotateCcw, 
+  Loader2, RefreshCcw, DollarSign, Truck, RotateCcw, 
   Archive, Calendar, Star, Activity, Box,
   Award, ListChecks, ArrowUpRight, LayoutDashboard,
   Target, ClipboardList, RotateCw, PackageCheck,

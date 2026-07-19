@@ -17,7 +17,7 @@ export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, sh
   const [scanInput, setScanInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [orders, setOrders] = useState<Order[]>([]);
+  
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string>('ALL');
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -197,7 +197,10 @@ export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, sh
           key={refreshKey}
           tenantId={tenantId} 
           onSelectOrder={onSelectOrder} 
-          data={displayOrders}
+          status={activeFilter}
+          productId={selectedProductId === 'ALL' ? null : selectedProductId}
+          startDate={startDate}
+          endDate={endDate}
           onRefresh={() => setRefreshKey(prev => prev + 1)}
         />
       </div>
