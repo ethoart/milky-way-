@@ -74,7 +74,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
           
           const teamLeaderboard = Object.values(tStats).sort((a: any, b: any) => b.interactions - a.interactions);
           
-          setDashboardData({ manifest: [], scannedReturnManifest: [],
+          const manifest = Object.values(pStats)
+              .filter((p: any) => p.shipped > 0)
+              .map((p: any) => [p.name, p.shipped] as [string, number])
+              .sort((a, b) => b[1] - a[1]);
+              
+          const scannedReturnManifest = Object.values(pStats)
+              .filter((p: any) => p.returned > 0)
+              .map((p: any) => [p.name, p.returned] as [string, number])
+              .sort((a, b) => b[1] - a[1]);
+
+          setDashboardData({ manifest, scannedReturnManifest,
               globalStats: fetchedStats.stats,
               today: {
                   todayOrders: fetchedStats.todayOrders || 0,
@@ -161,7 +171,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
                       <Layers size={24} className="text-blue-400" />
                   </div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Total Remaining Stock</p>
-                  <h3 className="text-5xl font-black tracking-tighter text-white">{formatFullNumber(dashboardData.inventory.count, 0)}</h3>
+                  <h3 className="text-5xl font-black tracking-tighter text-white">{formatFullNumber(dashboardData.inventory.totalCount, 0)}</h3>
                   <p className="text-[10px] font-bold text-blue-400 uppercase mt-2 tracking-widest">Units Available</p>
               </div>
           </div>
@@ -172,7 +182,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
                       <TrendingUp size={24} />
                   </div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Potential Retail Value</p>
-                  <h3 className="text-4xl font-black tracking-tighter text-slate-900">{formatCurrency(dashboardData.inventory.retail)}</h3>
+                  <h3 className="text-4xl font-black tracking-tighter text-slate-900">{formatCurrency(dashboardData.inventory.retailValue)}</h3>
                   <p className="text-[10px] font-bold text-emerald-600 uppercase mt-2 tracking-widest">Projected Revenue</p>
               </div>
           </div>
@@ -183,7 +193,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
                       <Wallet size={24} />
                   </div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Inventory Asset Value</p>
-                  <h3 className="text-4xl font-black tracking-tighter text-slate-900">{formatCurrency(dashboardData.inventory.cost)}</h3>
+                  <h3 className="text-4xl font-black tracking-tighter text-slate-900">{formatCurrency(dashboardData.inventory.costValue)}</h3>
                   <p className="text-[10px] font-bold text-indigo-600 uppercase mt-2 tracking-widest">Capital Invested</p>
               </div>
           </div>
