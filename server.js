@@ -181,7 +181,8 @@ app.get('/api/users', async (req, res) => {
     try {
         const { tenantId } = req.query;
         const db = await connectCentral();
-        const users = await db.collection('users').find({ tenantId }).toArray();
+        const centralDb = await connectCentral();
+        const users = await centralDb.collection('users').find({ tenantId }).toArray();
         res.json(users.map(clean));
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -239,14 +240,19 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         const productStats = {};
         products.forEach(p => {
             let pStock = 0;
-            (p.batches || []).forEach(b => {
-                pStock += b.quantity;
-                inventoryCostValue += (b.quantity * (b.buyingPrice || 0));
-            });
+            if (p.batches && p.batches.length > 0) {
+                p.batches.forEach(b => {
+                    pStock += (b.quantity || 0);
+                    inventoryCostValue += ((b.quantity || 0) * (b.buyingPrice || 0));
+                });
+            } else {
+                pStock = p.stock || 0;
+                // fallback to 0 cost if no batches
+            }
             inventoryTotalCount += pStock;
             inventoryRetailValue += (pStock * (p.price || 0));
             productStats[p.id] = { 
-                sku: p.sku, name: p.name, salesCount: 0, confirmed: 0, 
+                sku: p.sku || 'Unknown', name: p.name || 'Unknown', salesCount: 0, confirmed: 0, 
                 shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: (p.batches && p.batches.length > 0) ? p.batches[0].buyingPrice : 0 
             };
         });
@@ -299,7 +305,13 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             // Sales / Leads based on create date
             if (createIsInRange) {
                 (o.items || []).forEach(item => {
-                    if (productStats[item.productId]) {
+                    if (!productStats[item.productId]) {
+                        productStats[item.productId] = {
+                            sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
+                            shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
+                        };
+                    }
+                    {
                         productStats[item.productId].salesCount += item.quantity;
                         productStats[item.productId].revenue += ((item.quantity * (item.price || 0)) || 0);
                     }
@@ -311,7 +323,13 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 confirmedCount++;
                 confirmedValue += o.totalAmount || 0;
                 (o.items || []).forEach(item => {
-                    if (productStats[item.productId]) productStats[item.productId].confirmed += item.quantity;
+                    if (!productStats[item.productId]) {
+                        productStats[item.productId] = {
+                            sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
+                            shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
+                        };
+                    }
+                    productStats[item.productId].confirmed += item.quantity;
                 });
             }
 
@@ -323,7 +341,13 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 if (dDate && dailyMap[dDate]) dailyMap[dDate].sales += o.totalAmount || 0;
                 
                 (o.items || []).forEach(item => {
-                    if (productStats[item.productId]) productStats[item.productId].delivered += item.quantity;
+                    if (!productStats[item.productId]) {
+                        productStats[item.productId] = {
+                            sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
+                            shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
+                        };
+                    }
+                    productStats[item.productId].delivered += item.quantity;
                 });
             }
 
@@ -333,7 +357,13 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 shippedValue += o.totalAmount || 0;
                 if (dailyMap[shipDate]) dailyMap[shipDate].shipped += o.totalAmount || 0;
                 (o.items || []).forEach(item => {
-                    if (productStats[item.productId]) productStats[item.productId].shipped += item.quantity;
+                    if (!productStats[item.productId]) {
+                        productStats[item.productId] = {
+                            sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
+                            shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
+                        };
+                    }
+                    productStats[item.productId].shipped += item.quantity;
                 });
             }
 
@@ -350,14 +380,26 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 restockCount++;
                 restockValue += o.totalAmount || 0;
                 (o.items || []).forEach(item => {
-                    if (productStats[item.productId]) productStats[item.productId].returned += item.quantity;
+                    if (!productStats[item.productId]) {
+                        productStats[item.productId] = {
+                            sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
+                            shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
+                        };
+                    }
+                    productStats[item.productId].returned += item.quantity;
                 });
             }
             
             // Upcoming Returns
             if (['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER'].includes(o.status)) {
                  (o.items || []).forEach(item => {
-                    if (productStats[item.productId]) productStats[item.productId].upcomingReturn += item.quantity;
+                    if (!productStats[item.productId]) {
+                        productStats[item.productId] = {
+                            sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
+                            shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
+                        };
+                    }
+                    productStats[item.productId].upcomingReturn += item.quantity;
                 });
             }
 
