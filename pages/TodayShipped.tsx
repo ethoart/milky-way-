@@ -18,6 +18,8 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [targetDate, setTargetDate] = useState(getSLDateString());
+  const [currentPage, setCurrentPage] = useState(1);
+  const limit = 50;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const load = useCallback(async () => {
@@ -176,7 +178,7 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }
                                 </div>
                             </td>
                         </tr>
-                    ) : dailyOrders.map(o => {
+                    ) : dailyOrders.slice((currentPage - 1) * limit, currentPage * limit).map(o => {
                         const isSelected = selectedIds.includes(o.id);
                         return (
                             <tr key={o.id} className={`hover:bg-slate-50 transition-colors group cursor-pointer ${isSelected ? 'bg-blue-50/30' : ''}`} onClick={() => setSelectedIds(prev => prev.includes(o.id) ? prev.filter(x => x !== o.id) : [...prev, o.id])}>
@@ -219,10 +221,35 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }
                             </tr>
                         );
                     })}
+                
                 </tbody>
-            </table>
+              </table>
+            </div>
+            {dailyOrders.length > limit && (
+                <div className="flex items-center justify-between p-6 border-t border-slate-100 bg-slate-50 rounded-b-3xl">
+                    <p className="text-xs font-bold text-slate-500">
+                        Showing {(currentPage - 1) * limit + 1} to {Math.min(currentPage * limit, dailyOrders.length)} of {dailyOrders.length} items
+                    </p>
+                    <div className="flex gap-2">
+                        <button 
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                            className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-black disabled:opacity-50"
+                        >
+                            Previous
+                        </button>
+                        <button 
+                            disabled={currentPage * limit >= dailyOrders.length}
+                            onClick={() => setCurrentPage(prev => prev + 1)}
+                            className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-black disabled:opacity-50"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
-      </div>
+    
     </div>
   );
 };

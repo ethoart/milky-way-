@@ -36,7 +36,7 @@ interface StockProps {
 export const Stock: React.FC<StockProps> = ({ tenantId, shopName }) => {
   const [view, setView] = useState<'LIVE' | 'HISTORY'>('LIVE');
   const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   
@@ -51,11 +51,7 @@ export const Stock: React.FC<StockProps> = ({ tenantId, shopName }) => {
       const prodData = await db.getProducts(tenantId);
       setProducts(prodData);
       
-      if (view === 'HISTORY') {
-          // Fetch larger sample for accurate history aggregation
-          const orderData = await db.getOrders({ tenantId, limit: 5000 });
-          setOrders(orderData.data || []);
-      }
+
     } catch (e) {
       console.error("Failed to load inventory data", e);
     } finally {

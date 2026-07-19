@@ -21,10 +21,10 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [globalStats, setGlobalStats] = useState<any>(null);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [team, setTeam] = useState<User[]>([]);
+  
+  
+  
+  
   const [loading, setLoading] = useState(true);
 
   const [preset, setPreset] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'ALL'>('MONTH');
@@ -46,365 +46,63 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
 
   useEffect(() => { applyPreset('MONTH'); }, [applyPreset]);
 
+
+  const [dashboardData, setDashboardData] = useState({
+    globalStats: null,
+    today: { todayOrders: 0, todayRevenue: 0, todayShippedCount: 0, todayReturnsCount: 0, todayDeliveredCount: 0 },
+    inventory: { totalCount: 0, costValue: 0, retailValue: 0 },
+    trends: [],
+    products: [],
+    teamLeaderboard: [], manifest: [], scannedReturnManifest: []
+  });
+
   const fetchData = useCallback(async () => {
     if (!tenantId) return;
     setLoading(true);
     try {
-      const [orderRes, fetchedProducts, fetchedTeam, fetchedStats] = await Promise.all([
-          db.getOrders({ tenantId, limit: 10000, startDate, endDate }), 
-          db.getProducts(tenantId),
-          db.getTeamMembers(tenantId),
-          db.getDashboardStats({ tenantId, startDate, endDate })
-      ]);
-      setGlobalStats(fetchedStats?.stats || null);
-
-      setOrders(orderRes.data || []);
-      setProducts(fetchedProducts || []);
-      setTeam(fetchedTeam || []);
+      const fetchedStats = await db.getDashboardStats({ tenantId, startDate, endDate });
+      if (fetchedStats) {
+          const pStats = fetchedStats.productStats || {};
+          const tStats = fetchedStats.teamStats || {};
+          const dMap = fetchedStats.dailyMap || {};
+          
+          const trends = Object.values(dMap);
+          const products = Object.values(pStats).map((p: any) => ({
+              ...p,
+              profit: p.revenue - (p.delivered * (p.buyingPrice || 0)) // simplistic profit
+          })).sort((a: any, b: any) => b.salesCount - a.salesCount);
+          
+          const teamLeaderboard = Object.values(tStats).sort((a: any, b: any) => b.interactions - a.interactions);
+          
+          setDashboardData({ manifest: [], scannedReturnManifest: [],
+              globalStats: fetchedStats.stats,
+              today: {
+                  todayOrders: fetchedStats.todayOrders || 0,
+                  todayRevenue: fetchedStats.todayRevenue || 0,
+                  todayShippedCount: fetchedStats.todayShippedCount || 0,
+                  todayReturnsCount: fetchedStats.todayReturnsCount || 0,
+                  todayDeliveredCount: fetchedStats.todayDeliveredCount || 0
+              },
+              inventory: fetchedStats.inventory || { totalCount: 0, costValue: 0, retailValue: 0 },
+              trends,
+              products,
+              teamLeaderboard
+          });
+      }
     } finally { setLoading(false); }
   }, [tenantId, startDate, endDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const dashboardData = useMemo(() => {
-    // COUNTS
-    let deliveredCount = 0;
-    let returnedCount = 0;
-    let confirmedCount = 0;
-    let shippedCount = 0;
-    let restockCount = 0;
 
-    // VALUES (LKR)
-    let deliveredValue = 0;
-    let returnedValue = 0;
-    let confirmedValue = 0;
-    let shippedValue = 0;
-    let restockValue = 0;
-
-    // INVENTORY METRICS
-    let inventoryTotalCount = 0;
-    let inventoryCostValue = 0;
-    let inventoryRetailValue = 0;
-
-    const today = getSLDateString();
-    let todayOrders = 0;
-    let todayRevenue = 0;
-    let todayShippedCount = 0;
-    let todayReturnsCount = 0;
-    let todayDeliveredCount = 0;
-
-    const filteredShippedProducts: { [name: string]: number } = {};
-    const scannedReturnProducts: { [name: string]: { count: number, sku: string } } = {};
-
-    const dailyMap: { [key: string]: any } = {};
-    const productStats: { [key: string]: any } = {};
-    const teamStats: { [key: string]: { 
-      name: string; 
-      interactions: number; 
-      confirms: number; 
-      rejects: number; 
-      noAnswers: number; 
-      openLeads: number;
-      rescheduledDelivered: number;
-      rescheduledReturned: number;
-    } } = {};
-
-    // Process Inventory Data
-    (products || []).forEach(p => {
-      let pStock = 0;
-      (p.batches || []).forEach(b => {
-          pStock += b.quantity;
-          inventoryCostValue += (b.quantity * b.buyingPrice);
-      });
-      inventoryTotalCount += pStock;
-      inventoryRetailValue += (pStock * p.price);
-
-      productStats[p.id] = { 
-        sku: p.sku, name: p.name, salesCount: 0, confirmed: 0, 
-        shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0 
-      };
-    });
-
-    (team || []).forEach(u => teamStats[u.username] = { 
-      name: u.username, 
-      interactions: 0, 
-      confirms: 0, 
-      rejects: 0, 
-      noAnswers: 0, 
-      openLeads: 0,
-      rescheduledDelivered: 0,
-      rescheduledReturned: 0
-    });
-
-    const dStart = new Date(startDate || today);
-    const dEnd = new Date(endDate || today);
-    for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
-        const slDate = getSLDateString(d);
-        const formatOptions: any = { month: 'short', day: 'numeric' };
-        if (preset === 'ALL' || preset === 'YEAR' || dStart.getFullYear() !== dEnd.getFullYear()) {
-            formatOptions.year = '2-digit';
-        }
-        dailyMap[slDate] = { 
-            date: d.toLocaleDateString('en-US', formatOptions), 
-            monthKey: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-            sales: 0, 
-            shipped: 0 
-        };
-    }
-
-    (orders || []).forEach(o => {
-        const createDate = getSLDateString(new Date(o.createdAt));
-        const shipDate = o.shippedAt ? getSLDateString(new Date(o.shippedAt)) : null;
-        const confirmDate = o.confirmedAt ? getSLDateString(new Date(o.confirmedAt)) : null;
-        const deliverDate = o.deliveredAt ? getSLDateString(new Date(o.deliveredAt)) : null;
-        
-        // Calculate Return Date robustly using helper
-        const returnDateRaw = getReturnCompletionDate(o);
-        const returnCompletedDate = returnDateRaw ? getSLDateString(new Date(returnDateRaw)) : null;
-
-        // ACTIVITY RANGES
-        const createIsInRange = createDate >= startDate && createDate <= endDate;
-        const shipIsInRange = shipDate && shipDate >= startDate && shipDate <= endDate;
-        const confirmIsInRange = confirmDate && confirmDate >= startDate && confirmDate <= endDate;
-        const deliverIsInRange = deliverDate && deliverDate >= startDate && deliverDate <= endDate;
-        const returnCompletedIsInRange = returnCompletedDate && returnCompletedDate >= startDate && returnCompletedDate <= endDate;
-        
-        // TODAY SNAPSHOT
-        if (createDate === today) todayOrders++;
-        if (shipDate === today) todayShippedCount++;
-        
-        if (o.status === OrderStatus.DELIVERED) {
-            // Heuristic: If deliveredAt exists and matches today, count it.
-            // If deliveredAt is missing but it was shipped today, count it as delivered today (legacy fallback).
-            if (deliverDate === today || (!deliverDate && shipDate === today)) {
-                todayDeliveredCount++;
-                todayRevenue += o.totalAmount;
-            }
-        }
-
-        if (o.status === OrderStatus.RETURN_COMPLETED) {
-            // Use the robust return date for Today's Returns
-            if (returnCompletedDate === today) todayReturnsCount++;
-        }
-
-        // CONFIRMED STATS (Based on Confirmation Date)
-        if (confirmIsInRange) {
-            confirmedCount++;
-            confirmedValue += o.totalAmount;
-            o.items.forEach(item => {
-                if (productStats[item.productId]) productStats[item.productId].confirmed += item.quantity;
-            });
-        } else if (!o.confirmedAt && createIsInRange && o.status === OrderStatus.CONFIRMED) {
-            // Fallback for old orders without confirmedAt: use createdAt if current status is CONFIRMED
-            confirmedCount++;
-            confirmedValue += o.totalAmount;
-            o.items.forEach(item => {
-                if (productStats[item.productId]) productStats[item.productId].confirmed += item.quantity;
-            });
-        }
-
-        // DELIVERED STATS (Based on Delivery Date or Shipping Date fallback)
-        if (deliverIsInRange) {
-            deliveredCount++;
-            deliveredValue += o.totalAmount;
-            // Revenue Map
-            if (dailyMap[deliverDate!]) dailyMap[deliverDate!].sales += o.totalAmount;
-        } else if (!o.deliveredAt && o.status === OrderStatus.DELIVERED && shipIsInRange) {
-            // Fallback: If delivered but no date, count if shipped in range
-            deliveredCount++;
-            deliveredValue += o.totalAmount;
-            if (dailyMap[shipDate!]) dailyMap[shipDate!].sales += o.totalAmount;
-        }
-
-        // SHIPPED STATS (Based on Shipped Date)
-        if (shipIsInRange) {
-          shippedCount++;
-          shippedValue += o.totalAmount;
-          if (dailyMap[shipDate!]) dailyMap[shipDate!].shipped += o.totalAmount;
-          
-          o.items.forEach(item => {
-            filteredShippedProducts[item.name] = (filteredShippedProducts[item.name] || 0) + item.quantity;
-            if (productStats[item.productId]) {
-              productStats[item.productId].shipped += item.quantity;
-            }
-          });
-        }
-
-        // RESTOCK STATS (Using Robust Date Helper)
-        if (o.status === OrderStatus.RETURN_COMPLETED && returnCompletedIsInRange) {
-             restockCount++;
-             restockValue += o.totalAmount;
-
-             // Populate Scanned Return Manifest based on range
-             o.items.forEach(item => {
-                if (!scannedReturnProducts[item.name]) {
-                  scannedReturnProducts[item.name] = { count: 0, sku: '' };
-                  const pRef = products.find(p => p.id === item.productId);
-                  scannedReturnProducts[item.name].sku = pRef?.sku || 'N/A';
-                }
-                scannedReturnProducts[item.name].count += item.quantity;
-
-                // Update Product Stats Return Count (Activity Based)
-                if (productStats[item.productId]) {
-                    productStats[item.productId].returned += item.quantity;
-                }
-             });
-        }
-
-        // CREATED STATS (Leads/Sales Count based on Creation)
-        if (createIsInRange) {
-          if ([OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER, OrderStatus.RETURN_COMPLETED].includes(o.status)) {
-            returnedCount++;
-            returnedValue += o.totalAmount;
-          }
-
-          o.items.forEach(item => {
-            if (productStats[item.productId]) {
-              productStats[item.productId].salesCount += item.quantity;
-            }
-          });
-        }
-
-        // Product Profit Calculations (Using Delivery Status Logic)
-        if (o.status === OrderStatus.DELIVERED) {
-             const isRelevant = deliverDate ? deliverIsInRange : shipIsInRange;
-             if (isRelevant) {
-                o.items.forEach(item => { 
-                    if(productStats[item.productId]) {
-                        productStats[item.productId].delivered += item.quantity;
-                        productStats[item.productId].revenue += (item.price * item.quantity);
-                        const prodRef = products.find(pr => pr.id === item.productId);
-                        const avgCost = prodRef?.batches?.reduce((acc, b) => acc + b.buyingPrice, 0) / (prodRef?.batches?.length || 1) || 0;
-                        productStats[item.productId].profit += ((item.price - avgCost) * item.quantity);
-                    }
-                });
-             }
-        }
-
-        // UPCOMING RETURNS (Current State, regardless of date range)
-        const isUpcomingReturn = [
-            OrderStatus.RETURNED, 
-            OrderStatus.RETURN_TRANSFER, 
-            OrderStatus.RETURN_AS_ON_SYSTEM, 
-            OrderStatus.RETURN_HANDOVER
-        ].includes(o.status);
-
-        if (isUpcomingReturn) {
-            o.items.forEach(item => {
-                if (productStats[item.productId]) {
-                    productStats[item.productId].upcomingReturn += item.quantity;
-                }
-            });
-        }
-
-        // --- TEAM PERFORMANCE LOGIC ---
-        if (o.logs) {
-            // 1. Interactions: Count any log created by user in range (busyness metric)
-            o.logs.forEach(log => {
-                const logDate = getSLDateString(new Date(log.timestamp));
-                if (logDate >= startDate && logDate <= endDate && teamStats[log.user]) {
-                    teamStats[log.user].interactions++;
-                }
-            });
-
-            // 2. Outcomes: Attribute based on CURRENT status + LATEST relevant log in range.
-            const findLatestLogUserInRange = (statusKeyword: string) => {
-                for (let i = (o.logs?.length || 0) - 1; i >= 0; i--) {
-                    const log = o.logs![i];
-                    if (log.message.toUpperCase().includes(statusKeyword)) {
-                        const logDate = getSLDateString(new Date(log.timestamp));
-                        if (logDate >= startDate && logDate <= endDate) {
-                            return log.user;
-                        }
-                        return null; 
-                    }
-                }
-                return null;
-            };
-
-            const confirmedLikeStatuses = [
-                OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.TRANSFER,
-                OrderStatus.DELIVERY, OrderStatus.DELIVERED, OrderStatus.RESIDUAL, 
-                OrderStatus.REARRANGE, OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, 
-                OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER, OrderStatus.RETURN_COMPLETED
-            ];
-
-            if (confirmedLikeStatuses.includes(o.status)) {
-                const user = findLatestLogUserInRange('CONFIRMED');
-                if (user && teamStats[user]) teamStats[user].confirms++;
-            }
-
-            if (o.status === OrderStatus.REJECTED) {
-                const user = findLatestLogUserInRange('REJECTED');
-                if (user && teamStats[user]) teamStats[user].rejects++;
-            }
-
-            if (o.status === OrderStatus.NO_ANSWER) {
-                const user = findLatestLogUserInRange('NO_ANSWER');
-                if (user && teamStats[user]) teamStats[user].noAnswers++;
-            }
-
-            if (o.status === OrderStatus.OPEN_LEAD) {
-                const user = findLatestLogUserInRange('OPEN_LEAD');
-                if (user && teamStats[user]) teamStats[user].openLeads++;
-            }
-
-            if (o.rescheduledBy && teamStats[o.rescheduledBy]) {
-                const isDelivered = o.status === OrderStatus.DELIVERED;
-                const isReturned = [OrderStatus.RETURNED, OrderStatus.RETURN_TRANSFER, OrderStatus.RETURN_AS_ON_SYSTEM, OrderStatus.RETURN_HANDOVER, OrderStatus.RETURN_COMPLETED].includes(o.status);
-                
-                if (isDelivered) {
-                    teamStats[o.rescheduledBy].rescheduledDelivered++;
-                } else if (isReturned) {
-                    teamStats[o.rescheduledBy].rescheduledReturned++;
-                }
-            }
-        }
-    });
-
-    let trendsList = Object.values(dailyMap);
-    if (preset === 'ALL' || preset === 'YEAR') {
-        const monthlyAgg: any = {};
-        trendsList.forEach((t: any) => {
-            if (!monthlyAgg[t.monthKey]) {
-                monthlyAgg[t.monthKey] = { date: t.monthKey, sales: 0, shipped: 0 };
-            }
-            monthlyAgg[t.monthKey].sales += t.sales;
-            monthlyAgg[t.monthKey].shipped += t.shipped;
-        });
-        trendsList = Object.values(monthlyAgg);
-    }
-
-    return {
-        stats: { 
-          deliveredCount, deliveredValue,
-          returnedCount, returnedValue,
-          confirmedCount, confirmedValue,
-          shippedCount, shippedValue,
-          restockCount, restockValue
-        },
-
-        inventory: {
-            count: inventoryTotalCount,
-            cost: inventoryCostValue,
-            retail: inventoryRetailValue
-        },
-        today: { todayOrders, todayRevenue, todayShippedCount, todayReturnsCount, todayDeliveredCount },
-        manifest: Object.entries(filteredShippedProducts).sort((a,b) => b[1] - a[1]),
-        scannedReturnManifest: Object.entries(scannedReturnProducts).sort((a:any,b:any) => b[1].count - a[1].count),
-        trends: trendsList,
-        products: Object.values(productStats),
-        teamLeaderboard: Object.values(teamStats).sort((a,b) => b.confirms - a.confirms)
-    };
-  }, [orders, products, team, startDate, endDate, preset, globalStats]);
-
+  if (!dashboardData.globalStats) return <div className='p-10 flex justify-center items-center h-full'><Loader2 className='animate-spin text-blue-500' size={40}/></div>;
   const statsCards = [
-    { label: 'Delivered', count: dashboardData.stats.deliveredCount, value: dashboardData.stats.deliveredValue, sub: 'Orders Settled', icon: <PackageCheck/>, col: 'bg-emerald-50 text-emerald-600', trend: 'Value Realized' },
-    { label: 'Confirmed', count: dashboardData.stats.confirmedCount, value: dashboardData.stats.confirmedValue, sub: 'In Pipeline', icon: <ShieldCheck/>, col: 'bg-blue-50 text-blue-600', trend: 'Value Committed' },
-    { label: 'Shipped', count: dashboardData.stats.shippedCount, value: dashboardData.stats.shippedValue, sub: 'Dispatched', icon: <Truck/>, col: 'bg-indigo-50 text-indigo-600', trend: 'Value in Transit' },
-    { label: 'Returned', count: dashboardData.stats.returnedCount, value: dashboardData.stats.returnedValue, sub: 'Failed Leads', icon: <RotateCcw/>, col: 'bg-rose-50 text-rose-600', trend: 'Value Lost' },
-    { label: 'Restocked', count: dashboardData.stats.restockCount, value: dashboardData.stats.restockValue, sub: 'Back to Stock', icon: <Archive/>, col: 'bg-amber-50 text-amber-600', trend: 'Value Recovered' },
-    { label: 'Cashflow', count: dashboardData.stats.deliveredCount, value: dashboardData.stats.deliveredValue, sub: 'Total Cash Settled', icon: <Coins/>, col: 'bg-slate-950 text-white', trend: 'Master Balance' },
+    { label: 'Delivered', count: dashboardData.globalStats.deliveredCount, value: dashboardData.globalStats.deliveredValue, sub: 'Orders Settled', icon: <PackageCheck/>, col: 'bg-emerald-50 text-emerald-600', trend: 'Value Realized' },
+    { label: 'Confirmed', count: dashboardData.globalStats.confirmedCount, value: dashboardData.globalStats.confirmedValue, sub: 'In Pipeline', icon: <ShieldCheck/>, col: 'bg-blue-50 text-blue-600', trend: 'Value Committed' },
+    { label: 'Shipped', count: dashboardData.globalStats.shippedCount, value: dashboardData.globalStats.shippedValue, sub: 'Dispatched', icon: <Truck/>, col: 'bg-indigo-50 text-indigo-600', trend: 'Value in Transit' },
+    { label: 'Returned', count: dashboardData.globalStats.returnedCount, value: dashboardData.globalStats.returnedValue, sub: 'Failed Leads', icon: <RotateCcw/>, col: 'bg-rose-50 text-rose-600', trend: 'Value Lost' },
+    { label: 'Restocked', count: dashboardData.globalStats.restockCount, value: dashboardData.globalStats.restockValue, sub: 'Back to Stock', icon: <Archive/>, col: 'bg-amber-50 text-amber-600', trend: 'Value Recovered' },
+    { label: 'Cashflow', count: dashboardData.globalStats.deliveredCount, value: dashboardData.globalStats.deliveredValue, sub: 'Total Cash Settled', icon: <Coins/>, col: 'bg-slate-950 text-white', trend: 'Master Balance' },
   ];
 
   return (
