@@ -314,8 +314,8 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                         };
                     }
                     {
-                        productStats[item.productId].salesCount += item.quantity;
-                        productStats[item.productId].revenue += ((item.quantity * (item.price || 0)) || 0);
+                        productStats[item.productId].salesCount += (Number(item.quantity) || 1);
+                        productStats[item.productId].revenue += (((Number(item.quantity)||1) * (Number(item.price) || 0)) || 0);
                     }
                 });
             }
@@ -331,7 +331,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                             shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
                         };
                     }
-                    productStats[item.productId].confirmed += item.quantity;
+                    productStats[item.productId].confirmed += (Number(item.quantity) || 1);
                 });
             }
 
@@ -349,7 +349,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                             shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
                         };
                     }
-                    productStats[item.productId].delivered += item.quantity;
+                    productStats[item.productId].delivered += (Number(item.quantity) || 1);
                 });
             }
 
@@ -365,7 +365,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                             shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
                         };
                     }
-                    productStats[item.productId].shipped += item.quantity;
+                    productStats[item.productId].shipped += (Number(item.quantity) || 1);
                 });
             }
 
@@ -388,7 +388,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                             shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
                         };
                     }
-                    productStats[item.productId].returned += item.quantity;
+                    productStats[item.productId].returned += (Number(item.quantity) || 1);
                 });
             }
             
@@ -401,37 +401,53 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                             shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
                         };
                     }
-                    productStats[item.productId].upcomingReturn += item.quantity;
+                    productStats[item.productId].upcomingReturn += (Number(item.quantity) || 1);
                 });
             }
 
             // Team Stats from Logs
+            const userMetricsThisOrder = {};
             if (o.logs && Array.isArray(o.logs)) {
                 o.logs.forEach(log => {
                     const uname = log.user;
                     if (!uname || uname === 'System' || uname === 'DEV_ADMIN') return;
-                    if (!teamStats[uname]) {
-                        teamStats[uname] = { 
-                            name: uname, interactions: 0, confirms: 0, rejects: 0, 
-                            noAnswers: 0, openLeads: 0, rescheduledDelivered: 0, rescheduledReturned: 0 
-                        };
-                    }
                     
                     const logDate = log.timestamp ? new Date(log.timestamp) : new Date(o.createdAt || new Date());
                     const logSLDate = getSLDateString(logDate);
                     const logIsInRange = logSLDate >= (startDate || logSLDate) && logSLDate <= (endDate || logSLDate);
                     
                     if (logIsInRange) {
-                        teamStats[uname].interactions++;
+                        if (!teamStats[uname]) {
+                            teamStats[uname] = { 
+                                name: uname, interactions: 0, confirms: 0, rejects: 0, 
+                                noAnswers: 0, openLeads: 0, rescheduledDelivered: 0, rescheduledReturned: 0 
+                            };
+                        }
+                        
+                        if (!userMetricsThisOrder[uname]) {
+                            userMetricsThisOrder[uname] = new Set();
+                            teamStats[uname].interactions++;
+                        }
+                        
+                        const metrics = userMetricsThisOrder[uname];
                         const msg = log.message || '';
-                        if (msg.includes('CONFIRMED')) teamStats[uname].confirms++;
-                        if (msg.includes('REJECTED')) teamStats[uname].rejects++;
-                        if (msg.includes('NO_ANSWER')) teamStats[uname].noAnswers++;
-                        if (msg.includes('OPEN_LEAD') || msg.includes('Manual Creation') || msg.includes('System Ingestion')) teamStats[uname].openLeads++;
-                        if (msg.includes('DELIVERED')) teamStats[uname].rescheduledDelivered++;
-                        if (msg.includes('RETURN_COMPLETED')) teamStats[uname].rescheduledReturned++;
+                        
+                        if (msg.includes('CONFIRMED') && !metrics.has('confirms')) { teamStats[uname].confirms++; metrics.add('confirms'); }
+                        if (msg.includes('REJECTED') && !metrics.has('rejects')) { teamStats[uname].rejects++; metrics.add('rejects'); }
+                        if (msg.includes('NO_ANSWER') && !metrics.has('noAnswers')) { teamStats[uname].noAnswers++; metrics.add('noAnswers'); }
+                        if ((msg.includes('OPEN_LEAD') || msg.includes('Manual Creation') || msg.includes('System Ingestion')) && !metrics.has('openLeads')) { teamStats[uname].openLeads++; metrics.add('openLeads'); }
+                        if (msg.includes('DELIVERED') && !metrics.has('delivered')) { teamStats[uname].rescheduledDelivered++; metrics.add('delivered'); }
+                        if (msg.includes('RETURN_COMPLETED') && !metrics.has('returned')) { teamStats[uname].rescheduledReturned++; metrics.add('returned'); }
                     }
                 });
+            }
+        });
+
+
+        const activeUsers = new Set(users.map(u => u.username));
+        Object.keys(teamStats).forEach(uname => {
+            if (!activeUsers.has(uname) || teamStats[uname].interactions === 0) {
+                delete teamStats[uname];
             }
         });
 
