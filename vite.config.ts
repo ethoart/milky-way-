@@ -8,6 +8,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 1500,
   },
   server: {
-    host: true
+    host: true,
+    allowedHosts: ['oms2.hyperoms.xyz', 'localhost', '127.0.0.1']
   }
 });
