@@ -262,7 +262,7 @@ class BackendService {
   }
 
   async shipOrder(order: Order, tenantId: string, user?: string): Promise<Order> {
-    return this.request('/ship-order', 'POST', { order, tenantId, user });
+    return this.request('/ship-order', 'POST', { order, user }, { tenantId });
   }
 
   async getCustomerHistoryBatch(phones: string[], tenantId: string): Promise<Record<string, any>> {

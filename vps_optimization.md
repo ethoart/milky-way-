@@ -72,3 +72,14 @@ npm install
 npm run build
 pm2 restart oms-server
 ```
+
+## 8. Bulk Ship Payload Fix
+I identified one more minor issue where the bulk shipping tool wasn't sending the tenant ID in the correct format to the backend. This has been fixed.
+
+**If you are still experiencing issues with bulk ship, pull the latest changes on your VPS and rebuild again:**
+```bash
+git pull origin main
+npm install
+npm run build
+pm2 restart oms-server
+```
