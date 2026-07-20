@@ -64,40 +64,23 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     setLoading(true);
 
     if (!hasLoadedRef.current || isReload) {
-        if (!isReload) {
-            const preOrder = localStorage.getItem('pre_order_' + orderId);
-            if (preOrder) {
-                try {
-                    const parsed = JSON.parse(preOrder);
-                    dataToProcess = parsed;
-                    hasPreload = true;
-                    
-                    const pCache = localStorage.getItem('cache_products_' + tenantId);
-                    if (pCache) productsToProcess = JSON.parse(pCache).data;
-                    else db.getProducts(tenantId).then(setProducts).catch(()=>{});
-                    
-                    const cCache = localStorage.getItem('cache_cities');
-                    if (cCache) citiesToProcess = JSON.parse(cCache).data;
-                    else db.getGlobalCities().then(c => setCities(Array.from(new Set(c && c.length > 0 ? c : SRI_LANKA_CITIES_FALLBACK)))).catch(()=>{});
-                    
-                    const tCache = localStorage.getItem('cache_tenants');
-                    if (tCache) {
-                        const tenants = JSON.parse(tCache).data;
-                        const t = tenants.find((x: any) => x.id === tenantId);
-                        if (t) tenantToProcess = t;
-                    } else db.getTenant(tenantId).then(t => t && setTenant(t)).catch(()=>{});
-                } catch(e) {}
-            }
-        }
+
 
         try {
-            if (!hasPreload) {
-                const results = await Promise.allSettled([db.getOrder(orderId, tenantId), db.getProducts(tenantId), db.getTenant(tenantId), db.getGlobalCities()]);
-                dataToProcess = results[0].status === 'fulfilled' ? (results[0].value as Order) : null;
-                productsToProcess = results[1].status === 'fulfilled' ? (results[1].value as Product[]) : [];
-                tenantToProcess = results[2].status === 'fulfilled' ? (results[2].value as Tenant) : null;
-                citiesToProcess = results[3].status === 'fulfilled' ? (results[3].value as string[]) : [];
-            }
+            // ALWAYS fetch from DB to get the latest accurate details
+            const results = await Promise.allSettled([db.getOrder(orderId, tenantId), db.getProducts(tenantId), db.getTenant(tenantId), db.getGlobalCities()]);
+            const fetchedOrder = results[0].status === 'fulfilled' ? (results[0].value as Order) : null;
+            if (fetchedOrder) dataToProcess = fetchedOrder;
+            
+            const fetchedProducts = results[1].status === 'fulfilled' ? (results[1].value as Product[]) : [];
+            if (fetchedProducts && fetchedProducts.length > 0) productsToProcess = fetchedProducts;
+            
+            const fetchedTenant = results[2].status === 'fulfilled' ? (results[2].value as Tenant) : null;
+            if (fetchedTenant) tenantToProcess = fetchedTenant;
+            
+            const fetchedCities = results[3].status === 'fulfilled' ? (results[3].value as string[]) : [];
+            if (fetchedCities && fetchedCities.length > 0) citiesToProcess = fetchedCities;
+
 
             const uniqueCities = Array.from(new Set(citiesToProcess && citiesToProcess.length > 0 ? citiesToProcess : SRI_LANKA_CITIES_FALLBACK));
             setCities(uniqueCities);

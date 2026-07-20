@@ -1,3 +1,4 @@
+console.log("SERVER_JS ENV MONGODB_URI:", process.env.MONGODB_URI);
 import fs from "fs";
 
 import express from 'express';
@@ -38,7 +39,7 @@ function ensureTenantIndexes(col, tenantId) {
 }
 
 const PORT = process.env.PORT || 8080;
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://oms_dev:Fw5bXQ3L9D1rP0Xw@cluster0.xyj8j.mongodb.net/milky_way_oms?retryWrites=true&w=majority&appName=Cluster0';
 const CENTRAL_DB_NAME = 'milkyway_central';
 
 app.use(cors());
@@ -59,7 +60,7 @@ async function connectCentral() {
             const client = new MongoClient(MONGODB_URI, {
                 serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
                 maxPoolSize: 200,
-                connectTimeoutMS: 15000
+                connectTimeoutMS: 5000, serverSelectionTimeoutMS: 5000
             });
             await client.connect();
             console.log(">>> MW-OMS Master Node Active.");
