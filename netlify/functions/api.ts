@@ -364,7 +364,7 @@ export const handler: Handler = async (event, context) => {
     if (path === '/ship-order' && method === 'POST') {
         const { order } = bodyData;
         const ordersCol = activeDb.collection('orders');
-        if (!tenantSettings?.courierApiKey) return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing Keys" }) };
+        if (!tenantSettings?.courierApiKey || !tenantSettings.courierApiKey.trim()) return { statusCode: 400, headers, body: JSON.stringify({ error: "Cannot ship order: Courier Auth Key (API Code) is missing in Settings. Please configure your Courier API Key in settings first." }) };
 
         // SANITIZE: fde expects numeric order_id
         const fdeOrderId = order.id.replace(/\D/g, '').slice(-10) || Math.floor(Math.random() * 1000000000).toString();
