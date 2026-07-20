@@ -83,3 +83,15 @@ npm install
 npm run build
 pm2 restart oms-server
 ```
+
+## 9. Final Courier API (FDE) Fix & Re-Sync Button
+I have resolved the 'Context Required' error and corrected the Courier API request to use the `application/x-www-form-urlencoded` format that Prompt Express actually expects (instead of JSON). The courier dashboard will now correctly receive the order data.
+I also added a **Re-Sync API** button to the **Dispatch / Daily Logs** section. You can now select orders that were shipped but didn't sync correctly, and click the Re-Sync button to try sending them to the courier again.
+
+**Pull the final updates:**
+```bash
+git pull origin main
+npm install
+npm run build
+pm2 restart oms-server
+```

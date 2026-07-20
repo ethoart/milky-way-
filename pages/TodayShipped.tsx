@@ -81,9 +81,7 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }
     const root = createRoot(printContainer);
     root.render(<LabelPrintView orders={dailyOrders} settings={tenantSettings} />);
     setTimeout(() => { window.print(); root.unmount(); document.body.removeChild(printContainer); }, 500);
-  };
-
-  const handlePrintSingle = (order: Order) => {
+  };  const handlePrintSingle = (order: Order) => {
     if (!tenantSettings) return;
     const printContainer = document.createElement('div');
     printContainer.className = 'print-only';
@@ -91,6 +89,32 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }
     const root = createRoot(printContainer);
     root.render(<LabelPrintView orders={[order]} settings={tenantSettings} />);
     setTimeout(() => { window.print(); root.unmount(); document.body.removeChild(printContainer); }, 500);
+  };
+
+  const handleBulkSync = async () => {
+    if (!confirm(`Re-Sync Logistics: Retransmit selected leads to Courier? Note: This will re-trigger the logistics API for ${selectedIds.length} orders.`)) return;
+    setLoading(true);
+    let successCount = 0;
+    let failCount = 0;
+    const targetIds = [...selectedIds];
+    for (let i = 0; i < targetIds.length; i++) {
+        const id = targetIds[i];
+        const order = dailyOrders.find(o => o.id === id);
+        if (order) {
+            try {
+                await db.shipOrder(order, tenantId);
+                successCount++;
+            } catch (err: any) {
+                failCount++;
+                console.error(`Sync Handshake failed for ${order.id}:`, err);
+            }
+            await new Promise(r => setTimeout(r, 800));
+        }
+    }
+    setLoading(false);
+    alert(`Logistics Sync Summary:\nSuccess: ${successCount}\nFailed: ${failCount}`);
+    setSelectedIds([]);
+    load();
   };
 
   return (
@@ -120,7 +144,11 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }
                 className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 transition-all shadow-sm"
             >
                 <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
-            </button>
+            </button>            {selectedIds.length > 0 && (
+                <button onClick={handleBulkSync} className="px-6 py-3.5 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-2xl flex items-center gap-2">
+                    <RefreshCw size={14} /> Re-Sync API ({selectedIds.length})
+                </button>
+            )}
             {selectedIds.length > 0 ? (
                 <button onClick={handlePrintSelected} className="px-8 py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-2xl flex items-center gap-3 animate-bounce">
                     <Printer size={18} /> Print Selected ({selectedIds.length})
