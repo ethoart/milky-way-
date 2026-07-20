@@ -122,9 +122,6 @@ class BackendService {
   }
 
   async updateOrder(order: Order): Promise<void> {
-    try {
-        localStorage.setItem('pre_order_' + order.id, JSON.stringify(order));
-    } catch(e) {}
     await this.request('/orders', 'POST', { order, tenantId: order.tenantId }, { tenantId: order.tenantId });
   }
 
@@ -293,11 +290,7 @@ class BackendService {
   }
 
   async processReturn(trackingOrId: string, tenantId: string, user?: string): Promise<Order | null> {
-    const res = await this.request('/process-return', 'POST', { trackingOrId, tenantId, user });
-    if (res && res.id) {
-        try { localStorage.setItem('pre_order_' + res.id, JSON.stringify(res)); } catch(e) {}
-    }
-    return res;
+    return this.request('/process-return', 'POST', { trackingOrId, tenantId, user });
   }
 
   async getSecurityLogs(): Promise<any[]> {

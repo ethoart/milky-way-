@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { db } from '../services/apiClient';
+import { db } from '../services/mockBackend';
 import { Order, OrderStatus, OrderLog, Product, Tenant, CourierMode } from '../types';
 import { 
   ArrowLeft, Truck, Check, Clock, User as UserIcon, Save, 
@@ -48,96 +48,78 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   });
   const [items, setItems] = useState<{ productId: string; quantity: number; price: number; name: string }[]>([]);
 
-  const hasLoadedRef = useRef(false);
-  const prevOrderIdRef = useRef(orderId);
-  if (prevOrderIdRef.current !== orderId) {
-      hasLoadedRef.current = false;
-      prevOrderIdRef.current = orderId;
-  }
-  const loadData = useCallback(async (isReload = false) => {
-    let hasPreload = false;
-    let dataToProcess = null;
-    let productsToProcess = [];
-    let tenantToProcess = null;
-    let citiesToProcess = [];
-
-    setLoading(true);
-
-    if (!hasLoadedRef.current || isReload) {
-
-
+  const loadData = useCallback(async () => {
+    // Optimistic UI for instant load
+    const preOrder = localStorage.getItem('pre_order_' + orderId);
+    if (preOrder && !order) {
         try {
-            // ALWAYS fetch from DB to get the latest accurate details
-            const results = await Promise.allSettled([db.getOrder(orderId, tenantId), db.getProducts(tenantId), db.getTenant(tenantId), db.getGlobalCities()]);
-            const fetchedOrder = results[0].status === 'fulfilled' ? (results[0].value as Order) : null;
-            if (fetchedOrder) dataToProcess = fetchedOrder;
-            
-            const fetchedProducts = results[1].status === 'fulfilled' ? (results[1].value as Product[]) : [];
-            if (fetchedProducts && fetchedProducts.length > 0) productsToProcess = fetchedProducts;
-            
-            const fetchedTenant = results[2].status === 'fulfilled' ? (results[2].value as Tenant) : null;
-            if (fetchedTenant) tenantToProcess = fetchedTenant;
-            
-            const fetchedCities = results[3].status === 'fulfilled' ? (results[3].value as string[]) : [];
-            if (fetchedCities && fetchedCities.length > 0) citiesToProcess = fetchedCities;
-
-
-            const uniqueCities = Array.from(new Set(citiesToProcess && citiesToProcess.length > 0 ? citiesToProcess : SRI_LANKA_CITIES_FALLBACK));
-            setCities(uniqueCities);
-
-            if (dataToProcess) {
-                setOrder(dataToProcess);
-                if (productsToProcess.length) setProducts(productsToProcess);
-                if (tenantToProcess) setTenant(tenantToProcess);
-
-                db.getCustomerDetailedHistory(dataToProcess.customerPhone, tenantId)
-                  .then(h => setCustomerHistory(h.filter(x => x.id !== orderId)))
-                  .catch(() => {});
-
-                const initialCity = dataToProcess.customerCity || ''; 
-                setCitySearch(initialCity);
-
-                let dateVal = '';
-                if (dataToProcess.createdAt) {
-                  const dateObj = new Date(dataToProcess.createdAt);
-                  if (!isNaN(dateObj.getTime())) {
-                    const offset = dateObj.getTimezoneOffset() * 60000;
-                    dateVal = (new Date(dateObj.getTime() - offset)).toISOString().slice(0, 16);
-                  }
-                }
-                
-
-                const defaultDesc = dataToProcess.parcelDescription && dataToProcess.parcelDescription !== 'Online Order' 
-                    ? dataToProcess.parcelDescription 
-                    : (dataToProcess.items?.[0]?.name || '');
-
-                setLocalFormData({ 
-                  customerName: dataToProcess.customerName || '', 
-                  customerPhone: dataToProcess.customerPhone || '', 
-                  customerPhone2: dataToProcess.customerPhone2 || '',
-                  customerAddress: dataToProcess.customerAddress || '', 
-                  customerCity: initialCity, 
-                  parcelWeight: dataToProcess.parcelWeight || '1', 
-                  parcelDescription: defaultDesc, 
-                  trackingNumber: dataToProcess.trackingNumber || '', 
-                  createdAt: dateVal,
-                  rescheduleNote: dataToProcess.rescheduleNote || '',
-                  rescheduledBy: dataToProcess.rescheduledBy || ''
-                });
-                setItems(dataToProcess.items || []);
-                hasLoadedRef.current = true;
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
+            const parsed = JSON.parse(preOrder);
+            setOrder(parsed);
             setLoading(false);
-        }
-    } else {
-        setLoading(false);
+            
+            // Also try to get products & cities if cached
+            const pCache = localStorage.getItem('cache_products_' + tenantId);
+            if (pCache) setProducts(JSON.parse(pCache).data);
+            
+            const cCache = localStorage.getItem('cache_cities');
+            if (cCache) setCities(JSON.parse(cCache).data);
+        } catch(e) {}
+    } else if (!order) {
+        setLoading(true);
     }
+    
+    try {
+      const results = await Promise.allSettled([db.getOrder(orderId, tenantId), db.getProducts(tenantId), db.getTenant(tenantId), db.getGlobalCities()]);
+      const data = results[0].status === 'fulfilled' ? (results[0].value as Order) : null;
+      const fetchedProducts = results[1].status === 'fulfilled' ? (results[1].value as Product[]) : [];
+      const fetchedTenant = results[2].status === 'fulfilled' ? (results[2].value as Tenant) : null;
+      const fetchedCities = results[3].status === 'fulfilled' ? (results[3].value as string[]) : [];
+      
+      const uniqueCities = Array.from(new Set(fetchedCities && fetchedCities.length > 0 ? fetchedCities : SRI_LANKA_CITIES_FALLBACK));
+      setCities(uniqueCities);
+
+      if (data) {
+        setOrder(data);
+        setProducts(fetchedProducts);
+        setTenant(fetchedTenant || null);
+        db.getCustomerDetailedHistory(data.customerPhone, tenantId).then(h => setCustomerHistory(h.filter(x => x.id !== orderId))).catch(() => {});
+
+        const initialCity = data.customerCity || ''; 
+        setCitySearch(initialCity);
+
+        let dateVal = '';
+        if (data.createdAt) {
+          const dateObj = new Date(data.createdAt);
+          if (!isNaN(dateObj.getTime())) {
+            const offset = dateObj.getTimezoneOffset() * 60000;
+            dateVal = (new Date(dateObj.getTime() - offset)).toISOString().slice(0, 16);
+          }
+        }
+
+        // INTELLIGENT DEFAULT: Use item name if description is missing or generic
+        const defaultDesc = data.parcelDescription && data.parcelDescription !== 'Online Order' 
+            ? data.parcelDescription 
+            : (data.items?.[0]?.name || '');
+
+        setLocalFormData({ 
+          customerName: data.customerName || '', 
+          customerPhone: data.customerPhone || '', 
+          customerPhone2: data.customerPhone2 || '',
+          customerAddress: data.customerAddress || '', 
+          customerCity: initialCity, 
+          parcelWeight: data.parcelWeight || '1', 
+          parcelDescription: defaultDesc, 
+          trackingNumber: data.trackingNumber || '', 
+          createdAt: dateVal,
+          rescheduleNote: data.rescheduleNote || '',
+          rescheduledBy: data.rescheduledBy || ''
+        });
+        setItems(data.items || []);
+      }
+    } finally { setLoading(false); }
   }, [orderId, tenantId]);
 
-  useEffect(() => { loadData(false); }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -206,7 +188,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
       try { 
         await db.shipOrder({ ...order, ...localFormData, items, totalAmount }, tenantId);
         alert(`Logistics Protocol Success: Waybill Assigned.`);
-        loadData(true);
+        loadData();
       } catch (e: any) { alert(`Logistics Handshake Error: ${e.message}`); } 
       finally { setShippingLoading(false); }
       return;
@@ -239,7 +221,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     if (newStatus === OrderStatus.OPEN_LEAD) {
         setOrder(prev => prev ? { ...prev, status: OrderStatus.OPEN_LEAD, logs: [...(prev.logs || []), log] } : null);
     } else {
-        loadData(true);
+        loadData();
     }
   };
 
@@ -327,7 +309,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                 </div>
             </div>
             <div className="flex gap-2">
-                <button onClick={() => loadData(true)} className="p-4 bg-white border border-slate-200 text-slate-400 hover:text-slate-900 rounded-2xl shadow-sm transition-all active:scale-95">
+                <button onClick={() => loadData()} className="p-4 bg-white border border-slate-200 text-slate-400 hover:text-slate-900 rounded-2xl shadow-sm transition-all active:scale-95">
                     <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
                 </button>
                 <button onClick={() => { setShowPrintPortal(true); setTimeout(() => { window.print(); setShowPrintPortal(false); }, 500); }} className="bg-white border border-slate-200 text-slate-900 px-6 py-4 rounded-2xl font-black uppercase text-[10px] flex items-center gap-3 shadow-sm hover:border-blue-600 transition-all"><Printer size={16} /> Print Bill</button>

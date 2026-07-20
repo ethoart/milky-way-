@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { db } from '../services/apiClient';
+import { db } from '../services/mockBackend';
 import { Product, StockBatch, Order, OrderStatus } from '../types';
 import { 
   Plus, 
