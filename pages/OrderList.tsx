@@ -132,7 +132,7 @@ export const OrderList: React.FC<OrderListProps> = ({
 
   const handleOrderClick = (e: React.MouseEvent, orderId: string) => {
     if (e.ctrlKey || e.metaKey) {
-      const url = `${window.location.origin}${window.location.pathname}?orderId=${orderId}`;
+      const url = `${window.location.origin}${window.location.pathname}?orderId=${orderId}#${orderId}`;
       window.open(url, '_blank');
     } else {
       onSelectOrder(orderId);
@@ -309,7 +309,12 @@ export const OrderList: React.FC<OrderListProps> = ({
               const history = customerHistories[last8];
               const isSelected = selectedIds.includes(order.id);
               return (
-                <tr key={order.id} className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/50' : ''}`} onClick={(e) => handleOrderClick(e, order.id)}>
+                <tr 
+                  key={order.id} 
+                  className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/50' : ''}`} 
+                  onClick={(e) => handleOrderClick(e, order.id)}
+                  onAuxClick={(e) => { if (e.button === 1) handleOrderClick({ ...e, ctrlKey: true } as any, order.id) }}
+                >
                   <td onClick={(e) => { e.stopPropagation(); setSelectedIds(prev => prev.includes(order.id) ? prev.filter(x => x !== order.id) : [...prev, order.id]); }} className="text-center">
                     <div className={`p-1 transition-all ${isSelected ? 'text-blue-600' : 'text-slate-300'}`}>
                       {isSelected ? <CheckSquare size={18}/> : <Square size={18}/>}
@@ -346,7 +351,15 @@ export const OrderList: React.FC<OrderListProps> = ({
                   </td>
                   <td className="text-right pr-6">
                     <div className="flex items-center justify-end gap-2">
-                        <ExternalLink size={14} className="text-slate-300 group-hover:text-blue-600 transition-all" />
+                        <a 
+                            href={`?orderId=${order.id}#${order.id}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-slate-300 hover:text-blue-600 transition-all p-2"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <ExternalLink size={14} />
+                        </a>
                         <button className="p-2.5 rounded-xl bg-slate-50 text-slate-400 group-hover:text-blue-600 transition-all"><ChevronRight size={16}/></button>
                     </div>
                   </td>

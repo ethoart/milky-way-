@@ -186,7 +186,7 @@ class BackendService {
     if (adminEmail || adminPass) {
         payload.adminUser = { username: adminEmail, password: adminPass };
     }
-    await this.request('/tenants', 'PUT', payload);
+    await this.request('/tenants', 'POST', payload);
   }
 
   async createTenant(formData: any): Promise<void> {

@@ -135,7 +135,18 @@ export default function App() {
   // Deep Link Observer for Ctrl + Click functionality
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const orderId = params.get('orderId');
+    let orderId = params.get('orderId');
+    
+    // Sanitize orderId in case browser includes hash in search string
+    if (orderId && orderId.includes('#')) {
+      orderId = orderId.split('#')[0];
+    }
+
+    if (!orderId && window.location.hash) {
+      const hashVal = window.location.hash.replace('#', '');
+      if (hashVal.startsWith('ord-')) orderId = hashVal;
+    }
+    
     if (orderId && user) {
       setSelectedOrderId(orderId);
       setCurrentPage('order_detail');
