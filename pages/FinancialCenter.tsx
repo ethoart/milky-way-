@@ -38,7 +38,10 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
     d.setDate(1); 
     return d.toISOString().split('T')[0];
   });
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0];
+  });
 
   const [deliveryFee, setDeliveryFee] = useState(350);
   const [returnFee, setReturnFee] = useState(150);

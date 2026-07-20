@@ -148,6 +148,52 @@ function parseMultipartData(rawBody) {
     return result;
 }
 
+
+app.get('/api/setup-indexes', async (req, res) => {
+    try {
+        const { tenantId } = req.query;
+        const centralDb = await connectCentral();
+        await centralDb.collection('tenants').createIndex({ id: 1 }, { unique: true });
+        
+        if (tenantId) {
+            const db = await getTenantDb(tenantId);
+            const col = db.collection('orders');
+            await col.createIndex({ tenantId: 1 });
+            await col.createIndex({ status: 1 });
+            await col.createIndex({ createdAt: 1 });
+            await col.createIndex({ shippedAt: 1 });
+            await col.createIndex({ tenantId: 1, createdAt: -1 });
+            await col.createIndex({ tenantId: 1, status: 1 });
+            return res.json({ success: true, message: 'Indexes created for tenant ' + tenantId });
+        }
+        res.json({ success: true, message: 'Central indexes created' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+app.get('/api/log-users', async (req, res) => {
+    try {
+        const { tenantId } = req.query;
+        if (tenantId) {
+            const db = await getTenantDb(tenantId);
+            const col = db.collection('orders');
+            
+            // Get sample logs to see their case
+            const orders = await col.find({"logs.user": { $regex: /Courier|OMS|System|DEV/i }}).limit(10).toArray();
+            const users = new Set();
+            orders.forEach(o => {
+               o.logs.forEach(l => { if (l.user) users.add(l.user); });
+            });
+            return res.json({ users: Array.from(users) });
+        }
+        res.json({ error: 'tenantId missing' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/health', (req, res) => res.json({ status: 'connected', env: Object.keys(process.env).join(',') }));
 
 app.post('/api/login', async (req, res) => {
@@ -260,7 +306,30 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         
         const teamStats = {};
 
-        const allOrders = await col.find({ tenantId }).project({ createdAt: 1, shippedAt: 1, confirmedAt: 1, deliveredAt: 1, returnCompletedAt: 1, status: 1, totalAmount: 1, items: 1, 'logs.message': 1, 'logs.user': 1, 'logs.timestamp': 1 }).toArray();
+        let query = { tenantId };
+        
+        if (startDate && endDate) {
+            const sDate = new Date(`${startDate}T00:00:00+05:30`).toISOString();
+            const eDate = new Date(`${endDate}T23:59:59.999+05:30`).toISOString();
+            const tDate = new Date(`${today}T00:00:00+05:30`).toISOString();
+            const tEndDate = new Date(`${today}T23:59:59.999+05:30`).toISOString();
+            
+            query.$or = [
+                { createdAt: { $gte: sDate, $lte: eDate } },
+                { shippedAt: { $gte: sDate, $lte: eDate } },
+                { confirmedAt: { $gte: sDate, $lte: eDate } },
+                { deliveredAt: { $gte: sDate, $lte: eDate } },
+                { returnCompletedAt: { $gte: sDate, $lte: eDate } },
+                { "logs.timestamp": { $gte: sDate, $lte: eDate } },
+                { status: { $in: ['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER', 'RETURN_COMPLETED'] } },
+                { createdAt: { $gte: tDate, $lte: tEndDate } },
+                { shippedAt: { $gte: tDate, $lte: tEndDate } },
+                { deliveredAt: { $gte: tDate, $lte: tEndDate } },
+                { returnCompletedAt: { $gte: tDate, $lte: tEndDate } }
+            ];
+        }
+
+        const allOrders = await col.find(query).project({ createdAt: 1, shippedAt: 1, confirmedAt: 1, deliveredAt: 1, returnCompletedAt: 1, status: 1, totalAmount: 1, items: 1, 'logs.message': 1, 'logs.user': 1, 'logs.timestamp': 1 }).toArray();
         
         let deliveredCount = 0, returnedCount = 0, confirmedCount = 0, shippedCount = 0, restockCount = 0;
         let deliveredValue = 0, returnedValue = 0, confirmedValue = 0, shippedValue = 0, restockValue = 0;
@@ -410,7 +479,10 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             if (o.logs && Array.isArray(o.logs)) {
                 o.logs.forEach(log => {
                     const uname = log.user;
-                    if (!uname || ['System', 'DEV_ADMIN', 'Courier System', 'OMS Connector', 'OMS Scanner'].includes(uname)) return;
+                    
+const un = (uname || '').trim().toLowerCase();
+if (!un || ['system', 'dev_admin', 'courier system', 'oms connector', 'oms scanner'].includes(un)) return;
+
                     
                     const logDate = log.timestamp ? new Date(log.timestamp) : new Date(o.createdAt || new Date());
                     const logSLDate = getSLDateString(logDate);

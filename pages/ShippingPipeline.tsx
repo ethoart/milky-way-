@@ -24,10 +24,15 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, sh
   // Date Filters (Default to last 30 days to show recent activity)
   const [startDate, setStartDate] = useState(() => {
       const d = new Date();
-      d.setDate(d.getDate() - 30);
+      d.setDate(1);
       return getSLDateString(d);
   });
-  const [endDate, setEndDate] = useState(getSLDateString());
+  const [endDate, setEndDate] = useState(() => {
+      const d = new Date();
+      d.setMonth(d.getMonth() + 1);
+      d.setDate(0);
+      return getSLDateString(d);
+  });
 
   const [counts, setCounts] = useState<Record<string, number>>({});
   useEffect(() => {
