@@ -122,7 +122,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                     dateVal = (new Date(dateObj.getTime() - offset)).toISOString().slice(0, 16);
                   }
                 }
-                setEditDate(dateVal);
+                
 
                 const defaultDesc = dataToProcess.parcelDescription && dataToProcess.parcelDescription !== 'Online Order' 
                     ? dataToProcess.parcelDescription 
