@@ -1,3 +1,4 @@
+import fs from "fs";
 
 import express from 'express';
 import cors from 'cors';
@@ -76,27 +77,40 @@ async function connectCentral() {
 
 const tenantClients = new Map();
 const tenantDbCache = new Map();
+const tenantDbPromises = new Map();
 async function getTenantDb(tenantId) {
     if (tenantDbCache.has(tenantId)) return tenantDbCache.get(tenantId);
-    if (tenantClients.has(tenantId)) {
-        const db = tenantClients.get(tenantId).db();
-        tenantDbCache.set(tenantId, db);
-        return db;
-    }
-    const central = await connectCentral();
-    const tenantConfig = await central.collection('tenants').findOne({ id: tenantId });
-    if (tenantConfig && tenantConfig.mongoUri) {
-        try {
-            const tClient = new MongoClient(tenantConfig.mongoUri, { maxPoolSize: 200 });
-            await tClient.connect();
-            tenantClients.set(tenantId, tClient);
-            const db = tClient.db();
+    if (tenantDbPromises.has(tenantId)) return tenantDbPromises.get(tenantId);
+
+    const p = (async () => {
+        if (tenantClients.has(tenantId)) {
+            const db = tenantClients.get(tenantId).db();
             tenantDbCache.set(tenantId, db);
             return db;
-        } catch (err) { return central; }
+        }
+        const central = await connectCentral();
+        const tenantConfig = await central.collection('tenants').findOne({ id: tenantId });
+        if (tenantConfig && tenantConfig.mongoUri) {
+            try {
+                const tClient = new MongoClient(tenantConfig.mongoUri, { maxPoolSize: 200 });
+                await tClient.connect();
+                tenantClients.set(tenantId, tClient);
+                const db = tClient.db();
+                tenantDbCache.set(tenantId, db);
+                return db;
+            } catch (err) { return central; }
+        }
+        tenantDbCache.set(tenantId, central);
+        return central;
+    })();
+    
+    tenantDbPromises.set(tenantId, p);
+    try {
+        const res = await p;
+        return res;
+    } finally {
+        tenantDbPromises.delete(tenantId);
     }
-    tenantDbCache.set(tenantId, central);
-    return central;
 }
 
 const FDE_ERRORS = {
@@ -950,7 +964,8 @@ app.get('/api/security-logs', async (req, res) => {
     res.json([]);
 });
 
-if (process.env.NODE_ENV !== "production") {
+const distExists = fs.existsSync(path.join(__dirname, 'dist', 'index.html'));
+if (!distExists) {
     import('vite').then(async (vite) => {
         const viteServer = await vite.createServer({
             server: { middlewareMode: true },
@@ -960,7 +975,7 @@ if (process.env.NODE_ENV !== "production") {
         app.listen(PORT, "0.0.0.0", () => console.log(`Dev Server http://localhost:${PORT}`));
     });
 } else {
-    app.use(express.static(path.join(__dirname, 'dist')));
+    app.use(express.static(path.join(__dirname, 'dist'), { maxAge: '1h' }));
     app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'dist', 'index.html')));
-    app.listen(PORT, "0.0.0.0", () => console.log(`Prod Server http://localhost:${PORT}`));
+    app.listen(PORT, "0.0.0.0", () => console.log(`Prod Server (Dist) http://localhost:${PORT}`));
 }

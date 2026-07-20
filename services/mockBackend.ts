@@ -285,7 +285,7 @@ class BackendService {
 
   async getCustomerDetailedHistory(phone: string, tenantId: string): Promise<Order[]> {
     if (!phone) return [];
-    const res = await this.request('/customer-history-detailed', 'GET', null, { phone, tenantId });
+    const res = await this.cachedRequest('cache_hist_' + phone, 10 * 60 * 1000, () => this.request('/customer-history-detailed', 'GET', null, { phone, tenantId }));
     return Array.isArray(res) ? res : [];
   }
 
