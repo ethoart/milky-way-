@@ -95,3 +95,14 @@ npm install
 npm run build
 pm2 restart oms-server
 ```
+
+## 10. True FDE Multipart Form Data Fix
+I have identified the final underlying issue. PHP's `cURL` natively sends arrays as `multipart/form-data`, not `application/x-www-form-urlencoded`. I have updated the Node.js server to use the `FormData` API which replicates this exact PHP behavior! 
+
+**Pull the final updates:**
+```bash
+git pull origin main
+npm install
+npm run build
+pm2 restart oms-server
+```
