@@ -5,6 +5,7 @@ import cors from 'cors';
 import { MongoClient, ServerApiVersion } from 'mongodb';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -901,6 +902,8 @@ app.post('/api/ship-order', async (req, res) => {
                     formData.append('waybill_id', (order.trackingNumber || '').toString());
                 }
 
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
                 const response = await fetch(targetUrl, { 
                     method: 'POST', 
                     headers: { 
@@ -908,8 +911,10 @@ app.post('/api/ship-order', async (req, res) => {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                         'Accept': '*/*'
                     },
-                    body: formData 
+                    body: formData,
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
                 
                 const rawText = await response.text();
                 let data;
@@ -978,7 +983,8 @@ app.get('/api/security-logs', async (req, res) => {
     res.json([]);
 });
 
-if (process.env.NODE_ENV !== "production") {
+const isProd = process.env.NODE_ENV === "production" || fs.existsSync(path.join(__dirname, 'dist', 'index.html'));
+if (!isProd) {
     import('vite').then(async (vite) => {
         const viteServer = await vite.createServer({
             server: { middlewareMode: true },

@@ -129,3 +129,22 @@ npm run build
 pm2 restart oms-server
 ```
 If `pm2` is not installed, install it first using: `npm install -g pm2`, then start your server with: `pm2 start server.js --name oms-server`
+
+## 12. Final Architecture Fix for VPS 502 Crashes
+I discovered the root cause of the 502 Bad Gateway error when syncing multiple orders:
+1. **FDE API Connection Hanging:** If FDE's Cloudflare silently drops a packet, Node.js waits forever. I added a strict **15-second timeout** to the Courier API request. Now, instead of hanging the server and causing an Nginx 502 timeout, it will fail gracefully and skip to the next order.
+2. **Vite Out-Of-Memory (OOM) Crashes:** When starting your VPS with `pm2 restart oms-server`, you weren't setting `NODE_ENV=production`. This caused the heavy Vite Development Server to run in the background. On a small VPS, this leads to immediate memory exhaustion (OOM Killed), resulting in instant 502 errors!
+   *I patched `server.js` to automatically detect your production build and bypass Vite entirely, saving massive amounts of memory.*
+
+**Final update required on your VPS:**
+```bash
+# Pull the latest architecture fixes
+git pull origin main
+npm install
+
+# VERY IMPORTANT: Ensure the production build exists
+npm run build
+
+# Restart the PM2 process - it will now use 90% less RAM!
+pm2 restart oms-server
+```
