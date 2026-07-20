@@ -111,16 +111,14 @@ export const OrderList: React.FC<OrderListProps> = ({
       setTotalCount(total);
       
       if (finalOrders.length > 0) {
-        const uniquePhones = [...new Set(finalOrders.map(o => o.customerPhone))];
-        const historyResults = await Promise.all(uniquePhones.map(async (phone) => {
-          const h = await db.getCustomerHistory(phone, tenantId);
-          return { phone, h };
-        }));
-        
-        const historyMap: any = {};
-        historyResults.forEach(res => { 
-          historyMap[res.phone.slice(-8)] = res.h; 
-        });
+        const uniquePhones = [...new Set(finalOrders.map(o => o.customerPhone).filter(Boolean))];
+        let historyMap: any = {};
+        if (uniquePhones.length > 0) {
+            const bulkResults = await (db as any).getCustomerHistoryBulk(uniquePhones, tenantId);
+            Object.keys(bulkResults).forEach(phone => {
+                historyMap[phone.slice(-8)] = bulkResults[phone];
+            });
+        }
         setCustomerHistories(historyMap);
       }
     } finally {
