@@ -1,4 +1,5 @@
 
+import compression from 'compression';
 import express from 'express';
 import cors from 'cors';
 import { MongoClient, ServerApiVersion } from 'mongodb';
@@ -17,6 +18,7 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const CENTRAL_DB_NAME = 'milkyway_central';
 
 app.use(cors());
+app.use(compression());
 // Standard Parsers
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -33,7 +35,8 @@ async function connectCentral() {
         centralDbPromise = (async () => {
             const client = new MongoClient(MONGODB_URI, {
                 serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
-                connectTimeoutMS: 15000
+                connectTimeoutMS: 15000,
+                maxPoolSize: 50
             });
             await client.connect();
             console.log(">>> MW-OMS Master Node Active.");
@@ -46,19 +49,24 @@ async function connectCentral() {
     return centralDbPromise;
 }
 
-const tenantClients = new Map();
+const tenantDbs = new Map();
 async function getTenantDb(tenantId) {
+    if (tenantDbs.has(tenantId)) return tenantDbs.get(tenantId);
     const db = await connectCentral();
     const tenantConfig = await db.collection('tenants').findOne({ id: tenantId });
     if (tenantConfig && tenantConfig.mongoUri) {
-        if (tenantClients.has(tenantId)) return tenantClients.get(tenantId).db();
         try {
-            const tClient = new MongoClient(tenantConfig.mongoUri);
+            const tClient = new MongoClient(tenantConfig.mongoUri, { maxPoolSize: 50 });
             await tClient.connect();
-            tenantClients.set(tenantId, tClient);
-            return tClient.db();
-        } catch (err) { return db; }
+            const tDb = tClient.db();
+            tenantDbs.set(tenantId, tDb);
+            return tDb;
+        } catch (err) { 
+            tenantDbs.set(tenantId, db);
+            return db; 
+        }
     }
+    tenantDbs.set(tenantId, db);
     return db;
 }
 
