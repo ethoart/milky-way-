@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { db } from '../services/mockBackend';
+import { db } from '../services/apiClient';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency } from '../utils/helpers';
 import { Search, ChevronRight, Trash2, CheckSquare, Square, Truck, Printer, ExternalLink, ChevronLeft, Loader2 } from 'lucide-react';
@@ -109,6 +109,13 @@ export const OrderList: React.FC<OrderListProps> = ({
 
       setOrders(finalOrders);
       setTotalCount(total);
+      
+      // Pre-cache for instant new tab load
+      try {
+          finalOrders.forEach(o => {
+              localStorage.setItem('pre_order_' + o.id, JSON.stringify(o));
+          });
+      } catch(e) {}
       
       if (finalOrders.length > 0) {
         const uniquePhones = [...new Set(finalOrders.map(o => o.customerPhone).filter(Boolean))];

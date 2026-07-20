@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
-import { db } from '../services/mockBackend';
+import { db } from '../services/apiClient';
 import { OrderList } from './OrderList';
 import { Order, OrderStatus, TenantSettings } from '../types';
 import { formatCurrency, getSLDateString, getOrderActivityDate } from '../utils/helpers';

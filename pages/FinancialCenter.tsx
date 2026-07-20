@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { db } from '../services/mockBackend';
+import { db } from '../services/apiClient';
 import { Order, OrderStatus, Product } from '../types';
 import { formatCurrency } from '../utils/helpers';
 import { 

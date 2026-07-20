@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/mockBackend';
+import { db } from '../services/apiClient';
 import { Tenant, TenantSettings, CourierMode } from '../types';
 import { 
   Save, Store, ShieldCheck, Truck, 

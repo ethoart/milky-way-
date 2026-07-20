@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../services/mockBackend';
+import { db } from '../services/apiClient';
 import { Tenant, User, UserRole, Order, OrderStatus, Product } from '../types';
 import { 
   Database, RefreshCcw, Globe, Plus, Trash2, Cloud, 
