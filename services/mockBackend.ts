@@ -16,6 +16,24 @@ interface GetOrdersParams {
 }
 
 class BackendService {
+  
+  private async cachedRequest(cacheKey: string, ttlMs: number, fetcher: () => Promise<any>) {
+    try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Date.now() - parsed.timestamp < ttlMs) {
+                return parsed.data;
+            }
+        }
+    } catch(e) {}
+    const data = await fetcher();
+    try {
+        localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data }));
+    } catch(e) {}
+    return data;
+  }
+
   private async request(path: string, method: string = 'GET', body?: any, params?: any) {
     const url = new URL(`${window.location.origin}${API_BASE}${path}`);
     if (params) {
@@ -123,14 +141,16 @@ class BackendService {
   }
 
   async getProducts(tenantId: string): Promise<Product[]> {
-    return this.request('/products', 'GET', null, { tenantId });
+    return this.cachedRequest('cache_products_' + tenantId, 5 * 60 * 1000, () => this.request('/products', 'GET', null, { tenantId }));
   }
 
   async updateProduct(product: Product): Promise<void> {
+    localStorage.removeItem('cache_products_' + product.tenantId);
     await this.request('/products', 'POST', { product, tenantId: product.tenantId }, { tenantId: product.tenantId });
   }
 
   async deleteProduct(productId: string, tenantId: string): Promise<void> {
+    localStorage.removeItem('cache_products_' + tenantId);
     await this.request('/products', 'DELETE', null, { id: productId, tenantId });
   }
 
@@ -173,7 +193,7 @@ class BackendService {
   }
 
   async getTenants(): Promise<Tenant[]> {
-    return this.request('/tenants', 'GET');
+    return this.cachedRequest('cache_tenants', 10 * 60 * 1000, () => this.request('/tenants', 'GET'));
   }
   
   async getTenant(tenantId: string): Promise<Tenant | undefined> {
@@ -182,6 +202,7 @@ class BackendService {
   }
 
   async updateTenant(tenant: Tenant, adminEmail?: string, adminPass?: string): Promise<void> {
+    localStorage.removeItem('cache_tenants');
     const payload: any = { tenant };
     if (adminEmail || adminPass) {
         payload.adminUser = { username: adminEmail, password: adminPass };
@@ -220,11 +241,12 @@ class BackendService {
   }
 
   async getGlobalCities(): Promise<string[]> {
-    const data = await this.request('/cities', 'GET');
+    const data = await this.cachedRequest('cache_cities', 60 * 60 * 1000, () => this.request('/cities', 'GET'));
     return data.cities || [];
   }
 
   async updateGlobalCities(cities: string[]): Promise<void> {
+    localStorage.removeItem('cache_cities');
     await this.request('/cities', 'POST', { cities });
   }
 

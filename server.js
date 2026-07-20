@@ -29,6 +29,7 @@ function ensureTenantIndexes(col, tenantId) {
         col.createIndex({ tenantId: 1, deliveredAt: 1 }).catch(() => {});
         col.createIndex({ tenantId: 1, returnCompletedAt: 1 }).catch(() => {});
         col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+        col.createIndex({ tenantId: 1, customerPhone: 1 }).catch(() => {});
         col.createIndex({ status: 1 }).catch(() => {});
         col.createIndex({ createdAt: 1 }).catch(() => {});
         ensuredIndexes.add(tenantId);
@@ -56,6 +57,7 @@ async function connectCentral() {
         centralDbPromise = (async () => {
             const client = new MongoClient(MONGODB_URI, {
                 serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
+                maxPoolSize: 200,
                 connectTimeoutMS: 15000
             });
             await client.connect();
@@ -85,7 +87,7 @@ async function getTenantDb(tenantId) {
     const tenantConfig = await central.collection('tenants').findOne({ id: tenantId });
     if (tenantConfig && tenantConfig.mongoUri) {
         try {
-            const tClient = new MongoClient(tenantConfig.mongoUri, { maxPoolSize: 50 });
+            const tClient = new MongoClient(tenantConfig.mongoUri, { maxPoolSize: 200 });
             await tClient.connect();
             tenantClients.set(tenantId, tClient);
             const db = tClient.db();
@@ -295,10 +297,18 @@ app.delete('/api/users', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+const statsCache = new Map();
 app.get('/api/orders/dashboard-stats', async (req, res) => {
     try {
         const { tenantId, startDate, endDate } = req.query;
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
+        const cacheKey = `${tenantId}_${startDate}_${endDate}`;
+        if (statsCache.has(cacheKey)) {
+            const cached = statsCache.get(cacheKey);
+            if (Date.now() - cached.timestamp < 60000) { // 1 min cache
+                return res.json(cached.data);
+            }
+        }
         
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
