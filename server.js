@@ -1,4 +1,3 @@
-import fs from "fs";
 
 import express from 'express';
 import cors from 'cors';
@@ -14,29 +13,6 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const ensuredIndexes = new Set();
-function ensureTenantIndexes(col, tenantId) {
-    if (!ensuredIndexes.has(tenantId + "_products")) {
-        col.s.db.collection('products').createIndex({ tenantId: 1 }).catch(() => {});
-        ensuredIndexes.add(tenantId + "_products");
-    }
-    if (!ensuredIndexes.has(tenantId)) {
-        col.createIndex({ id: 1 }).catch(() => {});
-        col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
-        col.createIndex({ tenantId: 1 }).catch(() => {});
-        col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
-        col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
-        col.createIndex({ tenantId: 1, shippedAt: 1 }).catch(() => {});
-        col.createIndex({ tenantId: 1, confirmedAt: 1 }).catch(() => {});
-        col.createIndex({ tenantId: 1, deliveredAt: 1 }).catch(() => {});
-        col.createIndex({ tenantId: 1, returnCompletedAt: 1 }).catch(() => {});
-        col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
-        col.createIndex({ tenantId: 1, customerPhone: 1 }).catch(() => {});
-        col.createIndex({ status: 1 }).catch(() => {});
-        col.createIndex({ createdAt: 1 }).catch(() => {});
-        ensuredIndexes.add(tenantId);
-    }
-}
-
 const PORT = process.env.PORT || 8080;
 const MONGODB_URI = process.env.MONGODB_URI;
 const CENTRAL_DB_NAME = 'milkyway_central';
@@ -58,15 +34,11 @@ async function connectCentral() {
         centralDbPromise = (async () => {
             const client = new MongoClient(MONGODB_URI, {
                 serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
-                maxPoolSize: 200,
                 connectTimeoutMS: 15000
             });
             await client.connect();
             console.log(">>> MW-OMS Master Node Active.");
-            const db = client.db(CENTRAL_DB_NAME);
-            db.collection('users').createIndex({ tenantId: 1 }).catch(()=>{});
-            db.collection('tenants').createIndex({ id: 1 }, { unique: true }).catch(()=>{});
-            return db;
+            return client.db(CENTRAL_DB_NAME);
         })();
         centralDbPromise.catch(err => {
             centralDbPromise = null;
@@ -76,41 +48,19 @@ async function connectCentral() {
 }
 
 const tenantClients = new Map();
-const tenantDbCache = new Map();
-const tenantDbPromises = new Map();
 async function getTenantDb(tenantId) {
-    if (tenantDbCache.has(tenantId)) return tenantDbCache.get(tenantId);
-    if (tenantDbPromises.has(tenantId)) return tenantDbPromises.get(tenantId);
-
-    const p = (async () => {
-        if (tenantClients.has(tenantId)) {
-            const db = tenantClients.get(tenantId).db();
-            tenantDbCache.set(tenantId, db);
-            return db;
-        }
-        const central = await connectCentral();
-        const tenantConfig = await central.collection('tenants').findOne({ id: tenantId });
-        if (tenantConfig && tenantConfig.mongoUri) {
-            try {
-                const tClient = new MongoClient(tenantConfig.mongoUri, { maxPoolSize: 200 });
-                await tClient.connect();
-                tenantClients.set(tenantId, tClient);
-                const db = tClient.db();
-                tenantDbCache.set(tenantId, db);
-                return db;
-            } catch (err) { return central; }
-        }
-        tenantDbCache.set(tenantId, central);
-        return central;
-    })();
-    
-    tenantDbPromises.set(tenantId, p);
-    try {
-        const res = await p;
-        return res;
-    } finally {
-        tenantDbPromises.delete(tenantId);
+    const db = await connectCentral();
+    const tenantConfig = await db.collection('tenants').findOne({ id: tenantId });
+    if (tenantConfig && tenantConfig.mongoUri) {
+        if (tenantClients.has(tenantId)) return tenantClients.get(tenantId).db();
+        try {
+            const tClient = new MongoClient(tenantConfig.mongoUri);
+            await tClient.connect();
+            tenantClients.set(tenantId, tClient);
+            return tClient.db();
+        } catch (err) { return db; }
     }
+    return db;
 }
 
 const FDE_ERRORS = {
@@ -209,7 +159,17 @@ app.get('/api/setup-indexes', async (req, res) => {
         if (tenantId) {
             const db = await getTenantDb(tenantId);
             const col = db.collection('orders');
-        ensureTenantIndexes(col, tenantId);
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
         if (!col._idIndexEnsured) {
             col.createIndex({ id: 1 }, { unique: true }).catch(() => {});
             col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
@@ -238,7 +198,17 @@ app.get('/api/log-users', async (req, res) => {
         if (tenantId) {
             const db = await getTenantDb(tenantId);
             const col = db.collection('orders');
-        ensureTenantIndexes(col, tenantId);
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
             
             // Get sample logs to see their case
             const orders = await col.find({"logs.user": { $regex: /Courier|OMS|System|DEV/i }}).limit(10).toArray();
@@ -311,22 +281,24 @@ app.delete('/api/users', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-const statsCache = new Map();
 app.get('/api/orders/dashboard-stats', async (req, res) => {
     try {
         const { tenantId, startDate, endDate } = req.query;
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
-        const cacheKey = `${tenantId}_${startDate}_${endDate}`;
-        if (statsCache.has(cacheKey)) {
-            const cached = statsCache.get(cacheKey);
-            if (Date.now() - cached.timestamp < 60000) { // 1 min cache
-                return res.json(cached.data);
-            }
-        }
         
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
-        ensureTenantIndexes(col, tenantId);
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
         
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
         const products = await db.collection('products').find({ tenantId }).toArray();
@@ -616,7 +588,17 @@ app.get('/api/orders/counts', async (req, res) => {
         
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
-        ensureTenantIndexes(col, tenantId);
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
         
         const matchStage = { tenantId };
         
@@ -660,7 +642,17 @@ app.get('/api/orders', async (req, res) => {
         const { tenantId, id, page, limit, search, status, productId, startDate, endDate } = req.query;
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
-        ensureTenantIndexes(col, tenantId);
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
 
         if (id) {
             if (id.includes(",")) {
@@ -767,7 +759,17 @@ app.post('/api/orders', async (req, res) => {
         const { order, orders } = req.body;
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
-        ensureTenantIndexes(col, tenantId);
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
 
         if (orders) {
             const ops = orders.map(o => ({ 
@@ -791,7 +793,17 @@ app.delete('/api/orders', async (req, res) => {
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
-        ensureTenantIndexes(col, tenantId);
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
         if (purge === 'true') {
             const result = await col.deleteMany({ tenantId });
             return res.json({ success: true, count: result.deletedCount });
@@ -805,41 +817,23 @@ app.delete('/api/orders', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-
-app.post('/api/customer-history-bulk', async (req, res) => {
-    try {
-        const { tenantId } = req.query;
-        const { phones } = req.body;
-        if (!tenantId || !phones || !Array.isArray(phones)) return res.json({});
-        const db = await getTenantDb(tenantId);
-        const col = db.collection('orders');
-        ensureTenantIndexes(col, tenantId);
-        
-        const history = await col.find({ tenantId, customerPhone: { $in: phones } }).project({ customerPhone: 1, status: 1 }).toArray();
-        
-        const results = {};
-        phones.forEach(p => results[p] = { count: 0, returns: 0 });
-        
-        history.forEach(h => {
-            if (h.customerPhone && results[h.customerPhone]) {
-                results[h.customerPhone].count++;
-                if (['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER', 'RETURN_COMPLETED'].includes(h.status)) {
-                    results[h.customerPhone].returns++;
-                }
-            }
-        });
-        
-        res.json(results);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 app.get('/api/customer-history', async (req, res) => {
     try {
         const { tenantId, phone } = req.query;
         if (!phone) return res.json([]);
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
-        ensureTenantIndexes(col, tenantId);
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
         const history = await col.find({ tenantId, customerPhone: phone }).sort({ createdAt: -1 }).toArray();
         res.json(history.map(clean));
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -964,8 +958,7 @@ app.get('/api/security-logs', async (req, res) => {
     res.json([]);
 });
 
-const distExists = fs.existsSync(path.join(__dirname, 'dist', 'index.html'));
-if (!distExists) {
+if (process.env.NODE_ENV !== "production") {
     import('vite').then(async (vite) => {
         const viteServer = await vite.createServer({
             server: { middlewareMode: true },
@@ -975,7 +968,7 @@ if (!distExists) {
         app.listen(PORT, "0.0.0.0", () => console.log(`Dev Server http://localhost:${PORT}`));
     });
 } else {
-    app.use(express.static(path.join(__dirname, 'dist'), { maxAge: '1h' }));
+    app.use(express.static(path.join(__dirname, 'dist')));
     app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'dist', 'index.html')));
-    app.listen(PORT, "0.0.0.0", () => console.log(`Prod Server (Dist) http://localhost:${PORT}`));
+    app.listen(PORT, "0.0.0.0", () => console.log(`Prod Server http://localhost:${PORT}`));
 }

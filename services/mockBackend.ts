@@ -16,24 +16,6 @@ interface GetOrdersParams {
 }
 
 class BackendService {
-  
-  private async cachedRequest(cacheKey: string, ttlMs: number, fetcher: () => Promise<any>) {
-    try {
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
-            const parsed = JSON.parse(cached);
-            if (Date.now() - parsed.timestamp < ttlMs) {
-                return parsed.data;
-            }
-        }
-    } catch(e) {}
-    const data = await fetcher();
-    try {
-        localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data }));
-    } catch(e) {}
-    return data;
-  }
-
   private async request(path: string, method: string = 'GET', body?: any, params?: any) {
     const url = new URL(`${window.location.origin}${API_BASE}${path}`);
     if (params) {
@@ -141,16 +123,14 @@ class BackendService {
   }
 
   async getProducts(tenantId: string): Promise<Product[]> {
-    return this.cachedRequest('cache_products_' + tenantId, 5 * 60 * 1000, () => this.request('/products', 'GET', null, { tenantId }));
+    return this.request('/products', 'GET', null, { tenantId });
   }
 
   async updateProduct(product: Product): Promise<void> {
-    localStorage.removeItem('cache_products_' + product.tenantId);
     await this.request('/products', 'POST', { product, tenantId: product.tenantId }, { tenantId: product.tenantId });
   }
 
   async deleteProduct(productId: string, tenantId: string): Promise<void> {
-    localStorage.removeItem('cache_products_' + tenantId);
     await this.request('/products', 'DELETE', null, { id: productId, tenantId });
   }
 
@@ -193,7 +173,7 @@ class BackendService {
   }
 
   async getTenants(): Promise<Tenant[]> {
-    return this.cachedRequest('cache_tenants', 10 * 60 * 1000, () => this.request('/tenants', 'GET'));
+    return this.request('/tenants', 'GET');
   }
   
   async getTenant(tenantId: string): Promise<Tenant | undefined> {
@@ -202,7 +182,6 @@ class BackendService {
   }
 
   async updateTenant(tenant: Tenant, adminEmail?: string, adminPass?: string): Promise<void> {
-    localStorage.removeItem('cache_tenants');
     const payload: any = { tenant };
     if (adminEmail || adminPass) {
         payload.adminUser = { username: adminEmail, password: adminPass };
@@ -241,12 +220,11 @@ class BackendService {
   }
 
   async getGlobalCities(): Promise<string[]> {
-    const data = await this.cachedRequest('cache_cities', 60 * 60 * 1000, () => this.request('/cities', 'GET'));
+    const data = await this.request('/cities', 'GET');
     return data.cities || [];
   }
 
   async updateGlobalCities(cities: string[]): Promise<void> {
-    localStorage.removeItem('cache_cities');
     await this.request('/cities', 'POST', { cities });
   }
 
@@ -268,24 +246,13 @@ class BackendService {
   }
 
   async getCustomerHistory(phone: string, tenantId: string): Promise<any> {
-    if (!phone) return { count: 0, returns: 0 };
-    const res = await this.request('/customer-history', 'GET', null, { phone, tenantId });
-    if (Array.isArray(res)) {
-        let count = res.length;
-        let returns = res.filter(x => ['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER', 'RETURN_COMPLETED'].includes(x.status)).length;
-        return { count, returns };
-    }
-    return res;
-  }
-
-  async getCustomerHistoryBulk(phones: string[], tenantId: string): Promise<{[key: string]: any}> {
-    if (!phones || phones.length === 0) return {};
-    return this.request('/customer-history-bulk', 'POST', { phones }, { tenantId });
+    if (!phone) return { status: CustomerStatus.NEW, count: 0, returns: 0 };
+    return this.request('/customer-history', 'GET', null, { phone, tenantId });
   }
 
   async getCustomerDetailedHistory(phone: string, tenantId: string): Promise<Order[]> {
     if (!phone) return [];
-    const res = await this.cachedRequest('cache_hist_' + phone, 10 * 60 * 1000, () => this.request('/customer-history-detailed', 'GET', null, { phone, tenantId }));
+    const res = await this.request('/customer-history-detailed', 'GET', null, { phone, tenantId });
     return Array.isArray(res) ? res : [];
   }
 

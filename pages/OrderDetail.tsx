@@ -49,25 +49,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const [items, setItems] = useState<{ productId: string; quantity: number; price: number; name: string }[]>([]);
 
   const loadData = useCallback(async () => {
-    // Optimistic UI for instant load
-    const preOrder = localStorage.getItem('pre_order_' + orderId);
-    if (preOrder && !order) {
-        try {
-            const parsed = JSON.parse(preOrder);
-            setOrder(parsed);
-            setLoading(false);
-            
-            // Also try to get products & cities if cached
-            const pCache = localStorage.getItem('cache_products_' + tenantId);
-            if (pCache) setProducts(JSON.parse(pCache).data);
-            
-            const cCache = localStorage.getItem('cache_cities');
-            if (cCache) setCities(JSON.parse(cCache).data);
-        } catch(e) {}
-    } else if (!order) {
-        setLoading(true);
-    }
-    
+    setLoading(true);
     try {
       const results = await Promise.allSettled([db.getOrder(orderId, tenantId), db.getProducts(tenantId), db.getTenant(tenantId), db.getGlobalCities()]);
       const data = results[0].status === 'fulfilled' ? (results[0].value as Order) : null;
