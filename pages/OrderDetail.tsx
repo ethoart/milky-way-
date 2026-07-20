@@ -143,7 +143,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     } finally { setLoading(false); }
   }, [orderId, tenantId]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadData(false); }, [loadData]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -212,7 +212,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
       try { 
         await db.shipOrder({ ...order, ...localFormData, items, totalAmount }, tenantId);
         alert(`Logistics Protocol Success: Waybill Assigned.`);
-        loadData();
+        loadData(true);
       } catch (e: any) { alert(`Logistics Handshake Error: ${e.message}`); } 
       finally { setShippingLoading(false); }
       return;
@@ -245,7 +245,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     if (newStatus === OrderStatus.OPEN_LEAD) {
         setOrder(prev => prev ? { ...prev, status: OrderStatus.OPEN_LEAD, logs: [...(prev.logs || []), log] } : null);
     } else {
-        loadData();
+        loadData(true);
     }
   };
 
@@ -333,7 +333,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                 </div>
             </div>
             <div className="flex gap-2">
-                <button onClick={() => loadData()} className="p-4 bg-white border border-slate-200 text-slate-400 hover:text-slate-900 rounded-2xl shadow-sm transition-all active:scale-95">
+                <button onClick={() => loadData(true)} className="p-4 bg-white border border-slate-200 text-slate-400 hover:text-slate-900 rounded-2xl shadow-sm transition-all active:scale-95">
                     <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
                 </button>
                 <button onClick={() => { setShowPrintPortal(true); setTimeout(() => { window.print(); setShowPrintPortal(false); }, 500); }} className="bg-white border border-slate-200 text-slate-900 px-6 py-4 rounded-2xl font-black uppercase text-[10px] flex items-center gap-3 shadow-sm hover:border-blue-600 transition-all"><Printer size={16} /> Print Bill</button>
