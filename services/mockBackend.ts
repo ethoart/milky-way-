@@ -122,15 +122,23 @@ class BackendService {
     await this.request('/orders', 'POST', { orders, tenantId }, { tenantId });
   }
 
+  private _productsCache: Record<string, { data: Product[], expiry: number }> = {};
   async getProducts(tenantId: string): Promise<Product[]> {
-    return this.request('/products', 'GET', null, { tenantId });
+    if (this._productsCache[tenantId] && this._productsCache[tenantId].expiry > Date.now()) {
+        return this._productsCache[tenantId].data;
+    }
+    const data = await this.request('/products', 'GET', null, { tenantId });
+    this._productsCache[tenantId] = { data, expiry: Date.now() + 60000 * 1 }; // 1 min cache
+    return data;
   }
 
   async updateProduct(product: Product): Promise<void> {
+    delete this._productsCache[product.tenantId];
     await this.request('/products', 'POST', { product, tenantId: product.tenantId }, { tenantId: product.tenantId });
   }
 
   async deleteProduct(productId: string, tenantId: string): Promise<void> {
+    delete this._productsCache[tenantId];
     await this.request('/products', 'DELETE', null, { id: productId, tenantId });
   }
 
@@ -172,8 +180,14 @@ class BackendService {
     });
   }
 
+  private _tenantsCache: { data: Tenant[], expiry: number } | null = null;
   async getTenants(): Promise<Tenant[]> {
-    return this.request('/tenants', 'GET');
+    if (this._tenantsCache && this._tenantsCache.expiry > Date.now()) {
+        return this._tenantsCache.data;
+    }
+    const data = await this.request('/tenants', 'GET');
+    this._tenantsCache = { data, expiry: Date.now() + 60000 * 5 }; // 5 min cache
+    return data;
   }
   
   async getTenant(tenantId: string): Promise<Tenant | undefined> {
@@ -219,9 +233,15 @@ class BackendService {
     await this.request('/tenants', 'DELETE', null, { id: tenantId });
   }
 
+  private _citiesCache: { data: string[], expiry: number } | null = null;
   async getGlobalCities(): Promise<string[]> {
+    if (this._citiesCache && this._citiesCache.expiry > Date.now()) {
+        return this._citiesCache.data;
+    }
     const data = await this.request('/cities', 'GET');
-    return data.cities || [];
+    const cities = data.cities || [];
+    this._citiesCache = { data: cities, expiry: Date.now() + 60000 * 5 }; // 5 min cache
+    return cities;
   }
 
   async updateGlobalCities(cities: string[]): Promise<void> {

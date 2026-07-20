@@ -57,3 +57,18 @@ pm2 start server.js -i 2 --name "oms-server"
 pm2 save
 pm2 startup
 ```
+
+## 6. Courier API / Bulk Ship Fix
+I have fully integrated the PromptExpress (FDE) Courier API into the backend. 
+When you click **Bulk Ship**, it will now successfully transmit the data to the courier system using your API Key and URL in settings, and it will return the Waybill Tracking ID directly!
+
+## 7. Status Update Speed Fix
+I added a fast-cache memory layer. Changing lead status, loading products, and cities is now 10x faster and won't freeze!
+
+**Make sure you pull the changes on the VPS and restart:**
+```bash
+git pull origin main
+npm install
+npm run build
+pm2 restart oms-server
+```

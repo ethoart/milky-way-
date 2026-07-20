@@ -864,12 +864,59 @@ app.post('/api/ship-order', async (req, res) => {
         const db = await getTenantDb(tenantId);
         const existing = await db.collection('orders').findOne({ id: order.id, tenantId });
         let updatedOrder = { ...order };
+        // Retrieve Tenant Settings for Courier Sync
+        const tenant = await db.collection('tenants').findOne({ id: tenantId });
+        let trackingResponse = null;
+
+        if (tenant && tenant.settings && tenant.settings.courierMode === 'STANDARD' && tenant.settings.courierApiUrl) {
+            try {
+                const apiPayload = {
+                    API_KEY: tenant.settings.courierApiKey,
+                    Client_Id: tenant.settings.courierClientId,
+                    Name: order.customerName,
+                    ContactNo1: order.customerPhone,
+                    ContactNo2: order.customerPhone,
+                    Address: order.customerAddress,
+                    City: order.customerCity,
+                    Weight: "1",
+                    Pieces: "1",
+                    CODAmount: order.totalAmount,
+                    Description: order.items ? order.items.map(i => i.name).join(', ') : "Parcel",
+                    ExchangeVal: "0",
+                    Remarks: ""
+                };
+                
+                const response = await fetch(tenant.settings.courierApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(apiPayload)
+                });
+                
+                const data = await response.json();
+                
+                // Prompt Express returns status 200 for success, >200 for errors
+                if (data && data[0] && data[0].WayBillID) {
+                    updatedOrder.trackingNumber = data[0].WayBillID;
+                    trackingResponse = `Waybill ${data[0].WayBillID} generated.`;
+                } else if (data && data[0] && data[0].Status) {
+                    const statusId = data[0].Status;
+                    throw new Error(`Courier Error ${statusId}: ${FDE_ERRORS[statusId] || 'Unknown'}`);
+                } else {
+                    console.log("Courier API returned:", data);
+                }
+            } catch (err) {
+                console.error("Courier API error:", err);
+                throw new Error("Courier API Handshake Failed: " + err.message);
+            }
+        }
+
         if (existing) {
-            updatedOrder = { ...existing, ...order, status: 'SHIPPED', shippedAt: new Date().toISOString() };
+            updatedOrder = { ...existing, ...updatedOrder, status: 'SHIPPED', shippedAt: new Date().toISOString() };
             if (!updatedOrder.logs) updatedOrder.logs = [];
-            updatedOrder.logs.push({ id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to SHIPPED`, timestamp: new Date().toISOString(), user: user || 'System' });
+            updatedOrder.logs.push({ id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to SHIPPED. ${trackingResponse || ''}`, timestamp: new Date().toISOString(), user: user || 'System' });
         }
         await db.collection('orders').updateOne({ id: order.id }, { $set: { ...clean(updatedOrder), tenantId } }, { upsert: true });
+
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

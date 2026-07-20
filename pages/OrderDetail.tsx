@@ -188,23 +188,20 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
 
     const log: OrderLog = { id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to ${newStatus}`, timestamp: new Date().toISOString(), user };
     
-    await db.updateOrder({ 
-        ...order, 
-        ...localFormData, 
-        ...timestampUpdates,
+        const updatedOrder = { 
+         ...order, 
+         ...localFormData, 
+         ...timestampUpdates,
         items, 
-        totalAmount, 
-        status: newStatus, 
-        logs: [...(order.logs || []), log] 
-    });
+         totalAmount, 
+         status: newStatus, 
+         logs: [...(order.logs || []), log] 
+     };
     
+    await db.updateOrder(updatedOrder as Order);
+        
     setIsSaving(false);
-    
-    if (newStatus === OrderStatus.OPEN_LEAD) {
-        setOrder(prev => prev ? { ...prev, status: OrderStatus.OPEN_LEAD, logs: [...(prev.logs || []), log] } : null);
-    } else {
-        loadData();
-    }
+    setOrder(updatedOrder as Order);
   };
 
   const openWhatsApp = (phoneNum: string) => {
