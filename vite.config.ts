@@ -9,6 +9,6 @@ export default defineConfig({
   },
   server: {
     host: true,
-    allowedHosts: ['oms2.hyperoms.xyz', 'localhost', '127.0.0.1']
+    allowedHosts: ['oms.hyperoms.xyz', 'localhost', '127.0.0.1']
   }
 });
