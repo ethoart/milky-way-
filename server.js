@@ -12,6 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+const ensuredIndexes = new Set();
 const PORT = process.env.PORT || 8080;
 const MONGODB_URI = process.env.MONGODB_URI;
 const CENTRAL_DB_NAME = 'milkyway_central';
@@ -158,12 +159,30 @@ app.get('/api/setup-indexes', async (req, res) => {
         if (tenantId) {
             const db = await getTenantDb(tenantId);
             const col = db.collection('orders');
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
+        if (!col._idIndexEnsured) {
+            col.createIndex({ id: 1 }, { unique: true }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col._idIndexEnsured = true;
+        }
             await col.createIndex({ tenantId: 1 });
             await col.createIndex({ status: 1 });
             await col.createIndex({ createdAt: 1 });
             await col.createIndex({ shippedAt: 1 });
             await col.createIndex({ tenantId: 1, createdAt: -1 });
             await col.createIndex({ tenantId: 1, status: 1 });
+            await col.createIndex({ id: 1 }, { unique: true });
+            await col.createIndex({ tenantId: 1, id: 1 });
             return res.json({ success: true, message: 'Indexes created for tenant ' + tenantId });
         }
         res.json({ success: true, message: 'Central indexes created' });
@@ -179,6 +198,17 @@ app.get('/api/log-users', async (req, res) => {
         if (tenantId) {
             const db = await getTenantDb(tenantId);
             const col = db.collection('orders');
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
             
             // Get sample logs to see their case
             const orders = await col.find({"logs.user": { $regex: /Courier|OMS|System|DEV/i }}).limit(10).toArray();
@@ -258,6 +288,17 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
         
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
         const products = await db.collection('products').find({ tenantId }).toArray();
@@ -547,6 +588,17 @@ app.get('/api/orders/counts', async (req, res) => {
         
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
         
         const matchStage = { tenantId };
         
@@ -590,14 +642,25 @@ app.get('/api/orders', async (req, res) => {
         const { tenantId, id, page, limit, search, status, productId, startDate, endDate } = req.query;
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
 
         if (id) {
             if (id.includes(",")) {
                 const ids = id.split(",");
-                const orders = await col.find({ id: { $in: ids } }).toArray();
+                const orders = await col.find({ tenantId, id: { $in: ids } }).toArray();
                 return res.json({ data: orders.map(clean), total: orders.length });
             }
-            let order = await col.findOne({ id });
+            let order = await col.findOne({ tenantId, id });
             return res.json(clean(order));
 
         }
@@ -696,6 +759,17 @@ app.post('/api/orders', async (req, res) => {
         const { order, orders } = req.body;
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
 
         if (orders) {
             const ops = orders.map(o => ({ 
@@ -719,6 +793,17 @@ app.delete('/api/orders', async (req, res) => {
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
         if (purge === 'true') {
             const result = await col.deleteMany({ tenantId });
             return res.json({ success: true, count: result.deletedCount });
@@ -738,6 +823,17 @@ app.get('/api/customer-history', async (req, res) => {
         if (!phone) return res.json([]);
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
+        if (!ensuredIndexes.has(tenantId)) {
+            col.createIndex({ id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, id: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, createdAt: -1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, status: 1 }).catch(() => {});
+            col.createIndex({ tenantId: 1, "items.productId": 1 }).catch(() => {});
+            col.createIndex({ status: 1 }).catch(() => {});
+            col.createIndex({ createdAt: 1 }).catch(() => {});
+            ensuredIndexes.add(tenantId);
+        }
         const history = await col.find({ tenantId, customerPhone: phone }).sort({ createdAt: -1 }).toArray();
         res.json(history.map(clean));
     } catch (e) { res.status(500).json({ error: e.message }); }
