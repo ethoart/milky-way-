@@ -401,7 +401,11 @@ export const handler: Handler = async (event, context) => {
 
         const response = await fetch(targetUrl, { 
             method: 'POST', 
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': '*/*'
+            },
             body: formData 
         });
         
@@ -414,19 +418,25 @@ export const handler: Handler = async (event, context) => {
         }
 
         const status = Number(data.status);
-        if (status === 200) {
+        const hasWaybill = data.waybill_no && data.waybill_no.trim().length > 0;
+        const isSuccess = status === 200 || hasWaybill;
+
+        if (isSuccess) {
+            if (tenantSettings.courierMode !== 'EXISTING_WAYBILL' && !hasWaybill) {
+                return { statusCode: 400, headers, body: JSON.stringify({ error: `Courier Agent API did not return a valid Waybill Number (API Code). Response: ${rawText}` }) };
+            }
             const updated = { 
                 ...order, 
                 status: 'SHIPPED', 
                 trackingNumber: data.waybill_no || order.trackingNumber, 
                 shippedAt: new Date().toISOString(),
-                logs: [...(order.logs || []), { id: `l-${Date.now()}`, message: 'FDE Handshake: Success', timestamp: new Date().toISOString(), user: 'OMS Connector' }]
+                logs: [...(order.logs || []), { id: `l-${Date.now()}`, message: `FDE Handshake: Success. Waybill: ${data.waybill_no || 'Assigned'}`, timestamp: new Date().toISOString(), user: 'OMS Connector' }]
             };
             await ordersCol.updateOne({ id: order.id }, { $set: updated });
             return { statusCode: 200, headers, body: JSON.stringify(updated) };
         }
         
-        const errorMsg = FDE_ERRORS[status] || `FDE Error ${status}: Handshake Refused`;
+        const errorMsg = data.message || FDE_ERRORS[status] || `FDE Error ${status}: Handshake Refused`;
         return { statusCode: 400, headers, body: JSON.stringify({ error: errorMsg }) };
     }
 

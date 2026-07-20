@@ -867,8 +867,13 @@ app.post('/api/ship-order', async (req, res) => {
         const existing = await db.collection('orders').findOne({ id: order.id, tenantId });
         let updatedOrder = { ...order };
 
-        const tenant = await db.collection('tenants').findOne({ id: tenantId });
+        const centralDb = await connectCentral();
+        const tenant = await centralDb.collection('tenants').findOne({ id: tenantId });
         let trackingResponse = null;
+
+        if (!tenant || !tenant.settings || !tenant.settings.courierApiKey || !tenant.settings.courierApiKey.trim()) {
+            return res.status(400).json({ error: "Cannot ship order: Courier Auth Key (API Code) is missing in Settings. Please configure your Courier API Key in settings first." });
+        }
 
         if (tenant && tenant.settings && tenant.settings.courierApiKey) {
             try {
@@ -905,7 +910,7 @@ app.post('/api/ship-order', async (req, res) => {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 15000);
                 const response = await fetch(targetUrl, { 
-                    method: 'POST', 
+                    method: 'POST',
                     headers: { 
                         'Content-Type': 'application/x-www-form-urlencoded',
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -917,22 +922,29 @@ app.post('/api/ship-order', async (req, res) => {
                 clearTimeout(timeoutId);
                 
                 const rawText = await response.text();
-                let data;
+                let data = {};
                 try {
                     data = JSON.parse(rawText);
                 } catch(e) {
-                    throw new Error(`FDE Text Response: ${rawText.slice(0, 100)}`);
+                    throw new Error(`FDE Format Error: ${rawText.slice(0, 100)}`);
                 }
                 
+                // If FDE returns a waybill_no or status 200, it is success!
                 const status = Number(data.status);
-                if (status === 200) {
+                const hasWaybill = data.waybill_no && data.waybill_no.trim().length > 0;
+                const isSuccess = status === 200 || hasWaybill;
+
+                if (isSuccess) {
+                    if (tenant.settings.courierMode !== 'EXISTING_WAYBILL' && !hasWaybill) {
+                        throw new Error(`Courier Agent API did not return a valid Waybill Number (API Code). Response: ${rawText}`);
+                    }
                     updatedOrder.trackingNumber = data.waybill_no || order.trackingNumber;
-                    trackingResponse = `Waybill ${data.waybill_no || 'Assigned'}.`;
+                    trackingResponse = `Waybill ${updatedOrder.trackingNumber || 'Assigned'}. (Raw: ${rawText})`;
                 } else {
-                    const errorMsg = FDE_ERRORS[status] || `FDE Error ${status}: Handshake Refused`;
+                    const errorMsg = data.message || FDE_ERRORS[status] || `FDE Error ${status}: ${rawText}`;
                     throw new Error(errorMsg);
                 }
-            } catch (err) {
+            } catch (err) { 
                 console.error("Courier API error:", err);
                 return res.status(400).json({ error: err.message });
             }
@@ -951,7 +963,6 @@ app.post('/api/ship-order', async (req, res) => {
         res.json({ success: true, updatedOrder });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
 app.get('/api/customer-history-detailed', async (req, res) => {
     try {
         const { tenantId, phone } = req.query;

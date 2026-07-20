@@ -96,6 +96,7 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }
     setLoading(true);
     let successCount = 0;
     let failCount = 0;
+    const errors: string[] = [];
     const targetIds = [...selectedIds];
     for (let i = 0; i < targetIds.length; i++) {
         const id = targetIds[i];
@@ -106,13 +107,19 @@ export const TodayShipped: React.FC<TodayShippedProps> = ({ tenantId, shopName }
                 successCount++;
             } catch (err: any) {
                 failCount++;
+                const errMsg = err.message || JSON.stringify(err);
+                errors.push(`#${order.id.slice(-8)}: ${errMsg}`);
                 console.error(`Sync Handshake failed for ${order.id}:`, err);
             }
             await new Promise(r => setTimeout(r, 800));
         }
     }
     setLoading(false);
-    alert(`Logistics Sync Summary:\nSuccess: ${successCount}\nFailed: ${failCount}`);
+    let summary = `Logistics Sync Summary:\nSuccess: ${successCount}\nFailed: ${failCount}`;
+    if (errors.length > 0) {
+        summary += `\n\nErrors:\n` + errors.slice(0, 10).join('\n') + (errors.length > 10 ? `\n...and ${errors.length - 10} more` : '');
+    }
+    alert(summary);
     setSelectedIds([]);
     load();
   };
