@@ -111,17 +111,18 @@ export const OrderList: React.FC<OrderListProps> = ({
       setTotalCount(total);
       
       if (finalOrders.length > 0) {
-        const uniquePhones = [...new Set(finalOrders.map(o => o.customerPhone))];
-        const historyResults = await Promise.all(uniquePhones.map(async (phone) => {
-          const h = await db.getCustomerHistory(phone, tenantId);
-          return { phone, h };
-        }));
-        
-        const historyMap: any = {};
-        historyResults.forEach(res => { 
-          historyMap[res.phone.slice(-8)] = res.h; 
-        });
-        setCustomerHistories(historyMap);
+        const uniquePhones = [...new Set(finalOrders.map(o => o.customerPhone))].filter(Boolean);
+        if (uniquePhones.length > 0) {
+            const batchHistory = await db.getCustomerHistoryBatch(uniquePhones, tenantId);
+            
+            const historyMap: any = {};
+            uniquePhones.forEach(phone => {
+               if (batchHistory[phone]) {
+                   historyMap[phone.slice(-8)] = batchHistory[phone];
+               }
+            });
+            setCustomerHistories(historyMap);
+        }
       }
     } finally {
       setIsLoading(false);

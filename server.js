@@ -740,6 +740,41 @@ app.delete('/api/orders', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/customer-history-batch', async (req, res) => {
+    try {
+        const { tenantId, phones } = req.body;
+        if (!phones || !Array.isArray(phones) || phones.length === 0) return res.json({});
+        
+        const db = await getTenantDb(tenantId);
+        const col = db.collection('orders');
+        
+        // Fetch all orders for all these phones at once
+        const allHistory = await col.find({ tenantId, customerPhone: { $in: phones } }).toArray();
+        
+        // Group by phone
+        const historyMap = {};
+        for (const order of allHistory) {
+            const p = order.customerPhone;
+            if (!historyMap[p]) {
+                historyMap[p] = {
+                    status: 'NEW',
+                    count: 0,
+                    returns: 0
+                };
+            }
+            historyMap[p].count += 1;
+            const isReturn = ['RETURNED', 'RETURN_TRANSFER', 'RETURN_HANDOVER', 'RETURN_COMPLETED', 'RETURN_AS_ON_SYSTEM', 'REJECTED'].includes(order.status);
+            if (isReturn) historyMap[p].returns += 1;
+            if (historyMap[p].returns > 0) historyMap[p].status = 'WARNING';
+            else if (historyMap[p].count > 1) historyMap[p].status = 'REPEAT';
+        }
+        
+        res.json(historyMap);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/customer-history', async (req, res) => {
     try {
         const { tenantId, phone } = req.query;

@@ -245,6 +245,11 @@ class BackendService {
     return this.request('/ship-order', 'POST', { order, tenantId, user });
   }
 
+  async getCustomerHistoryBatch(phones: string[], tenantId: string): Promise<Record<string, any>> {
+    if (!phones || phones.length === 0) return {};
+    return this.request('/customer-history-batch', 'POST', { phones, tenantId });
+  }
+
   async getCustomerHistory(phone: string, tenantId: string): Promise<any> {
     if (!phone) return { status: CustomerStatus.NEW, count: 0, returns: 0 };
     return this.request('/customer-history', 'GET', null, { phone, tenantId });
