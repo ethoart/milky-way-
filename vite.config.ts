@@ -9,6 +9,6 @@ export default defineConfig({
   },
   server: {
     host: true,
-    allowedHosts: ['erp.hyperoms.xyz', 'localhost', '127.0.0.1']
+    allowedHosts: ['oms.hyperoms.xyz', 'erp.hyperoms.xyz', 'oms.arobazzar.lk', 'localhost', '127.0.0.1']
   }
 });
