@@ -876,7 +876,7 @@ app.post('/api/ship-order', async (req, res) => {
                 const hasCustomDescription = order.parcelDescription && order.parcelDescription !== 'Online Order';
                 const finalDescription = hasCustomDescription ? order.parcelDescription : productNames;
 
-                const formData = new FormData();
+                const formData = new URLSearchParams();
                 formData.append('api_key', tenant.settings.courierApiKey.trim());
                 formData.append('client_id', (tenant.settings.courierClientId || '').trim());
                 formData.append('order_id', fdeOrderId);
@@ -903,6 +903,11 @@ app.post('/api/ship-order', async (req, res) => {
 
                 const response = await fetch(targetUrl, { 
                     method: 'POST', 
+                    headers: { 
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                        'Accept': '*/*'
+                    },
                     body: formData 
                 });
                 

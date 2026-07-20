@@ -106,3 +106,26 @@ npm install
 npm run build
 pm2 restart oms-server
 ```
+
+## 11. 502 Bad Gateway / Cloudflare Block Fix
+If you are seeing a 502 Bad Gateway or an HTML error, this usually means **the Node.js process crashed on your VPS**, or FDE's Cloudflare layer blocked the API request.
+I have done the following:
+1. Reverted `FormData` back to `URLSearchParams` (which works identically to PHP's `application/x-www-form-urlencoded` without causing Node.js crashes).
+2. Added a standard browser `User-Agent` to the API request to bypass FDE's Cloudflare bot protection.
+3. Caught all possible Courier errors safely so the server does not crash.
+
+**Important for your VPS**: If you start the server using `node server.js` and close your SSH terminal, the server turns off and returns a 502! You MUST ensure it runs in the background using PM2.
+
+**Final Steps on your VPS:**
+```bash
+# Pull the final fixes
+git pull origin main
+npm install
+
+# Rebuild the server
+npm run build
+
+# MAKE SURE TO START WITH PM2 (Do NOT use node server.js directly unless for debugging)
+pm2 restart oms-server
+```
+If `pm2` is not installed, install it first using: `npm install -g pm2`, then start your server with: `pm2 start server.js --name oms-server`
