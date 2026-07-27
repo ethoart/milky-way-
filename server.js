@@ -51,6 +51,65 @@ async function connectCentral() {
 }
 
 const tenantDbs = new Map();
+
+async function ensureTenantIndexes(db, tenantId) {
+    try {
+        const ordersCol = db.collection('orders');
+        const indexesToCreate = [
+            { spec: { id: 1 }, options: { unique: true } },
+            { spec: { tenantId: 1 } },
+            { spec: { status: 1 } },
+            { spec: { createdAt: 1 } },
+            { spec: { shippedAt: 1 } },
+            { spec: { confirmedAt: 1 } },
+            { spec: { deliveredAt: 1 } },
+            { spec: { returnCompletedAt: 1 } },
+            { spec: { tenantId: 1, createdAt: -1 } },
+            { spec: { tenantId: 1, status: 1 } },
+            { spec: { tenantId: 1, customerPhone: 1 } },
+            { spec: { trackingNumber: 1 } },
+            { spec: { customerName: 1 } },
+            { spec: { "logs.timestamp": 1 } }
+        ];
+        
+        for (const index of indexesToCreate) {
+            try {
+                await ordersCol.createIndex(index.spec, index.options || {});
+            } catch (e) {
+                if (index.options && index.options.unique) {
+                    try {
+                        await ordersCol.createIndex(index.spec, {});
+                    } catch (e2) {
+                        console.error(`Failed to create index ${JSON.stringify(index.spec)}:`, e2);
+                    }
+                } else {
+                    console.error(`Failed to create index ${JSON.stringify(index.spec)}:`, e);
+                }
+            }
+        }
+        
+        const productsCol = db.collection('products');
+        const productIndexes = [
+            { spec: { id: 1 }, options: { unique: true } },
+            { spec: { tenantId: 1 } }
+        ];
+        for (const index of productIndexes) {
+            try {
+                await productsCol.createIndex(index.spec, index.options || {});
+            } catch (e) {
+                if (index.options && index.options.unique) {
+                    try {
+                        await productsCol.createIndex(index.spec, {});
+                    } catch (e2) {}
+                }
+            }
+        }
+        console.log(`Indexes successfully checked/created for tenant database: ${tenantId}`);
+    } catch (err) {
+        console.error(`Failed to ensure indexes for tenant ${tenantId}:`, err);
+    }
+}
+
 async function getTenantDb(tenantId) {
     if (tenantDbs.has(tenantId)) return tenantDbs.get(tenantId);
     const db = await connectCentral();
@@ -61,13 +120,16 @@ async function getTenantDb(tenantId) {
             await tClient.connect();
             const tDb = tClient.db();
             tenantDbs.set(tenantId, tDb);
+            ensureTenantIndexes(tDb, tenantId);
             return tDb;
         } catch (err) { 
             tenantDbs.set(tenantId, db);
+            ensureTenantIndexes(db, tenantId);
             return db; 
         }
     }
     tenantDbs.set(tenantId, db);
+    ensureTenantIndexes(db, tenantId);
     return db;
 }
 
@@ -265,10 +327,28 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         const { tenantId, startDate, endDate } = req.query;
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
         
+        function getSLDateString(d) {
+            try {
+                return new Intl.DateTimeFormat('en-CA', {
+                    timeZone: 'Asia/Colombo',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                }).format(d);
+            } catch (err) {
+                try {
+                    const slTime = new Date(d.getTime() + (5.5 * 60 * 60 * 1000));
+                    return slTime.toISOString().split('T')[0];
+                } catch (e) {
+                    return null;
+                }
+            }
+        }
+
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
         
-        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+        const today = getSLDateString(new Date());
         const products = await db.collection('products').find({ tenantId }).toArray();
         const centralDb = await connectCentral();
         const users = await centralDb.collection('users').find({ tenantId }).toArray();
@@ -277,17 +357,26 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         const dStart = startDate ? new Date(startDate) : new Date(new Date().setDate(new Date().getDate() - 30));
         const dEnd = endDate ? new Date(endDate) : new Date();
         for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
-            const slDate = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+            const slDate = getSLDateString(d);
             let formatOptions = { month: 'short', day: 'numeric' };
             if (dStart.getFullYear() !== dEnd.getFullYear() || !startDate) {
                 formatOptions.year = '2-digit';
             }
-            dailyMap[slDate] = { 
-                date: d.toLocaleDateString('en-US', formatOptions), 
-                monthKey: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-                sales: 0, 
-                shipped: 0 
-            };
+            try {
+                dailyMap[slDate] = { 
+                    date: new Intl.DateTimeFormat('en-US', formatOptions).format(d), 
+                    monthKey: new Intl.DateTimeFormat('en-US', { month: 'short', year: '2-digit' }).format(d),
+                    sales: 0, 
+                    shipped: 0 
+                };
+            } catch (e) {
+                dailyMap[slDate] = { 
+                    date: d.toLocaleDateString('en-US', formatOptions), 
+                    monthKey: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+                    sales: 0, 
+                    shipped: 0 
+                };
+            }
         }
         
         let inventoryTotalCount = 0;
@@ -343,10 +432,6 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         let deliveredCount = 0, returnedCount = 0, confirmedCount = 0, shippedCount = 0, restockCount = 0;
         let deliveredValue = 0, returnedValue = 0, confirmedValue = 0, shippedValue = 0, restockValue = 0;
         let todayOrders = 0, todayRevenue = 0, todayShippedCount = 0, todayReturnsCount = 0, todayDeliveredCount = 0;
-
-        function getSLDateString(d) {
-            return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
-        }
 
         allOrders.forEach(o => {
             const createDate = o.createdAt ? getSLDateString(new Date(o.createdAt)) : null;
@@ -779,11 +864,23 @@ app.post('/api/customer-history-batch', async (req, res) => {
 app.get('/api/customer-history', async (req, res) => {
     try {
         const { tenantId, phone } = req.query;
-        if (!phone) return res.json([]);
+        if (!phone) return res.json({ status: 'NEW', count: 0, returns: 0, orders: [] });
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
         const history = await col.find({ tenantId, customerPhone: phone }).sort({ createdAt: -1 }).toArray();
-        res.json(history.map(clean));
+        
+        const count = history.length;
+        const returns = history.filter(o => ['RETURNED', 'RETURN_TRANSFER', 'RETURN_HANDOVER', 'RETURN_COMPLETED', 'RETURN_AS_ON_SYSTEM', 'REJECTED'].includes(o.status)).length;
+        let status = 'NEW';
+        if (returns > 0) status = 'WARNING';
+        else if (count > 0) status = 'REPEAT';
+
+        res.json({
+            status,
+            count,
+            returns,
+            orders: history.map(clean)
+        });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

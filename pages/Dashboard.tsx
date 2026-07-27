@@ -27,9 +27,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
   
   const [loading, setLoading] = useState(true);
 
-  const [preset, setPreset] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'ALL'>('MONTH');
-  const [startDate, setStartDate] = useState('2020-01-01');
-  const [endDate, setEndDate] = useState(getSLDateString());
+  const [preset, setPreset] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'ALL' | null>('MONTH');
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    return getSLDateString(new Date(d.getFullYear(), d.getMonth(), 1));
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    return getSLDateString(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+  });
 
   const applyPreset = useCallback((p: 'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'ALL') => {
     setPreset(p);
@@ -40,6 +46,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
     } else if (p === 'WEEK') {
         d.setDate(d.getDate() - 7);
         setStartDate(getSLDateString(d));
+        d.setDate(d.getDate() + 7); // restore or just use new Date()
         setEndDate(getSLDateString(new Date()));
     } else if (p === 'MONTH') {
         const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -146,9 +153,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
             </div>
             <div className="flex items-center gap-2 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-100">
                 <Calendar size={14} className="text-blue-600" />
-                <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setPreset('MONTH' as any); }} className="text-[10px] font-bold outline-none bg-transparent" />
+                <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setPreset(null); }} className="text-[10px] font-bold outline-none bg-transparent" />
                 <span className="text-[10px] font-black text-slate-300 mx-1">TO</span>
-                <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setPreset('MONTH' as any); }} className="text-[10px] font-bold outline-none bg-transparent" />
+                <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setPreset(null); }} className="text-[10px] font-bold outline-none bg-transparent" />
             </div>
             <button onClick={fetchData} className="p-3 bg-slate-900 text-white rounded-xl hover:bg-black transition-all shadow-lg active:scale-95">
                 <RefreshCcw size={16} className={loading ? 'animate-spin' : ''} />
