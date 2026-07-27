@@ -215,6 +215,7 @@ export const OrderList: React.FC<OrderListProps> = ({
       case OrderStatus.OPEN_LEAD: return 'bg-sky-500 text-white';
       case OrderStatus.CONFIRMED: return 'bg-emerald-500 text-white';
       case OrderStatus.REJECTED: return 'bg-rose-600 text-white';
+      case OrderStatus.NO_ANSWER_REJECT: return 'bg-rose-800 text-white';
       case OrderStatus.NO_ANSWER: return 'bg-amber-400 text-black';
       case OrderStatus.SHIPPED: return 'bg-indigo-600 text-white';
       case OrderStatus.HOLD: return 'bg-purple-600 text-white';

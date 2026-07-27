@@ -179,7 +179,7 @@ export default function App() {
 
   const renderPage = () => {
     if (user.role === UserRole.DEV_ADMIN) return <DevAdmin />;
-    if (currentPage === 'order_detail' && selectedOrderId) return <OrderDetail orderId={selectedOrderId} tenantId={user.tenantId!} onBack={() => {setSelectedOrderId(null); setCurrentPage('selling');}} />;
+    if (currentPage === 'order_detail' && selectedOrderId) return <OrderDetail orderId={selectedOrderId} tenantId={user.tenantId!} onBack={() => {setSelectedOrderId(null); setCurrentPage('selling');}} onSelectOrder={(id) => setSelectedOrderId(id)} />;
     switch(currentPage) {
         case 'dashboard': return <Dashboard tenantId={user.tenantId!} shopName={displayShopName} />;
         case 'leads': return <Leads tenantId={user.tenantId!} shopName={displayShopName} />;

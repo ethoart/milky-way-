@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { db } from '../services/mockBackend';
-import { Order, OrderStatus, OrderLog, Product, Tenant, CourierMode } from '../types';
+import { Order, OrderStatus, OrderLog, Product, Tenant, CourierMode, User } from '../types';
 import { 
   ArrowLeft, Truck, Check, Clock, User as UserIcon, Save, 
   Activity, MapPin, Package, Trash2, Plus, Printer, RefreshCcw, MessageSquare, Zap, Calendar, ShoppingBag, DollarSign, Search, ChevronDown, X, History, ShoppingCart, Scale, Info, CheckCircle2, History as HistoryIcon, UserCheck, ExternalLink, Phone, RotateCcw, AlertCircle, RefreshCw
@@ -16,18 +16,21 @@ interface OrderDetailProps {
   orderId: string;
   tenantId: string;
   onBack: () => void;
+  onSelectOrder?: (id: string) => void;
 }
 
-export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onBack }) => {
+export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onBack, onSelectOrder }) => {
   const [order, setOrder] = useState<Order | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [cities, setCities] = useState<string[]>([]);
+  const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [customerHistory, setCustomerHistory] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showPrintPortal, setShowPrintPortal] = useState(false);
+  const [historyModalOrder, setHistoryModalOrder] = useState<Order | null>(null);
 
   const [citySearch, setCitySearch] = useState('');
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
@@ -51,14 +54,22 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const results = await Promise.allSettled([db.getOrder(orderId, tenantId), db.getProducts(tenantId), db.getTenant(tenantId), db.getGlobalCities()]);
+      const results = await Promise.allSettled([
+        db.getOrder(orderId, tenantId), 
+        db.getProducts(tenantId), 
+        db.getTenant(tenantId), 
+        db.getGlobalCities(),
+        db.getTeamMembers(tenantId)
+      ]);
       const data = results[0].status === 'fulfilled' ? (results[0].value as Order) : null;
       const fetchedProducts = results[1].status === 'fulfilled' ? (results[1].value as Product[]) : [];
       const fetchedTenant = results[2].status === 'fulfilled' ? (results[2].value as Tenant) : null;
       const fetchedCities = results[3].status === 'fulfilled' ? (results[3].value as string[]) : [];
+      const fetchedTeamMembers = results[4].status === 'fulfilled' ? (results[4].value as User[]) : [];
       
       const uniqueCities = Array.from(new Set(fetchedCities && fetchedCities.length > 0 ? fetchedCities : SRI_LANKA_CITIES_FALLBACK));
       setCities(uniqueCities);
+      setTeamMembers(fetchedTeamMembers);
 
       if (data) {
         setOrder(data);
@@ -242,6 +253,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     switch(status) {
       case OrderStatus.DELIVERED: return 'bg-emerald-50 text-emerald-600 border-emerald-100';
       case OrderStatus.REJECTED: return 'bg-rose-50 text-rose-600 border-rose-100';
+      case OrderStatus.NO_ANSWER_REJECT: return 'bg-rose-100 text-rose-800 border-rose-200';
       case OrderStatus.RETURNED: return 'bg-amber-50 text-amber-600 border-amber-100';
       case OrderStatus.SHIPPED: return 'bg-blue-50 text-blue-600 border-blue-100';
       case OrderStatus.TRANSFER: return 'bg-indigo-50 text-indigo-600 border-indigo-100';
@@ -318,6 +330,12 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                     Rejected
                                 </button>
                                 <button 
+                                    onClick={() => updateStatus(OrderStatus.NO_ANSWER_REJECT)} 
+                                    className={`px-5 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.NO_ANSWER_REJECT, 'bg-rose-800 text-white')}`}
+                                >
+                                    No Answer Reject
+                                </button>
+                                <button 
                                     onClick={() => updateStatus(OrderStatus.CONFIRMED)} 
                                     className={`px-10 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.CONFIRMED, 'bg-emerald-500 text-white')}`}
                                 >
@@ -352,23 +370,78 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                     <div className="bg-amber-50/50 p-10 rounded-[3rem] border border-amber-100 shadow-sm space-y-6">
                         <h3 className="text-[11px] font-black text-amber-600 uppercase tracking-[0.2em] flex items-center gap-2 mb-2"><RotateCcw size={16}/> Reschedule Assignment</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-1.5">
+                            <div className="space-y-1.5 relative">
                                 <label className="text-[10px] font-black text-amber-700 uppercase tracking-widest ml-1">Assign User</label>
-                                <input 
-                                    className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3.5 font-bold outline-none focus:ring-2 focus:ring-amber-500" 
-                                    placeholder="Username handling reschedule..."
-                                    value={localFormData.rescheduledBy} 
-                                    onChange={e => setLocalFormData({...localFormData, rescheduledBy: e.target.value})} 
-                                />
+                                <div className="relative">
+                                    <select 
+                                        className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3.5 pr-10 font-bold outline-none focus:ring-2 focus:ring-amber-500 appearance-none cursor-pointer" 
+                                        value={localFormData.rescheduledBy} 
+                                        onChange={e => setLocalFormData({...localFormData, rescheduledBy: e.target.value})}
+                                    >
+                                        <option value="">-- Select Team Member --</option>
+                                        {teamMembers.map(m => (
+                                            <option key={m.id} value={m.username}>{m.username} ({m.role})</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-amber-500 pointer-events-none" />
+                                </div>
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black text-amber-700 uppercase tracking-widest ml-1">Reschedule Note</label>
-                                <input 
-                                    className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3.5 font-bold outline-none focus:ring-2 focus:ring-amber-500" 
-                                    placeholder="Reason, customer preference..."
-                                    value={localFormData.rescheduleNote} 
-                                    onChange={e => setLocalFormData({...localFormData, rescheduleNote: e.target.value})} 
-                                />
+                                <div className="flex flex-col gap-2">
+                                    <div className="relative">
+                                        <select 
+                                            className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3.5 pr-10 font-bold outline-none focus:ring-2 focus:ring-amber-500 appearance-none cursor-pointer"
+                                            value={
+                                                ["Customer requested alternate delivery date", 
+                                                 "Phone unanswered (multiple call attempts)", 
+                                                 "Invalid/incomplete shipping address", 
+                                                 "Refused to accept at doorstep", 
+                                                 "Out of delivery area / Route changed", 
+                                                 "Delayed by courier partner", 
+                                                 "Wants to open and check parcel first"
+                                                ].includes(localFormData.rescheduleNote) 
+                                                    ? localFormData.rescheduleNote 
+                                                    : (localFormData.rescheduleNote ? "CUSTOM" : "")
+                                            }
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                if (val === "CUSTOM") {
+                                                    setLocalFormData({...localFormData, rescheduleNote: ''});
+                                                } else {
+                                                    setLocalFormData({...localFormData, rescheduleNote: val});
+                                                }
+                                            }}
+                                        >
+                                            <option value="">-- Select Reschedule Reason --</option>
+                                            <option value="Customer requested alternate delivery date">Customer requested alternate delivery date</option>
+                                            <option value="Phone unanswered (multiple call attempts)">Phone unanswered (multiple call attempts)</option>
+                                            <option value="Invalid/incomplete shipping address">Invalid/incomplete shipping address</option>
+                                            <option value="Refused to accept at doorstep">Refused to accept at doorstep</option>
+                                            <option value="Out of delivery area / Route changed">Out of delivery area / Route changed</option>
+                                            <option value="Delayed by courier partner">Delayed by courier partner</option>
+                                            <option value="Wants to open and check parcel first">Wants to open and check parcel first</option>
+                                            <option value="CUSTOM">Custom Reason...</option>
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-amber-500 pointer-events-none" />
+                                    </div>
+                                    
+                                    {(!["Customer requested alternate delivery date", 
+                                        "Phone unanswered (multiple call attempts)", 
+                                        "Invalid/incomplete shipping address", 
+                                        "Refused to accept at doorstep", 
+                                        "Out of delivery area / Route changed", 
+                                        "Delayed by courier partner", 
+                                        "Wants to open and check parcel first"
+                                       ].includes(localFormData.rescheduleNote) || localFormData.rescheduleNote === "") && (
+                                        <input 
+                                            className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3.5 font-bold outline-none focus:ring-2 focus:ring-amber-500 animate-fade-in" 
+                                            placeholder="Type custom reason, customer preference..."
+                                            value={localFormData.rescheduleNote} 
+                                            onChange={e => setLocalFormData({...localFormData, rescheduleNote: e.target.value})} 
+                                        />
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -476,26 +549,62 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                 <p className="text-[10px] font-black uppercase tracking-widest">New Customer Entry</p>
                             </div>
                         ) : (
-                            customerHistory.map(h => (
-                                <div key={h.id} className="p-6 bg-slate-50 border border-slate-100 rounded-[2rem] flex items-center justify-between group hover:bg-white hover:shadow-lg transition-all">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border font-black text-[14px] ${getStatusBadgeClass(h.status)}`}>
-                                            <ShoppingBag size={20} />
-                                        </div>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm font-black text-slate-900">REF #{h.id.slice(-6).toUpperCase()}</span>
-                                                <span className={`px-2 py-0.5 border rounded-lg text-[8px] font-black uppercase tracking-tight ${getStatusBadgeClass(h.status)}`}>{h.status}</span>
+                            customerHistory.map(h => {
+                                const lastLog = h.logs && h.logs.length > 0 ? h.logs[h.logs.length - 1] : null;
+                                const lastUpdater = lastLog ? lastLog.user : (h.rescheduledBy || 'System');
+                                return (
+                                    <div key={h.id} className="p-5 bg-slate-50 border border-slate-100 rounded-[2rem] flex flex-col gap-4 group hover:bg-white hover:shadow-lg transition-all">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center border font-black text-[12px] ${getStatusBadgeClass(h.status)}`}>
+                                                    <ShoppingBag size={16} />
+                                                </div>
+                                                <div>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="text-xs font-black text-slate-900">REF #{h.id.slice(-6).toUpperCase()}</span>
+                                                        <span className={`px-2 py-0.5 border rounded-lg text-[8px] font-black uppercase tracking-tight ${getStatusBadgeClass(h.status)}`}>
+                                                            {h.status.replace('_', ' ')}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">
+                                                        {new Date(h.createdAt).toLocaleDateString()} • {h.items[0]?.name || 'Item'}
+                                                     </p>
+                                                </div>
                                             </div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{new Date(h.createdAt).toLocaleDateString()} • {h.items[0]?.name || 'Item'}</p>
+                                            <div className="text-right">
+                                                <p className="text-xs font-black text-slate-900">{formatCurrency(h.totalAmount)}</p>
+                                                <p className="text-[8px] font-black text-blue-600 uppercase mt-0.5">Value Locked</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-[10px]">
+                                            <div className="flex items-center gap-1.5 text-slate-500 font-bold uppercase">
+                                                <UserCheck size={12} className="text-blue-500" />
+                                                <span>Log User: <strong className="text-slate-800">{lastUpdater}</strong></span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); setHistoryModalOrder(h); }} 
+                                                    className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg font-black uppercase text-[8px] flex items-center gap-1 transition-all"
+                                                    title="View Timeline History"
+                                                >
+                                                    <HistoryIcon size={10} /> History
+                                                </button>
+
+                                                {onSelectOrder && (
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); onSelectOrder(h.id); }} 
+                                                        className="px-3 py-1.5 bg-slate-950 text-white hover:bg-black rounded-lg font-black uppercase text-[8px] flex items-center gap-1 transition-all"
+                                                        title="Load Order Details"
+                                                    >
+                                                        <ExternalLink size={10} /> Open
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="text-right">
-                                        <p className="text-sm font-black text-slate-900">{formatCurrency(h.totalAmount)}</p>
-                                        <p className="text-[9px] font-black text-blue-600 uppercase mt-0.5">Value Locked</p>
-                                    </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 </div>
@@ -546,6 +655,90 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                 <BillPrintView order={{...order, ...localFormData, items, totalAmount}} settings={tenant.settings} />
             </div>, 
             document.body
+        )}
+
+        {/* History Log Notification Overlay Modal */}
+        {historyModalOrder && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white w-full max-w-xl rounded-[3rem] border border-slate-100 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                    <div className="p-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-3 bg-blue-100 text-blue-600 rounded-2xl"><HistoryIcon size={20} /></div>
+                            <div>
+                                <h3 className="text-md font-black text-slate-900 uppercase tracking-tight">Order Timeline Audit</h3>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Ref #{historyModalOrder.id.slice(-6).toUpperCase()}</p>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={() => setHistoryModalOrder(null)} 
+                            className="p-2.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+
+                    <div className="p-8 overflow-y-auto no-scrollbar flex-1 space-y-6">
+                        <div className="flex items-center justify-between p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
+                            <div>
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Current Status</p>
+                                <span className={`inline-block mt-1.5 px-3 py-1 border rounded-lg text-[10px] font-black uppercase tracking-wider ${getStatusBadgeClass(historyModalOrder.status)}`}>
+                                    {historyModalOrder.status.replace('_', ' ')}
+                                </span>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Total Value</p>
+                                <p className="text-lg font-black text-slate-900 mt-1">{formatCurrency(historyModalOrder.totalAmount)}</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Status Registry Logs</h4>
+                            {(!historyModalOrder.logs || historyModalOrder.logs.length === 0) ? (
+                                <div className="p-6 bg-slate-50 text-center rounded-2xl border text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                    No logged operations on system.
+                                </div>
+                            ) : (
+                                <div className="space-y-3.5">
+                                    {historyModalOrder.logs.slice().reverse().map((log) => (
+                                        <div key={log.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3">
+                                            <div className="w-7 h-7 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-[9px] font-black text-blue-600 shrink-0 shadow-sm uppercase">
+                                                {log.user.slice(0, 1)}
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <span className="text-[9px] font-black text-slate-900 uppercase">{log.user}</span>
+                                                    <span className="text-[8px] font-bold text-slate-400">{new Date(log.timestamp).toLocaleString()}</span>
+                                                </div>
+                                                <p className="text-[11px] font-bold text-slate-600 uppercase tracking-tight leading-relaxed">{log.message}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-3">
+                        <button 
+                            onClick={() => setHistoryModalOrder(null)} 
+                            className="flex-1 py-3.5 border border-slate-200 hover:bg-slate-100 rounded-2xl text-slate-700 font-black uppercase text-[10px] tracking-wider transition-all"
+                        >
+                            Dismiss
+                        </button>
+                        {onSelectOrder && (
+                            <button 
+                                onClick={() => {
+                                    onSelectOrder(historyModalOrder.id);
+                                    setHistoryModalOrder(null);
+                                }} 
+                                className="flex-1 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-[10px] tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all"
+                            >
+                                <ExternalLink size={14} /> Open Full Details
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
         )}
     </div>
   );
