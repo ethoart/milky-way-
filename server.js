@@ -67,6 +67,11 @@ async function ensureTenantIndexes(db, tenantId) {
             { spec: { tenantId: 1, createdAt: -1 } },
             { spec: { tenantId: 1, status: 1 } },
             { spec: { tenantId: 1, customerPhone: 1 } },
+            { spec: { tenantId: 1, shippedAt: 1 } },
+            { spec: { tenantId: 1, confirmedAt: 1 } },
+            { spec: { tenantId: 1, deliveredAt: 1 } },
+            { spec: { tenantId: 1, returnCompletedAt: 1 } },
+            { spec: { tenantId: 1, "logs.timestamp": 1 } },
             { spec: { trackingNumber: 1 } },
             { spec: { customerName: 1 } },
             { spec: { "logs.timestamp": 1 } }
@@ -419,7 +424,6 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 { deliveredAt: { $gte: sDate, $lte: eDate } },
                 { returnCompletedAt: { $gte: sDate, $lte: eDate } },
                 { "logs.timestamp": { $gte: sDate, $lte: eDate } },
-                { status: { $in: ['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER', 'RETURN_COMPLETED'] } },
                 { createdAt: { $gte: tDate, $lte: tEndDate } },
                 { shippedAt: { $gte: tDate, $lte: tEndDate } },
                 { deliveredAt: { $gte: tDate, $lte: tEndDate } },
@@ -557,15 +561,17 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             
             // Upcoming Returns
             if (['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER'].includes(o.status)) {
-                 (o.items || []).forEach(item => {
-                    if (!productStats[item.productId]) {
-                        productStats[item.productId] = {
-                            sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
-                            shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
-                        };
-                    }
-                    productStats[item.productId].upcomingReturn += (Number(item.quantity) || 1);
-                });
+                if (createIsInRange || shipIsInRange) {
+                     (o.items || []).forEach(item => {
+                        if (!productStats[item.productId]) {
+                            productStats[item.productId] = {
+                                sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
+                                shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
+                            };
+                        }
+                        productStats[item.productId].upcomingReturn += (Number(item.quantity) || 1);
+                    });
+                }
             }
 
             // Team Stats from Logs
@@ -919,6 +925,11 @@ app.delete('/api/products', async (req, res) => {
 app.get('/api/tenants', async (req, res) => {
     try {
         const db = await connectCentral();
+        const { id } = req.query;
+        if (id) {
+            const tenant = await db.collection('tenants').findOne({ id });
+            return res.json(tenant ? [clean(tenant)] : []);
+        }
         const tenants = await db.collection('tenants').find({}).toArray();
         res.json(tenants.map(clean));
     } catch (e) { res.status(500).json({ error: e.message }); }

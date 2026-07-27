@@ -191,8 +191,8 @@ class BackendService {
   }
   
   async getTenant(tenantId: string): Promise<Tenant | undefined> {
-    const tenants = await this.getTenants();
-    return tenants.find(t => t.id === tenantId);
+    const tenants = await this.request('/tenants', 'GET', null, { id: tenantId });
+    return Array.isArray(tenants) ? tenants[0] : undefined;
   }
 
   async updateTenant(tenant: Tenant, adminEmail?: string, adminPass?: string): Promise<void> {
