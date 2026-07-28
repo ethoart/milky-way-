@@ -445,10 +445,12 @@ export const handler: Handler = async (event, context) => {
         const ordersCol = activeDb.collection('orders');
         const order = await ordersCol.findOne({ $or: [{ id: trackingOrId }, { trackingNumber: trackingOrId }] });
         if (order) {
+            const now = new Date().toISOString();
             const updated = { 
                 ...order, 
                 status: 'RETURN_COMPLETED',
-                returnCompletedAt: new Date().toISOString()
+                returnCompletedAt: now,
+                returnedAt: order.returnedAt || now
             };
             await ordersCol.updateOne({ id: order.id }, { $set: updated });
             return { statusCode: 200, headers, body: JSON.stringify(updated) };

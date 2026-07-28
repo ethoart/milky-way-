@@ -78,6 +78,10 @@ class BackendService {
     return this.request('/orders/dashboard-stats', 'GET', null, params);
   }
 
+  async getTenantLastAction(tenantId: string): Promise<{ lastAction: number }> {
+    return this.request('/tenant-last-action', 'GET', null, { tenantId });
+  }
+
   async getOrders(params: string | GetOrdersParams): Promise<{ data: Order[], total: number }> {
     const actualParams = typeof params === 'string' ? { tenantId: params } : params;
     const res = await this.request('/orders', 'GET', null, actualParams);

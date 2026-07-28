@@ -52,6 +52,46 @@ async function connectCentral() {
 
 const tenantDbs = new Map();
 
+// In-memory query caching & live tracking layer
+const queryCache = new Map();
+const tenantLastAction = new Map();
+
+function getCache(tenantId, queryType, cacheKey) {
+    if (!tenantId) return null;
+    const tenantMap = queryCache.get(tenantId.toString());
+    if (!tenantMap) return null;
+    const cacheEntry = tenantMap.get(`${queryType}:${cacheKey}`);
+    if (!cacheEntry) return null;
+    
+    // Cache is valid for 15 seconds (prevents slamming DB during concurrency)
+    if (Date.now() - cacheEntry.timestamp < 15000) {
+        return cacheEntry.data;
+    }
+    tenantMap.delete(`${queryType}:${cacheKey}`);
+    return null;
+}
+
+function setCache(tenantId, queryType, cacheKey, data) {
+    if (!tenantId) return;
+    const tid = tenantId.toString();
+    let tenantMap = queryCache.get(tid);
+    if (!tenantMap) {
+        tenantMap = new Map();
+        queryCache.set(tid, tenantMap);
+    }
+    tenantMap.set(`${queryType}:${cacheKey}`, {
+        data,
+        timestamp: Date.now()
+    });
+}
+
+function clearTenantCache(tenantId) {
+    if (!tenantId) return;
+    const tid = tenantId.toString();
+    queryCache.delete(tid);
+    tenantLastAction.set(tid, Date.now());
+}
+
 async function ensureTenantIndexes(db, tenantId) {
     try {
         const ordersCol = db.collection('orders');
@@ -63,6 +103,7 @@ async function ensureTenantIndexes(db, tenantId) {
             { spec: { shippedAt: 1 } },
             { spec: { confirmedAt: 1 } },
             { spec: { deliveredAt: 1 } },
+            { spec: { returnedAt: 1 } },
             { spec: { returnCompletedAt: 1 } },
             { spec: { tenantId: 1, createdAt: -1 } },
             { spec: { tenantId: 1, status: 1 } },
@@ -70,6 +111,7 @@ async function ensureTenantIndexes(db, tenantId) {
             { spec: { tenantId: 1, shippedAt: 1 } },
             { spec: { tenantId: 1, confirmedAt: 1 } },
             { spec: { tenantId: 1, deliveredAt: 1 } },
+            { spec: { tenantId: 1, returnedAt: 1 } },
             { spec: { tenantId: 1, returnCompletedAt: 1 } },
             { spec: { tenantId: 1, "logs.timestamp": 1 } },
             { spec: { trackingNumber: 1 } },
@@ -332,6 +374,12 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         const { tenantId, startDate, endDate } = req.query;
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
         
+        const cacheKey = `${startDate || 'default'}_${endDate || 'default'}`;
+        const cachedData = getCache(tenantId, 'dashboard-stats', cacheKey);
+        if (cachedData) {
+            return res.json(cachedData);
+        }
+        
         function getSLDateString(d) {
             try {
                 return new Intl.DateTimeFormat('en-CA', {
@@ -422,16 +470,18 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 { shippedAt: { $gte: sDate, $lte: eDate } },
                 { confirmedAt: { $gte: sDate, $lte: eDate } },
                 { deliveredAt: { $gte: sDate, $lte: eDate } },
+                { returnedAt: { $gte: sDate, $lte: eDate } },
                 { returnCompletedAt: { $gte: sDate, $lte: eDate } },
                 { "logs.timestamp": { $gte: sDate, $lte: eDate } },
                 { createdAt: { $gte: tDate, $lte: tEndDate } },
                 { shippedAt: { $gte: tDate, $lte: tEndDate } },
                 { deliveredAt: { $gte: tDate, $lte: tEndDate } },
+                { returnedAt: { $gte: tDate, $lte: tEndDate } },
                 { returnCompletedAt: { $gte: tDate, $lte: tEndDate } }
             ];
         }
 
-        const allOrders = await col.find(query).project({ createdAt: 1, shippedAt: 1, confirmedAt: 1, deliveredAt: 1, returnCompletedAt: 1, status: 1, totalAmount: 1, items: 1, 'logs.message': 1, 'logs.user': 1, 'logs.timestamp': 1 }).toArray();
+        const allOrders = await col.find(query).project({ createdAt: 1, shippedAt: 1, confirmedAt: 1, deliveredAt: 1, returnedAt: 1, returnCompletedAt: 1, status: 1, totalAmount: 1, items: 1, 'logs.message': 1, 'logs.user': 1, 'logs.timestamp': 1 }).toArray();
         
         let deliveredCount = 0, returnedCount = 0, confirmedCount = 0, shippedCount = 0, restockCount = 0;
         let deliveredValue = 0, returnedValue = 0, confirmedValue = 0, shippedValue = 0, restockValue = 0;
@@ -441,20 +491,119 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             const createDate = o.createdAt ? getSLDateString(new Date(o.createdAt)) : null;
             const shipDate = o.shippedAt ? getSLDateString(new Date(o.shippedAt)) : null;
             const confirmDate = o.confirmedAt ? getSLDateString(new Date(o.confirmedAt)) : null;
-            const deliverDate = o.deliveredAt ? getSLDateString(new Date(o.deliveredAt)) : null;
-            
-            let inferredReturnDate = null;
-            if (o.status === 'RETURN_COMPLETED' && !o.returnCompletedAt && o.logs) {
-                const returnLog = o.logs.find(l => l.message && l.message.includes('RETURN_COMPLETED'));
-                if (returnLog && returnLog.timestamp) inferredReturnDate = returnLog.timestamp;
+
+            // Inferred / actual delivery date
+            let actualDeliverDate = null;
+            if (o.deliveredAt) {
+                actualDeliverDate = o.deliveredAt;
+            } else if (o.status === 'DELIVERED') {
+                if (o.logs && Array.isArray(o.logs)) {
+                    for (let i = o.logs.length - 1; i >= 0; i--) {
+                        const log = o.logs[i];
+                        if (log && log.message) {
+                            if (log.message.includes('transitioned to DELIVERED')) {
+                                actualDeliverDate = log.timestamp;
+                                break;
+                            }
+                            if (log.message.includes('WEBHOOK: Status update to')) {
+                                const match = log.message.match(/WEBHOOK: Status update to ([^\[]+)/);
+                                if (match) {
+                                    const rawStat = match[1].trim();
+                                    if (mapStatus(rawStat) === 'DELIVERED') {
+                                        actualDeliverDate = log.timestamp;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!actualDeliverDate) {
+                    actualDeliverDate = o.shippedAt || o.createdAt;
+                }
             }
-            const returnCompletedDate = o.returnCompletedAt ? getSLDateString(new Date(o.returnCompletedAt)) : (o.status === 'RETURN_COMPLETED' ? getSLDateString(new Date(inferredReturnDate || o.createdAt || new Date())) : null);
+            const deliverDate = actualDeliverDate ? getSLDateString(new Date(actualDeliverDate)) : null;
+
+            // Inferred / actual return date (when return was initiated)
+            let actualReturnDate = null;
+            const returnStatuses = ['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER', 'RETURN_COMPLETED'];
+            const isCurrentlyReturned = returnStatuses.includes(o.status);
+
+            if (o.returnedAt) {
+                actualReturnDate = o.returnedAt;
+            } else if (isCurrentlyReturned) {
+                if (o.logs && Array.isArray(o.logs)) {
+                    for (let i = o.logs.length - 1; i >= 0; i--) {
+                        const log = o.logs[i];
+                        if (log && log.message) {
+                            let foundTransition = false;
+                            for (const rStat of returnStatuses) {
+                                if (log.message.includes(`transitioned to ${rStat}`)) {
+                                    actualReturnDate = log.timestamp;
+                                    foundTransition = true;
+                                    break;
+                                }
+                            }
+                            if (foundTransition) break;
+
+                            if (log.message.includes('WEBHOOK: Status update to')) {
+                                const match = log.message.match(/WEBHOOK: Status update to ([^\[]+)/);
+                                if (match) {
+                                    const rawStat = match[1].trim();
+                                    const mapped = mapStatus(rawStat);
+                                    if (returnStatuses.includes(mapped)) {
+                                        actualReturnDate = log.timestamp;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!actualReturnDate) {
+                    actualReturnDate = o.returnCompletedAt || o.createdAt;
+                }
+            }
+            const returnedDate = actualReturnDate ? getSLDateString(new Date(actualReturnDate)) : null;
+
+            // Inferred / actual return completed date (when restocked)
+            let actualReturnCompletedDate = null;
+            if (o.returnCompletedAt) {
+                actualReturnCompletedDate = o.returnCompletedAt;
+            } else if (o.status === 'RETURN_COMPLETED') {
+                if (o.logs && Array.isArray(o.logs)) {
+                    for (let i = o.logs.length - 1; i >= 0; i--) {
+                        const log = o.logs[i];
+                        if (log && log.message) {
+                            if (log.message.includes('transitioned to RETURN_COMPLETED')) {
+                                actualReturnCompletedDate = log.timestamp;
+                                break;
+                            }
+                            if (log.message.includes('WEBHOOK: Status update to')) {
+                                const match = log.message.match(/WEBHOOK: Status update to ([^\[]+)/);
+                                if (match) {
+                                    const rawStat = match[1].trim();
+                                    if (mapStatus(rawStat) === 'RETURN_COMPLETED') {
+                                        actualReturnCompletedDate = log.timestamp;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!actualReturnCompletedDate) {
+                    actualReturnCompletedDate = o.createdAt;
+                }
+            }
+            const returnCompletedDate = actualReturnCompletedDate ? getSLDateString(new Date(actualReturnCompletedDate)) : null;
 
 
             const createIsInRange = createDate && createDate >= (startDate || "2000-01-01") && createDate <= (endDate || "2099-12-31");
             const shipIsInRange = shipDate && shipDate >= (startDate || "2000-01-01") && shipDate <= (endDate || "2099-12-31");
             const confirmIsInRange = confirmDate && confirmDate >= (startDate || "2000-01-01") && confirmDate <= (endDate || "2099-12-31");
             const deliverIsInRange = deliverDate && deliverDate >= (startDate || "2000-01-01") && deliverDate <= (endDate || "2099-12-31");
+            const returnedIsInRange = returnedDate && returnedDate >= (startDate || "2000-01-01") && returnedDate <= (endDate || "2099-12-31");
             const returnCompletedIsInRange = returnCompletedDate && returnCompletedDate >= (startDate || "2000-01-01") && returnCompletedDate <= (endDate || "2099-12-31");
 
             // Today Snapshots
@@ -462,12 +611,12 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             if (shipDate === today) todayShippedCount++;
             
             if (o.status === 'DELIVERED') {
-                if (deliverDate === today || (!deliverDate && shipDate === today)) {
+                if (deliverDate === today) {
                     todayDeliveredCount++;
                     todayRevenue += o.totalAmount || 0;
                 }
             }
-            if (o.status === 'RETURN_COMPLETED' && returnCompletedDate === today) {
+            if (isCurrentlyReturned && returnedDate === today) {
                 todayReturnsCount++;
             }
 
@@ -503,10 +652,10 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
 
             // Delivered
-            if (deliverIsInRange || (!o.deliveredAt && o.status === 'DELIVERED' && shipIsInRange)) {
+            if (deliverIsInRange) {
                 deliveredCount++;
                 deliveredValue += o.totalAmount || 0;
-                const dDate = deliverDate || shipDate;
+                const dDate = deliverDate;
                 if (dDate && dailyMap[dDate]) dailyMap[dDate].sales += o.totalAmount || 0;
                 
                 (o.items || []).forEach(item => {
@@ -536,12 +685,10 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 });
             }
 
-            // Returned (overall) - if it is currently in a returned state and was created/shipped in range
-            if (['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER', 'RETURN_COMPLETED'].includes(o.status)) {
-                if (createIsInRange || shipIsInRange) {
-                    returnedCount++;
-                    returnedValue += o.totalAmount || 0;
-                }
+            // Returned (overall) - if it is currently in a returned state and was returned in range
+            if (isCurrentlyReturned && returnedIsInRange) {
+                returnedCount++;
+                returnedValue += o.totalAmount || 0;
             }
 
             // Return Completed (Restock)
@@ -560,18 +707,16 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
             
             // Upcoming Returns
-            if (['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER'].includes(o.status)) {
-                if (createIsInRange || shipIsInRange) {
-                     (o.items || []).forEach(item => {
-                        if (!productStats[item.productId]) {
-                            productStats[item.productId] = {
-                                sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
-                                shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
-                            };
-                        }
-                        productStats[item.productId].upcomingReturn += (Number(item.quantity) || 1);
-                    });
-                }
+            if (['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER'].includes(o.status) && returnedIsInRange) {
+                 (o.items || []).forEach(item => {
+                    if (!productStats[item.productId]) {
+                        productStats[item.productId] = {
+                            sku: 'Unknown', name: item.productName || 'Unknown Product', salesCount: 0, confirmed: 0, 
+                            shipped: 0, delivered: 0, returned: 0, upcomingReturn: 0, revenue: 0, profit: 0, buyingPrice: 0 
+                        };
+                    }
+                    productStats[item.productId].upcomingReturn += (Number(item.quantity) || 1);
+                });
             }
 
             // Team Stats from Logs
@@ -629,14 +774,17 @@ if (!un || ['system', 'dev_admin', 'courier system', 'oms connector', 'oms scann
             restockCount, restockValue
         };
         
-        res.json({ 
+        const statsResponse = { 
             stats, 
             inventory: { totalCount: inventoryTotalCount, costValue: inventoryCostValue, retailValue: inventoryRetailValue }, 
             dailyMap, 
             productStats, 
             teamStats, 
             todayRevenue, todayDeliveredCount, todayShippedCount, todayReturnsCount, todayOrders 
-        });
+        };
+        
+        setCache(tenantId, 'dashboard-stats', cacheKey, statsResponse);
+        res.json(statsResponse);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -644,6 +792,12 @@ app.get('/api/orders/counts', async (req, res) => {
     try {
         const { tenantId, productId, startDate, endDate, dateField = 'createdAt' } = req.query;
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
+        
+        const cacheKey = `${productId || 'ALL'}_${startDate || 'default'}_${endDate || 'default'}_${dateField}`;
+        const cachedData = getCache(tenantId, 'counts', cacheKey);
+        if (cachedData) {
+            return res.json(cachedData);
+        }
         
         const db = await getTenantDb(tenantId);
         const col = db.collection('orders');
@@ -681,6 +835,7 @@ app.get('/api/orders/counts', async (req, res) => {
             }
         });
 
+        setCache(tenantId, 'counts', cacheKey, counts);
         res.json(counts);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -809,6 +964,7 @@ app.post('/api/orders', async (req, res) => {
         } else if (order) {
             await col.updateOne({ id: order.id }, { $set: { ...clean(order), tenantId } }, { upsert: true });
         }
+        clearTenantCache(tenantId);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -821,11 +977,13 @@ app.delete('/api/orders', async (req, res) => {
         const col = db.collection('orders');
         if (purge === 'true') {
             const result = await col.deleteMany({ tenantId });
+            clearTenantCache(tenantId);
             return res.json({ success: true, count: result.deletedCount });
         }
         if (id) {
             const ids = id.split(',');
             const result = await col.deleteMany({ id: { $in: ids }, tenantId });
+            clearTenantCache(tenantId);
             return res.json({ success: true, count: result.deletedCount });
         }
         res.status(400).json({ error: 'Missing Target' });
@@ -1067,7 +1225,7 @@ app.post('/api/ship-order', async (req, res) => {
             updatedOrder.shippedAt = new Date().toISOString();
         }
         await db.collection('orders').updateOne({ id: order.id }, { $set: { ...clean(updatedOrder), tenantId } }, { upsert: true });
-
+        clearTenantCache(tenantId);
         res.json({ success: true, updatedOrder });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1091,10 +1249,23 @@ app.post('/api/process-return', async (req, res) => {
         if (!order) return res.status(404).json({ error: 'Not Found' });
         order.status = 'RETURN_COMPLETED';
         order.returnCompletedAt = new Date().toISOString();
+        if (!order.returnedAt) {
+            order.returnedAt = order.returnCompletedAt;
+        }
         if (!order.logs) order.logs = [];
         order.logs.push({ id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to RETURN_COMPLETED`, timestamp: order.returnCompletedAt, user: user || 'System' });
         await db.collection('orders').updateOne({ id: order.id }, { $set: { ...clean(order), tenantId } });
+        clearTenantCache(tenantId);
         res.json(clean(order));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/tenant-last-action', (req, res) => {
+    try {
+        const { tenantId } = req.query;
+        if (!tenantId) return res.status(400).json({ error: 'Context Required' });
+        const lastAction = tenantLastAction.get(tenantId.toString()) || 0;
+        res.json({ lastAction });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

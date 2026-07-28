@@ -119,6 +119,7 @@ export interface Order {
   confirmedAt?: string;
   shippedAt?: string; 
   deliveredAt?: string;
+  returnedAt?: string; // New field for return analytics
   returnCompletedAt?: string; // New field for restocking analytics
   trackingNumber?: string;
   courierStatus?: string;

@@ -196,6 +196,19 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
     if (newStatus === OrderStatus.DELIVERED && !order.deliveredAt) {
         timestampUpdates.deliveredAt = new Date().toISOString();
     }
+    const returnStatuses = [
+        OrderStatus.RETURNED,
+        OrderStatus.RETURN_TRANSFER,
+        OrderStatus.RETURN_AS_ON_SYSTEM,
+        OrderStatus.RETURN_HANDOVER,
+        OrderStatus.RETURN_COMPLETED
+    ];
+    if (returnStatuses.includes(newStatus) && !order.returnedAt) {
+        timestampUpdates.returnedAt = new Date().toISOString();
+    }
+    if (newStatus === OrderStatus.RETURN_COMPLETED && !order.returnCompletedAt) {
+        timestampUpdates.returnCompletedAt = new Date().toISOString();
+    }
 
     const log: OrderLog = { id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to ${newStatus}`, timestamp: new Date().toISOString(), user };
     

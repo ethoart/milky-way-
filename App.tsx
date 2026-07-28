@@ -160,6 +160,55 @@ export default function App() {
     document.title = `${displayShopName} | Control Hub`;
   }, [user, tenant, brandedTenant]);
 
+  const [syncVersion, setSyncVersion] = useState(0);
+  const [showSyncToast, setShowSyncToast] = useState(false);
+  const [syncToastMessage, setSyncToastMessage] = useState('');
+
+  // Poller for multi-device live action synchronization
+  useEffect(() => {
+    if (!user?.tenantId) return;
+    
+    let lastActionVal = -1;
+    let isInitial = true;
+    let isMounted = true;
+
+    const checkUpdates = async () => {
+      try {
+        const res = await db.getTenantLastAction(user.tenantId!);
+        if (!isMounted) return;
+        const serverLastAction = res.lastAction || 0;
+        
+        if (isInitial) {
+          lastActionVal = serverLastAction;
+          isInitial = false;
+        } else if (serverLastAction > lastActionVal) {
+          // A mutation has occurred from another device/session!
+          lastActionVal = serverLastAction;
+          setSyncToastMessage('System updated on another device. Syncing...');
+          setShowSyncToast(true);
+          setSyncVersion(prev => prev + 1);
+          
+          setTimeout(() => {
+            if (isMounted) setShowSyncToast(false);
+          }, 3500);
+        }
+      } catch (err) {
+        console.warn("Live sync polling error (safely ignored):", err);
+      }
+    };
+
+    // Run immediately
+    checkUpdates();
+
+    // Poll every 5 seconds (5000ms is perfect for multi-user low overhead sync)
+    const intervalId = setInterval(checkUpdates, 5000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [user?.tenantId]);
+
   const handleLogin = async (u: string, p: string) => {
     const userObj = await db.login(u, p);
     if (userObj) {
@@ -200,7 +249,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-[#f1f5f9] text-slate-900 overflow-hidden">
+    <div className="flex h-screen bg-[#f1f5f9] text-slate-900 overflow-hidden relative">
       <div className="no-print">
         <Sidebar 
             user={user} 
@@ -218,8 +267,17 @@ export default function App() {
             <span className="font-black text-sm uppercase tracking-tighter">{displayShopName}</span>
             <div className="w-8"></div>
          </div>
-         {renderPage()}
+         <div key={syncVersion} className="h-full w-full">
+            {renderPage()}
+         </div>
       </main>
+
+      {showSyncToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-800 animate-slide-in">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <p className="text-xs font-bold uppercase tracking-wider">{syncToastMessage}</p>
+        </div>
+      )}
     </div>
   );
 }
