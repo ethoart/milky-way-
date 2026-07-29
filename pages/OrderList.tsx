@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency } from '../utils/helpers';
-import { Search, ChevronRight, Trash2, CheckSquare, Square, Truck, Printer, ExternalLink, ChevronLeft, Loader2 } from 'lucide-react';
+import { Search, ChevronRight, Trash2, CheckSquare, Square, Truck, Printer, ExternalLink, ChevronLeft, Loader2, Download } from 'lucide-react';
 
 interface OrderListProps {
   tenantId: string;
@@ -204,6 +204,67 @@ export const OrderList: React.FC<OrderListProps> = ({
     if (onRefresh) onRefresh();
   };
 
+  const handleExportCSV = () => {
+    const selectedOrders = orders.filter(o => selectedIds.includes(o.id));
+    if (selectedOrders.length === 0) return;
+
+    const headers = [
+      "Order ID",
+      "Date",
+      "Customer Name",
+      "Phone",
+      "Secondary Phone",
+      "Address",
+      "City",
+      "Weight",
+      "Status",
+      "Items (SKU x Qty)",
+      "Total Amount",
+      "Tracking Number"
+    ];
+
+    const rows = selectedOrders.map(o => {
+      const dateStr = o.createdAt ? new Date(o.createdAt).toISOString().split('T')[0] : '';
+      const itemsStr = o.items.map(i => `${i.name} (x${i.quantity})`).join(' | ');
+
+      const escape = (val: string | number | undefined | null) => {
+        if (val === undefined || val === null) return '';
+        const str = String(val);
+        if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      return [
+        escape(o.id),
+        escape(dateStr),
+        escape(o.customerName),
+        escape(o.customerPhone),
+        escape(o.customerPhone2 || ''),
+        escape(o.customerAddress),
+        escape(o.customerCity || ''),
+        escape(o.parcelWeight || ''),
+        escape(o.status),
+        escape(itemsStr),
+        escape(o.totalAmount),
+        escape(o.trackingNumber || '')
+      ];
+    });
+
+    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `orders_export_${status.toLowerCase()}_${Date.now()}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setSelectedIds([]);
+  };
+
   const toggleSelectAll = () => {
     if (selectedIds.length === orders.length && orders.length > 0) setSelectedIds([]);
     else setSelectedIds(orders.map(o => o.id));
@@ -245,6 +306,11 @@ export const OrderList: React.FC<OrderListProps> = ({
               </div>
           </div>
           <div className="flex gap-2">
+            {(status === OrderStatus.PENDING || status === OrderStatus.NO_ANSWER) && (
+              <button disabled={bulkProcessing} onClick={handleExportCSV} className="bg-emerald-600 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all disabled:opacity-50">
+                <Download size={14} /> Export CSV
+              </button>
+            )}
             {status === OrderStatus.CONFIRMED && (
               <button disabled={bulkProcessing} onClick={handleBulkShip} className="bg-blue-600 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50">
                 <Truck size={14} /> Bulk Ship
