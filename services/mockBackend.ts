@@ -207,7 +207,7 @@ class BackendService {
             username: adminEmail,
             password: adminPass,
             email: adminEmail,
-            role: UserRole.ADMIN,
+            role: UserRole.SUPER_ADMIN,
             tenantId: tenant.id,
             permissions: ['ALL_PERMISSIONS']
         };
@@ -239,7 +239,7 @@ class BackendService {
       username: formData.adminEmail,
       password: formData.adminPass,
       email: formData.adminEmail,
-      role: UserRole.ADMIN,
+      role: UserRole.SUPER_ADMIN,
       tenantId: tenant.id,
       permissions: ['ALL_PERMISSIONS']
     };

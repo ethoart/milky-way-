@@ -70,12 +70,21 @@ async function connectCentral() {
                             username: u.username,
                             password: u.password,
                             email: u.email || u.username,
-                            role: u.role || 'ADMIN',
+                            role: 'SUPER_ADMIN',
                             tenantId: safeTenantId,
                             permissions: u.permissions || ['ALL_PERMISSIONS']
                         };
                         await usersCol.updateOne({ id: safeId }, { $set: fixedUser }, { upsert: true });
-                        console.log(`>>> DB Migration: Successfully healed user ${u.username} with ID ${safeId}`);
+                        console.log(`>>> DB Migration: Successfully healed user ${u.username} with ID ${safeId} to SUPER_ADMIN`);
+                    }
+                }
+
+                // Auto-upgrade u-admin-* users to SUPER_ADMIN
+                const adminUsers = await usersCol.find({ id: { $regex: /^u-admin-/ } }).toArray();
+                for (const u of adminUsers) {
+                    if (u.role !== 'SUPER_ADMIN') {
+                        await usersCol.updateOne({ id: u.id }, { $set: { role: 'SUPER_ADMIN' } });
+                        console.log(`>>> DB Migration: Upgraded role of ${u.username} to SUPER_ADMIN`);
                     }
                 }
             } catch (err) {
@@ -1142,7 +1151,7 @@ app.post('/api/tenants', async (req, res) => {
         if (adminUser) {
             const userId = adminUser.id || `u-admin-${tenant.id}`;
             const userTenantId = adminUser.tenantId || tenant.id;
-            const userRole = adminUser.role || 'ADMIN';
+            const userRole = adminUser.role || 'SUPER_ADMIN';
             const userEmail = adminUser.email || adminUser.username;
 
             const existingUser = await db.collection('users').findOne({ id: userId });
