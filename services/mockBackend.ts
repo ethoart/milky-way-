@@ -202,7 +202,15 @@ class BackendService {
   async updateTenant(tenant: Tenant, adminEmail?: string, adminPass?: string): Promise<void> {
     const payload: any = { tenant };
     if (adminEmail || adminPass) {
-        payload.adminUser = { username: adminEmail, password: adminPass };
+        payload.adminUser = {
+            id: `u-admin-${tenant.id}`,
+            username: adminEmail,
+            password: adminPass,
+            email: adminEmail,
+            role: UserRole.ADMIN,
+            tenantId: tenant.id,
+            permissions: ['ALL_PERMISSIONS']
+        };
     }
     await this.request('/tenants', 'POST', payload);
   }
@@ -227,8 +235,13 @@ class BackendService {
       }
     };
     const adminUser = {
+      id: `u-admin-${tenant.id}`,
       username: formData.adminEmail,
-      password: formData.adminPass
+      password: formData.adminPass,
+      email: formData.adminEmail,
+      role: UserRole.ADMIN,
+      tenantId: tenant.id,
+      permissions: ['ALL_PERMISSIONS']
     };
     await this.request('/tenants', 'POST', { tenant, adminUser });
   }

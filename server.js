@@ -41,7 +41,48 @@ async function connectCentral() {
             });
             await client.connect();
             console.log(">>> MW-OMS Master Node Active.");
-            return client.db(CENTRAL_DB_NAME);
+            const db = client.db(CENTRAL_DB_NAME);
+
+            // Self-healing database migration for admin users
+            try {
+                const usersCol = db.collection('users');
+                const badUsers = await usersCol.find({ 
+                    $or: [
+                        { id: { $exists: false } }, 
+                        { id: null }, 
+                        { id: "" }, 
+                        { id: undefined }
+                    ] 
+                }).toArray();
+
+                if (badUsers.length > 0) {
+                    console.log(`>>> DB Migration: found ${badUsers.length} users with null/missing IDs. Starting cleanup...`);
+                    for (const u of badUsers) {
+                        const safeTenantId = u.tenantId || 'master-default';
+                        const safeId = `u-admin-${safeTenantId}`;
+
+                        // Delete the old corrupted document
+                        await usersCol.deleteOne({ _id: u._id });
+
+                        // Insert/Upsert the healed document with a clean unique ID
+                        const fixedUser = {
+                            id: safeId,
+                            username: u.username,
+                            password: u.password,
+                            email: u.email || u.username,
+                            role: u.role || 'ADMIN',
+                            tenantId: safeTenantId,
+                            permissions: u.permissions || ['ALL_PERMISSIONS']
+                        };
+                        await usersCol.updateOne({ id: safeId }, { $set: fixedUser }, { upsert: true });
+                        console.log(`>>> DB Migration: Successfully healed user ${u.username} with ID ${safeId}`);
+                    }
+                }
+            } catch (err) {
+                console.error(">>> DB Migration Error:", err);
+            }
+
+            return db;
         })();
         centralDbPromise.catch(err => {
             centralDbPromise = null;
@@ -1099,7 +1140,24 @@ app.post('/api/tenants', async (req, res) => {
         const db = await connectCentral();
         await db.collection('tenants').updateOne({ id: tenant.id }, { $set: clean(tenant) }, { upsert: true });
         if (adminUser) {
-            await db.collection('users').updateOne({ id: adminUser.id }, { $set: clean(adminUser) }, { upsert: true });
+            const userId = adminUser.id || `u-admin-${tenant.id}`;
+            const userTenantId = adminUser.tenantId || tenant.id;
+            const userRole = adminUser.role || 'ADMIN';
+            const userEmail = adminUser.email || adminUser.username;
+
+            const existingUser = await db.collection('users').findOne({ id: userId });
+
+            const fullAdminUser = {
+                id: userId,
+                username: adminUser.username || (existingUser ? existingUser.username : undefined),
+                password: adminUser.password || (existingUser ? existingUser.password : undefined),
+                email: userEmail || (existingUser ? existingUser.email : undefined),
+                role: userRole,
+                tenantId: userTenantId,
+                permissions: adminUser.permissions || (existingUser ? existingUser.permissions : ['ALL_PERMISSIONS'])
+            };
+
+            await db.collection('users').updateOne({ id: userId }, { $set: clean(fullAdminUser) }, { upsert: true });
         }
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
