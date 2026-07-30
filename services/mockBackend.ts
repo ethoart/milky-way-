@@ -184,6 +184,52 @@ class BackendService {
     });
   }
 
+  /**
+   * FIFO STOCK REPLENISHMENT LOGIC
+   * Restores inventory to batches up to their original levels
+   */
+  async replenishStock(tenantId: string, productId: string, quantityToReplenish: number): Promise<void> {
+    const products = await this.getProducts(tenantId);
+    const product = products.find(p => p.id === productId);
+    
+    if (!product) throw new Error("Product not found in registry.");
+    
+    let remainingToReplenish = quantityToReplenish;
+    const updatedBatches = [...(product.batches || [])];
+
+    // Try to add back to existing batches that have been deducted (quantity < originalQuantity)
+    updatedBatches.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    for (let i = 0; i < updatedBatches.length; i++) {
+        if (remainingToReplenish <= 0) break;
+        
+        const batch = updatedBatches[i];
+        const original = batch.originalQuantity || 0;
+        if (original > batch.quantity) {
+            const spaceAvailable = original - batch.quantity;
+            if (spaceAvailable >= remainingToReplenish) {
+                batch.quantity += remainingToReplenish;
+                remainingToReplenish = 0;
+            } else {
+                batch.quantity = original;
+                remainingToReplenish -= spaceAvailable;
+            }
+        }
+    }
+
+    // If there is still quantity left to replenish, add it to the newest batch
+    if (remainingToReplenish > 0 && updatedBatches.length > 0) {
+        updatedBatches.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        updatedBatches[0].quantity += remainingToReplenish;
+        remainingToReplenish = 0;
+    }
+
+    await this.updateProduct({
+        ...product,
+        batches: updatedBatches
+    });
+  }
+
   private _tenantsCache: { data: Tenant[], expiry: number } | null = null;
   async getTenants(): Promise<Tenant[]> {
     if (this._tenantsCache && this._tenantsCache.expiry > Date.now()) {

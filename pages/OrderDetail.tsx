@@ -172,6 +172,31 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
         await handleInventoryReduction();
     }
 
+    const stockDeductedStatuses = [
+        OrderStatus.CONFIRMED,
+        OrderStatus.SHIPPED,
+        OrderStatus.DELIVERY,
+        OrderStatus.DELIVERED,
+        OrderStatus.TRANSFER
+    ];
+
+    const wasDeducted = stockDeductedStatuses.includes(order.status);
+    const isNowDeducted = stockDeductedStatuses.includes(newStatus);
+
+    const needsStockReplenishment = wasDeducted && !isNowDeducted;
+
+    if (needsStockReplenishment) {
+        try {
+            const replenishmentPromises = items.map(item => 
+                db.replenishStock(tenantId, item.productId, item.quantity)
+            );
+            await Promise.all(replenishmentPromises);
+            console.log(">>> Inventory Protocol: Batch Replenishment Successful.");
+        } catch (err) {
+            console.error(">>> Inventory Replenishment Failure:", err);
+        }
+    }
+
     if (newStatus === OrderStatus.SHIPPED) {
       if (order.status === OrderStatus.SHIPPED) return alert("System Warning: This lead has already been dispatched.");
       if (order.status !== OrderStatus.CONFIRMED) return alert("System Warning: Only CONFIRMED orders can be dispatched to logistics.");

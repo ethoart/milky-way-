@@ -133,8 +133,19 @@ export const Returns: React.FC<ReturnsProps> = ({ tenantId, shopName }) => {
       
       if (operation === 'RETURN') {
           result = await db.processReturn(cleanCode, tenantId, currentUser);
-          if (result && result.alreadyProcessed) {
-              setAlreadyScanned(true);
+          if (result) {
+              if (result.alreadyProcessed) {
+                  setAlreadyScanned(true);
+              } else if (result.items) {
+                  try {
+                      await Promise.all(result.items.map((item: any) => 
+                          db.replenishStock(tenantId, item.productId, item.quantity)
+                      ));
+                      console.log(">>> Return Scanning Stock Replenishment Successful");
+                  } catch (err) {
+                      console.error(">>> Return Stock Replenishment Error:", err);
+                  }
+              }
           }
       } else if (operation === 'DISPATCH') {
           const order = await db.getOrder(cleanCode, tenantId);

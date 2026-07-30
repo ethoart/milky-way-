@@ -74,6 +74,16 @@ export const ReturnManagement: React.FC<ReturnManagementProps> = ({ tenantId, sh
             setScanResult({ msg: `ALREADY SCANNED: ${result.customerName}`, type: 'warning' });
             try { new Audio('https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3').play(); } catch(e){}
         } else {
+            if (result.items) {
+                try {
+                    await Promise.all(result.items.map((item: any) => 
+                        db.replenishStock(tenantId, item.productId, item.quantity)
+                    ));
+                    console.log(">>> Return Management Stock Replenishment Successful");
+                } catch (err) {
+                    console.error(">>> Return Management Stock Replenishment Error:", err);
+                }
+            }
             setScanResult({ msg: `SUCCESS: Restocked ${result.customerName}`, type: 'success' });
             try { new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3').play(); } catch(e){}
             setRefreshKey(prev => prev + 1);

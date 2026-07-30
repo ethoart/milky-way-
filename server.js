@@ -687,7 +687,8 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
 
             // Confirmed
-            if (confirmIsInRange || (!o.confirmedAt && createIsInRange && o.status === 'CONFIRMED')) {
+            const isConfirmedState = o.status === 'CONFIRMED';
+            if (isConfirmedState && (confirmIsInRange || (!o.confirmedAt && createIsInRange))) {
                 confirmedCount++;
                 confirmedValue += o.totalAmount || 0;
                 (o.items || []).forEach(item => {
@@ -702,7 +703,8 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
 
             // Delivered
-            if (deliverIsInRange) {
+            const isDeliveredState = o.status === 'DELIVERED';
+            if (isDeliveredState && deliverIsInRange) {
                 deliveredCount++;
                 deliveredValue += o.totalAmount || 0;
                 const dDate = deliverDate;
@@ -720,7 +722,8 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
 
             // Shipped
-            if (shipIsInRange) {
+            const isShippedState = ['SHIPPED', 'TRANSFER', 'DELIVERY'].includes(o.status);
+            if (isShippedState && shipIsInRange) {
                 shippedCount++;
                 shippedValue += o.totalAmount || 0;
                 if (dailyMap[shipDate]) dailyMap[shipDate].shipped += o.totalAmount || 0;
@@ -736,13 +739,16 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
 
             // Returned (overall) - if it is currently in a returned state and was returned in range
-            if (isCurrentlyReturned && returnedIsInRange) {
+            const activeReturnStatuses = ['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER'];
+            const isCurrentlyActiveReturned = activeReturnStatuses.includes(o.status);
+            if (isCurrentlyActiveReturned && returnedIsInRange) {
                 returnedCount++;
                 returnedValue += o.totalAmount || 0;
             }
 
             // Return Completed (Restock)
-            if (o.status === 'RETURN_COMPLETED' && returnCompletedIsInRange) {
+            const isReturnCompletedState = o.status === 'RETURN_COMPLETED';
+            if (isReturnCompletedState && returnCompletedIsInRange) {
                 restockCount++;
                 restockValue += o.totalAmount || 0;
                 (o.items || []).forEach(item => {
