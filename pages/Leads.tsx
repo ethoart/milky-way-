@@ -431,6 +431,33 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
                                     <p className="text-[11px] font-bold text-rose-400 uppercase leading-relaxed tracking-tight">Identity Mismatch Risk: Subject has multiple rejections in cluster. Exercise caution.</p>
                                 </div>
                             )}
+                            {customerHistory.orders && customerHistory.orders.length > 0 && (
+                                <div className="space-y-3 pt-4 border-t border-white/10">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cross-Shop Orders</p>
+                                    <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
+                                        {customerHistory.orders.map((o: any) => (
+                                            <div key={o.id} className="p-3 bg-white/5 border border-white/10 rounded-2xl flex flex-col gap-1.5 text-xs">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-bold text-slate-300">#{o.id.slice(-6).toUpperCase()}</span>
+                                                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tight ${
+                                                        o.status === 'CONFIRMED' || o.status === 'SHIPPED' || o.status === 'DELIVERED'
+                                                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                                    }`}>
+                                                        {o.status.replace('_', ' ')}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold">
+                                                    <span>{o.items?.[0]?.name || 'Item'}</span>
+                                                    {o.shopName && (
+                                                        <span className="text-purple-400 uppercase font-black tracking-tight">{o.shopName}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

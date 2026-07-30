@@ -578,6 +578,11 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                                         <span className={`px-2 py-0.5 border rounded-lg text-[8px] font-black uppercase tracking-tight ${getStatusBadgeClass(h.status)}`}>
                                                             {h.status.replace('_', ' ')}
                                                         </span>
+                                                        {h.shopName && (
+                                                            <span className="px-2 py-0.5 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg text-[8px] font-black uppercase tracking-tight">
+                                                                {h.shopName}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">
                                                         {new Date(h.createdAt).toLocaleDateString()} • {h.items[0]?.name || 'Item'}

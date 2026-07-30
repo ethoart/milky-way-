@@ -1045,11 +1045,23 @@ app.post('/api/customer-history-batch', async (req, res) => {
         const { tenantId, phones } = req.body;
         if (!phones || !Array.isArray(phones) || phones.length === 0) return res.json({});
         
-        const db = await getTenantDb(tenantId);
-        const col = db.collection('orders');
+        const masterDb = await connectCentral();
+        const tenants = await masterDb.collection('tenants').find({}).toArray();
         
-        // Fetch all orders for all these phones at once
-        const allHistory = await col.find({ tenantId, customerPhone: { $in: phones } }).toArray();
+        let allHistory = [];
+        await Promise.all(tenants.map(async (t) => {
+            try {
+                const tDb = await getTenantDb(t.id);
+                const orders = await tDb.collection('orders').find({ customerPhone: { $in: phones } }).toArray();
+                const shopName = t.settings?.shopName || t.id;
+                orders.forEach(o => {
+                    o.shopName = shopName;
+                });
+                allHistory.push(...orders);
+            } catch (err) {
+                console.error(`Error fetching customer history batch for tenant ${t.id}:`, err);
+            }
+        }));
         
         // Group by phone
         const historyMap = {};
@@ -1079,12 +1091,34 @@ app.get('/api/customer-history', async (req, res) => {
     try {
         const { tenantId, phone } = req.query;
         if (!phone) return res.json({ status: 'NEW', count: 0, returns: 0, orders: [] });
-        const db = await getTenantDb(tenantId);
-        const col = db.collection('orders');
-        const history = await col.find({ tenantId, customerPhone: phone }).sort({ createdAt: -1 }).toArray();
         
-        const count = history.length;
-        const returns = history.filter(o => ['RETURNED', 'RETURN_TRANSFER', 'RETURN_HANDOVER', 'RETURN_COMPLETED', 'RETURN_AS_ON_SYSTEM', 'REJECTED'].includes(o.status)).length;
+        const masterDb = await connectCentral();
+        const tenants = await masterDb.collection('tenants').find({}).toArray();
+        
+        let allHistory = [];
+        await Promise.all(tenants.map(async (t) => {
+            try {
+                const tDb = await getTenantDb(t.id);
+                const orders = await tDb.collection('orders').find({ customerPhone: phone }).toArray();
+                const shopName = t.settings?.shopName || t.id;
+                orders.forEach(o => {
+                    o.shopName = shopName;
+                });
+                allHistory.push(...orders);
+            } catch (err) {
+                console.error(`Error fetching customer history for tenant ${t.id}:`, err);
+            }
+        }));
+
+        // Sort by createdAt desc
+        allHistory.sort((a, b) => {
+            const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return db - da;
+        });
+        
+        const count = allHistory.length;
+        const returns = allHistory.filter(o => ['RETURNED', 'RETURN_TRANSFER', 'RETURN_HANDOVER', 'RETURN_COMPLETED', 'RETURN_AS_ON_SYSTEM', 'REJECTED'].includes(o.status)).length;
         let status = 'NEW';
         if (returns > 0) status = 'WARNING';
         else if (count > 0) status = 'REPEAT';
@@ -1093,7 +1127,7 @@ app.get('/api/customer-history', async (req, res) => {
             status,
             count,
             returns,
-            orders: history.map(clean)
+            orders: allHistory.map(clean)
         });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1300,9 +1334,33 @@ app.get('/api/customer-history-detailed', async (req, res) => {
     try {
         const { tenantId, phone } = req.query;
         if (!phone) return res.json([]);
-        const db = await getTenantDb(tenantId);
-        const history = await db.collection('orders').find({ tenantId, customerPhone: phone }).sort({ createdAt: -1 }).toArray();
-        res.json(history.map(clean));
+        
+        const masterDb = await connectCentral();
+        const tenants = await masterDb.collection('tenants').find({}).toArray();
+        
+        let allHistory = [];
+        await Promise.all(tenants.map(async (t) => {
+            try {
+                const tDb = await getTenantDb(t.id);
+                const orders = await tDb.collection('orders').find({ customerPhone: phone }).toArray();
+                const shopName = t.settings?.shopName || t.id;
+                orders.forEach(o => {
+                    o.shopName = shopName;
+                });
+                allHistory.push(...orders);
+            } catch (err) {
+                console.error(`Error fetching customer history for tenant ${t.id}:`, err);
+            }
+        }));
+
+        // Sort by createdAt desc
+        allHistory.sort((a, b) => {
+            const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return db - da;
+        });
+
+        res.json(allHistory.map(clean));
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
