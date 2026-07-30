@@ -1391,6 +1391,129 @@ app.post('/api/process-return', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/courier-webhook', async (req, res) => {
+    try {
+        console.log(">>> RECEIVED COURIER WEBHOOK:", req.body);
+        let payload = {};
+        if (typeof req.body === 'object' && req.body !== null) {
+            payload = req.body;
+        } else if (typeof req.body === 'string') {
+            try {
+                payload = JSON.parse(req.body);
+            } catch (e) {
+                payload = parseMultipartData(req.body);
+            }
+        }
+
+        if (typeof req.body === 'string' && !req.body.trim().startsWith('{') && req.body.includes('=')) {
+            try {
+                const params = new URLSearchParams(req.body);
+                for (const [k, v] of params.entries()) {
+                    payload[k] = v;
+                }
+            } catch (e) {}
+        }
+
+        const getField = (obj, keys) => {
+            for (const key of keys) {
+                const val = obj[key];
+                if (val !== undefined && val !== null) return String(val).trim();
+            }
+            for (const k of Object.keys(obj)) {
+                if (keys.map(x => x.toLowerCase()).includes(k.toLowerCase())) {
+                    return String(obj[k]).trim();
+                }
+            }
+            return null;
+        };
+
+        const waybillId = getField(payload, ['waybill_id', 'waybill_no', 'waybill', 'tracking_number', 'tracking_no', 'trackingNumber', 'barcode']);
+        const orderId = getField(payload, ['order_id', 'id', 'orderId']);
+        const rawStatus = getField(payload, ['status', 'status_name', 'status_code', 'state', 'status_desc', 'event', 'courier_status']);
+
+        if (!waybillId && !orderId) {
+            return res.status(400).json({ error: 'Missing identifying fields (waybill_id or order_id)' });
+        }
+        if (!rawStatus) {
+            return res.status(400).json({ error: 'Missing status field' });
+        }
+
+        const mappedStatus = mapStatus(rawStatus);
+
+        const centralDb = await connectCentral();
+        const tenants = await centralDb.collection('tenants').find({}).toArray();
+        let foundOrder = null;
+        let foundTenantId = null;
+        let tDb = null;
+
+        for (const tenant of tenants) {
+            const db = await getTenantDb(tenant.id);
+            let order = null;
+            if (waybillId) {
+                order = await db.collection('orders').findOne({ trackingNumber: waybillId });
+            }
+            if (!order && orderId) {
+                order = await db.collection('orders').findOne({ id: orderId });
+                if (!order) {
+                    const numericId = orderId.replace(/\D/g, '');
+                    if (numericId) {
+                        order = await db.collection('orders').findOne({ id: { $regex: new RegExp(numericId + "$") } });
+                    }
+                }
+            }
+            if (order) {
+                foundOrder = order;
+                foundTenantId = tenant.id;
+                tDb = db;
+                break;
+            }
+        }
+
+        if (!foundOrder) {
+            console.warn(`>>> Webhook Warning: No matching order found for waybill ${waybillId || 'N/A'} or orderId ${orderId || 'N/A'}`);
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const timestamp = new Date().toISOString();
+        const previousStatus = foundOrder.status;
+        foundOrder.status = mappedStatus;
+
+        if (mappedStatus === 'DELIVERED') {
+            if (!foundOrder.deliveredAt) foundOrder.deliveredAt = timestamp;
+        } else if (['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER'].includes(mappedStatus)) {
+            if (!foundOrder.returnedAt) foundOrder.returnedAt = timestamp;
+        } else if (mappedStatus === 'RETURN_COMPLETED') {
+            if (!foundOrder.returnCompletedAt) foundOrder.returnCompletedAt = timestamp;
+            if (!foundOrder.returnedAt) foundOrder.returnedAt = timestamp;
+        } else if (mappedStatus === 'SHIPPED') {
+            if (!foundOrder.shippedAt) foundOrder.shippedAt = timestamp;
+        }
+
+        if (!foundOrder.logs) foundOrder.logs = [];
+        foundOrder.logs.push({
+            id: `l-webhook-${Date.now()}`,
+            message: `WEBHOOK: Status update to ${rawStatus} [Logistics Sync - Waybill: ${waybillId || foundOrder.trackingNumber || 'N/A'}]`,
+            timestamp,
+            user: 'Courier Webhook'
+        });
+
+        await tDb.collection('orders').updateOne({ id: foundOrder.id }, { $set: { ...clean(foundOrder), tenantId: foundTenantId } });
+        clearTenantCache(foundTenantId);
+
+        console.log(`>>> Webhook Success: Order ${foundOrder.id} updated to ${mappedStatus} (Raw: ${rawStatus})`);
+        return res.json({
+            success: true,
+            orderId: foundOrder.id,
+            previousStatus,
+            newStatus: mappedStatus,
+            rawStatus
+        });
+    } catch (e) {
+        console.error(">>> Webhook Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/tenant-last-action', (req, res) => {
     try {
         const { tenantId } = req.query;
