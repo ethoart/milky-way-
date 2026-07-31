@@ -120,10 +120,14 @@ class BackendService {
     return res.count || 0;
   }
   
-  async createOrders(orders: Order[]): Promise<void> {
-    if (orders.length === 0) return;
+  async createOrders(orders: Order[]): Promise<{ success: boolean; blockedCount?: number } | undefined> {
+    if (orders.length === 0) return { success: true, blockedCount: 0 };
     const tenantId = orders[0].tenantId;
-    await this.request('/orders', 'POST', { orders, tenantId }, { tenantId });
+    return await this.request('/orders', 'POST', { orders, tenantId }, { tenantId });
+  }
+
+  async bulkSearch(waybills: string[]): Promise<{ success: boolean; results: any[] }> {
+    return await this.request('/orders/bulk-search', 'POST', { waybills });
   }
 
   private _productsCache: Record<string, { data: Product[], expiry: number }> = {};

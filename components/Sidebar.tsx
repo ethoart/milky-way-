@@ -15,7 +15,8 @@ import {
   Globe,
   Scan,
   RotateCcw,
-  PhoneForwarded
+  PhoneForwarded,
+  FileSearch
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 
@@ -37,7 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
     if (user.role === UserRole.SUPER_ADMIN) return true;
     // Admins get access to pipeline, scan terminals and operational tools
     if (user.role === UserRole.ADMIN) {
-        const adminPages = ['dashboard', 'leads', 'selling', 'shipping', 'today_shipped', 'return_mgmt', 'residual_mgmt', 'inventory', 'returns'];
+        const adminPages = ['dashboard', 'leads', 'selling', 'shipping', 'today_shipped', 'bulk_search', 'return_mgmt', 'residual_mgmt', 'inventory', 'returns'];
         if (adminPages.includes(pageId)) return true;
     }
     return user.permissions?.includes(pageId);
@@ -122,10 +123,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, shopName, logoUrl, activ
             <>
               {navItem('dashboard', <LayoutDashboard />, 'Dashboard')}
 
-              {SectionHeader('Terminal', ['leads', 'selling', 'shipping', 'today_shipped'])}
+              {SectionHeader('Terminal', ['leads', 'selling', 'shipping', 'bulk_search', 'today_shipped'])}
               {navItem('leads', <UserPlus />, 'Inbound')}
               {navItem('selling', <ShoppingCart />, 'Selling')}
               {navItem('shipping', <Truck />, 'Logistics')}
+              {navItem('bulk_search', <FileSearch />, 'Bulk Search')}
               {navItem('today_shipped', <CalendarCheck />, 'Daily Logs')}
               
               {SectionHeader('Operations', ['return_mgmt', 'residual_mgmt'])}

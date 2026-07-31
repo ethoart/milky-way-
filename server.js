@@ -1001,6 +1001,113 @@ app.get('/api/orders', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/orders/bulk-search', async (req, res) => {
+    try {
+        const { waybills } = req.body;
+        if (!waybills || !Array.isArray(waybills)) {
+            return res.status(400).json({ error: 'Missing or invalid waybills array in body' });
+        }
+
+        const waybillsSet = new Set(waybills.map(w => String(w || '').trim()).filter(Boolean));
+        const waybillsArr = Array.from(waybillsSet);
+        const resultsMap = {};
+
+        // Initialize map with not-found placeholders
+        waybillsArr.forEach(wb => {
+            resultsMap[wb.toUpperCase()] = { waybill: wb, found: false };
+        });
+
+        if (waybillsArr.length > 0) {
+            const masterDb = await connectCentral();
+            const tenants = await masterDb.collection('tenants').find({}).toArray();
+
+            for (const tenant of tenants) {
+                try {
+                    const tDb = await getTenantDb(tenant.id);
+                    const orders = await tDb.collection('orders').find({
+                        $or: [
+                            { trackingNumber: { $in: waybillsArr } },
+                            { trackingNumber: { $in: waybillsArr.map(w => w.toLowerCase()) } },
+                            { trackingNumber: { $in: waybillsArr.map(w => w.toUpperCase()) } },
+                            { id: { $in: waybillsArr } }
+                        ]
+                    }).toArray();
+
+                    orders.forEach(order => {
+                        const trNo = String(order.trackingNumber || '').trim().toUpperCase();
+                        const ordId = String(order.id || '').trim().toUpperCase();
+
+                        const matchedKey = waybillsArr.find(w => {
+                            const upperW = w.toUpperCase();
+                            return upperW === trNo || upperW === ordId;
+                        });
+
+                        if (matchedKey) {
+                            resultsMap[matchedKey.toUpperCase()] = {
+                                waybill: matchedKey,
+                                found: true,
+                                orderId: order.id,
+                                status: order.status,
+                                customerName: order.customerName,
+                                customerPhone: order.customerPhone,
+                                shopId: tenant.id,
+                                shopName: tenant.settings?.shopName || tenant.domain || tenant.id,
+                                createdAt: order.createdAt,
+                                shippedAt: order.shippedAt,
+                                deliveredAt: order.deliveredAt,
+                                returnedAt: order.returnedAt,
+                                returnCompletedAt: order.returnCompletedAt
+                            };
+                        }
+                    });
+                } catch (tenantErr) {
+                    console.error(`Error searching waybills for tenant ${tenant.id}:`, tenantErr);
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            results: Object.values(resultsMap)
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+async function isCustomerBlocked(phone1, phone2) {
+    const phones = [phone1, phone2].map(p => String(p || '').trim()).filter(p => p.length > 0);
+    if (phones.length === 0) return false;
+
+    try {
+        const masterDb = await connectCentral();
+        const tenants = await masterDb.collection('tenants').find({}).toArray();
+        
+        let negativeRecordCount = 0;
+        
+        await Promise.all(tenants.map(async (t) => {
+            try {
+                const tDb = await getTenantDb(t.id);
+                const count = await tDb.collection('orders').countDocuments({
+                    $or: [
+                        { customerPhone: { $in: phones } },
+                        { customerPhone2: { $in: phones } }
+                    ],
+                    status: { $in: ['REJECTED', 'NO_ANSWER_REJECT', 'NO_ANSWER'] }
+                });
+                negativeRecordCount += count;
+            } catch (err) {
+                console.error(`Error checking block status for tenant ${t.id}:`, err);
+            }
+        }));
+        
+        return negativeRecordCount >= 2;
+    } catch (err) {
+        console.error("Error in isCustomerBlocked master lookup:", err);
+        return false;
+    }
+}
+
 app.post('/api/orders', async (req, res) => {
     try {
         const tenantId = req.query.tenantId || req.body.tenantId;
@@ -1009,19 +1116,62 @@ app.post('/api/orders', async (req, res) => {
         const col = db.collection('orders');
 
         if (orders) {
-            const ops = orders.map(o => ({ 
-                updateOne: { 
-                    filter: { id: o.id }, 
-                    update: { $set: { ...clean(o), tenantId } }, 
-                    upsert: true 
-                } 
-            }));
-            await col.bulkWrite(ops);
+            // Check which ones are new
+            const orderIds = orders.map(o => o.id).filter(Boolean);
+            const existingOrders = await col.find({ id: { $in: orderIds } }).toArray();
+            const existingIds = new Set(existingOrders.map(o => o.id));
+
+            // For new ones, check if customer is blocked
+            const finalOrders = [];
+            let blockedCount = 0;
+
+            for (const o of orders) {
+                const isNew = !existingIds.has(o.id);
+                const isLeadStatus = o.status === 'PENDING' || o.status === 'OPEN_LEAD';
+                const isDevAdmin = o.logs && o.logs[0] && o.logs[0].user === 'DEV_ADMIN';
+                
+                if (isNew && isLeadStatus && !isDevAdmin) {
+                    const blocked = await isCustomerBlocked(o.customerPhone, o.customerPhone2);
+                    if (blocked) {
+                        blockedCount++;
+                        continue; // Skip this blocked lead
+                    }
+                }
+                finalOrders.push(o);
+            }
+
+            if (finalOrders.length > 0) {
+                const ops = finalOrders.map(o => ({ 
+                    updateOne: { 
+                        filter: { id: o.id }, 
+                        update: { $set: { ...clean(o), tenantId } }, 
+                        upsert: true 
+                    } 
+                }));
+                await col.bulkWrite(ops);
+            }
+
+            clearTenantCache(tenantId);
+            res.json({ success: true, blockedCount });
         } else if (order) {
+            const existing = await col.findOne({ id: order.id });
+            const isNew = !existing;
+            const isLeadStatus = order.status === 'PENDING' || order.status === 'OPEN_LEAD';
+            const isDevAdmin = order.logs && order.logs[0] && order.logs[0].user === 'DEV_ADMIN';
+            
+            if (isNew && isLeadStatus && !isDevAdmin) {
+                const blocked = await isCustomerBlocked(order.customerPhone, order.customerPhone2);
+                if (blocked) {
+                    return res.status(400).json({ error: 'Lead Blocked: Customer has 2 or more rejected/no-answer records in history.' });
+                }
+            }
+
             await col.updateOne({ id: order.id }, { $set: { ...clean(order), tenantId } }, { upsert: true });
+            clearTenantCache(tenantId);
+            res.json({ success: true });
+        } else {
+            res.status(400).json({ error: 'Missing Order Content' });
         }
-        clearTenantCache(tenantId);
-        res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1429,7 +1579,7 @@ app.post('/api/courier-webhook', async (req, res) => {
 
         const waybillId = getField(payload, ['waybill_id', 'waybill_no', 'waybill', 'tracking_number', 'tracking_no', 'trackingNumber', 'barcode']);
         const orderId = getField(payload, ['order_id', 'id', 'orderId']);
-        const rawStatus = getField(payload, ['status', 'status_name', 'status_code', 'state', 'status_desc', 'event', 'courier_status']);
+        const rawStatus = getField(payload, ['status', 'status_name', 'status_code', 'state', 'status_desc', 'event', 'courier_status', 'current_status', 'currentStatus']);
 
         if (!waybillId && !orderId) {
             return res.status(400).json({ error: 'Missing identifying fields (waybill_id or order_id)' });

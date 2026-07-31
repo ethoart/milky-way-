@@ -101,19 +101,23 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
       logs: [{ id: `l-${Date.now()}`, message: 'Manual Creation', timestamp: new Date().toISOString(), user: currentUser }]
     };
     
-    await db.createOrders([order]);
-    setMessage({ text: "Entry Handshake Complete", type: 'success' });
-    setManualForm({ 
-        name: '', 
-        phone: '', 
-        address: '', 
-        productId: '', 
-        trackingNumber: '', 
-        city: '', 
-        weight: '1' 
-    });
-    setCustomerHistory(null);
-    setTimeout(() => setMessage(null), 3000);
+    try {
+      await db.createOrders([order]);
+      setMessage({ text: "Entry Handshake Complete", type: 'success' });
+      setManualForm({ 
+          name: '', 
+          phone: '', 
+          address: '', 
+          productId: '', 
+          trackingNumber: '', 
+          city: '', 
+          weight: '1' 
+      });
+      setCustomerHistory(null);
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err: any) {
+      alert(err.message || "Failed to create order");
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -161,11 +165,27 @@ export const Leads: React.FC<LeadsProps> = ({ tenantId, shopName }) => {
         logs: [{ id: `l-${Date.now()}`, message: 'Bulk CSV Ingestion', timestamp: new Date().toISOString(), user: currentUser }]
     }));
 
-    await db.createOrders(newOrders);
-    setIsProcessing(false);
-    setPendingLeads([]);
-    setMessage({ text: `${newOrders.length} Leads Injected Successfully`, type: 'success' });
-    setTimeout(() => setMessage(null), 3000);
+    try {
+      const res = await db.createOrders(newOrders);
+      setIsProcessing(false);
+      setPendingLeads([]);
+      
+      const blocked = res?.blockedCount || 0;
+      const successCount = newOrders.length - blocked;
+      
+      if (blocked > 0) {
+        setMessage({ 
+          text: `${successCount} Leads Injected successfully. ${blocked} leads were BLOCKED due to high rejection/no-answer history.`, 
+          type: successCount > 0 ? 'warning' : 'error' 
+        });
+      } else {
+        setMessage({ text: `${newOrders.length} Leads Injected Successfully`, type: 'success' });
+      }
+      setTimeout(() => setMessage(null), 5000);
+    } catch (err: any) {
+      setIsProcessing(false);
+      alert(err.message || "Failed to submit bulk leads");
+    }
   };
 
   const isExistingMode = tenant?.settings.courierMode === CourierMode.EXISTING_WAYBILL;

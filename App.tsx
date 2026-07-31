@@ -15,6 +15,7 @@ import { ReturnManagement } from './pages/ReturnManagement';
 import { ResidualManagement } from './pages/ResidualManagement';
 import { FinancialCenter } from './pages/FinancialCenter';
 import { TodayShipped } from './pages/TodayShipped';
+import { BulkSearch } from './pages/BulkSearch';
 import { User, UserRole, Tenant } from './types';
 import { db } from './services/mockBackend';
 import { Lock, User as UserIcon, Menu, Globe } from 'lucide-react';
@@ -185,6 +186,7 @@ export default function App() {
         case 'leads': return <Leads tenantId={user.tenantId!} shopName={displayShopName} />;
         case 'selling': return <SellingPipeline tenantId={user.tenantId!} shopName={displayShopName} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
         case 'shipping': return <ShippingPipeline tenantId={user.tenantId!} shopName={displayShopName} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
+        case 'bulk_search': return <BulkSearch tenantId={user.tenantId!} shopName={displayShopName} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
         case 'today_shipped': return <TodayShipped tenantId={user.tenantId!} shopName={displayShopName} />;
         case 'return_mgmt': return <ReturnManagement tenantId={user.tenantId!} shopName={displayShopName} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
         case 'residual_mgmt': return <ResidualManagement tenantId={user.tenantId!} shopName={displayShopName} onSelectOrder={(id) => { setSelectedOrderId(id); setCurrentPage('order_detail'); }} />;
