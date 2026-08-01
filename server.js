@@ -514,6 +514,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             const eDate = new Date(`${endDate}T23:59:59.999+05:30`).toISOString();
             const tDate = new Date(`${today}T00:00:00+05:30`).toISOString();
             const tEndDate = new Date(`${today}T23:59:59.999+05:30`).toISOString();
+            const wDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
             
             query.$or = [
                 { createdAt: { $gte: sDate, $lte: eDate } },
@@ -527,7 +528,12 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 { shippedAt: { $gte: tDate, $lte: tEndDate } },
                 { deliveredAt: { $gte: tDate, $lte: tEndDate } },
                 { returnedAt: { $gte: tDate, $lte: tEndDate } },
-                { returnCompletedAt: { $gte: tDate, $lte: tEndDate } }
+                { returnCompletedAt: { $gte: tDate, $lte: tEndDate } },
+                { createdAt: { $gte: wDate } },
+                { shippedAt: { $gte: wDate } },
+                { deliveredAt: { $gte: wDate } },
+                { returnedAt: { $gte: wDate } },
+                { returnCompletedAt: { $gte: wDate } }
             ];
         }
 
@@ -536,6 +542,10 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
         let deliveredCount = 0, returnedCount = 0, confirmedCount = 0, shippedCount = 0, restockCount = 0;
         let deliveredValue = 0, returnedValue = 0, confirmedValue = 0, shippedValue = 0, restockValue = 0;
         let todayOrders = 0, todayRevenue = 0, todayShippedCount = 0, todayReturnsCount = 0, todayDeliveredCount = 0;
+        let weeklyDeliveredCount = 0, weeklyReturnsCount = 0;
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysAgoStr = getSLDateString(sevenDaysAgo);
 
         allOrders.forEach(o => {
             const createDate = o.createdAt ? getSLDateString(new Date(o.createdAt)) : null;
@@ -668,6 +678,16 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
             if (isCurrentlyReturned && returnedDate === today) {
                 todayReturnsCount++;
+            }
+
+            // Weekly Snapshots (Last 7 Days)
+            if (o.status === 'DELIVERED') {
+                if (deliverDate && deliverDate >= sevenDaysAgoStr && deliverDate <= today) {
+                    weeklyDeliveredCount++;
+                }
+            }
+            if (isCurrentlyReturned && returnedDate && returnedDate >= sevenDaysAgoStr && returnedDate <= today) {
+                weeklyReturnsCount++;
             }
 
             // Sales / Leads based on create date
@@ -836,7 +856,8 @@ if (!un || ['system', 'dev_admin', 'courier system', 'oms connector', 'oms scann
             dailyMap, 
             productStats, 
             teamStats, 
-            todayRevenue, todayDeliveredCount, todayShippedCount, todayReturnsCount, todayOrders 
+            todayRevenue, todayDeliveredCount, todayShippedCount, todayReturnsCount, todayOrders,
+            weeklyDeliveredCount, weeklyReturnsCount
         };
         
         setCache(tenantId, 'dashboard-stats', cacheKey, statsResponse);

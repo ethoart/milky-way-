@@ -69,6 +69,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
   const [dashboardData, setDashboardData] = useState({
     globalStats: null,
     today: { todayOrders: 0, todayRevenue: 0, todayShippedCount: 0, todayReturnsCount: 0, todayDeliveredCount: 0 },
+    weekly: { weeklyDeliveredCount: 0, weeklyReturnsCount: 0 },
     inventory: { totalCount: 0, costValue: 0, retailValue: 0 },
     trends: [],
     products: [],
@@ -112,6 +113,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
                   todayReturnsCount: fetchedStats.todayReturnsCount || 0,
                   todayDeliveredCount: fetchedStats.todayDeliveredCount || 0
               },
+              weekly: {
+                  weeklyDeliveredCount: fetchedStats.weeklyDeliveredCount || 0,
+                  weeklyReturnsCount: fetchedStats.weeklyReturnsCount || 0
+              },
               inventory: fetchedStats.inventory || { totalCount: 0, costValue: 0, retailValue: 0 },
               trends,
               products,
@@ -122,6 +127,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
   }, [tenantId, startDate, endDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    let lastKnownAction = 0;
+    const interval = setInterval(async () => {
+      try {
+        const res = await db.getTenantLastAction(tenantId);
+        if (res && typeof res.lastAction === 'number') {
+          if (lastKnownAction > 0 && res.lastAction > lastKnownAction) {
+            fetchData();
+          }
+          lastKnownAction = res.lastAction;
+        }
+      } catch (e) {
+        console.error("Failed to poll tenant last action", e);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [tenantId, fetchData]);
 
 
   if (!dashboardData.globalStats) return <div className='p-10 flex justify-center items-center h-full'><Loader2 className='animate-spin text-blue-500' size={40}/></div>;
@@ -281,10 +304,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
                   { label: "Today's Inbound", val: formatFullNumber(dashboardData.today.todayOrders, 0), icon: <Target className="text-blue-400" /> },
                   { label: "Today's Dispatch", val: formatFullNumber(dashboardData.today.todayShippedCount, 0), icon: <Truck className="text-amber-400" /> },
                   { label: "Today's Delivered", val: formatFullNumber(dashboardData.today.todayDeliveredCount, 0), icon: <PackageCheck className="text-emerald-400" /> },
-                  { label: "Today's Revenue", val: formatCurrency(dashboardData.today.todayRevenue), icon: <DollarSign className="text-emerald-400" /> },
                   { label: "Today's Returns", val: formatFullNumber(dashboardData.today.todayReturnsCount, 0), icon: <RotateCcw className="text-rose-400" /> },
+                  { label: "Weekly Delivered (7d)", val: formatFullNumber(dashboardData.weekly.weeklyDeliveredCount, 0), icon: <PackageCheck className="text-emerald-500" /> },
+                  { label: "Weekly Returns (7d)", val: formatFullNumber(dashboardData.weekly.weeklyReturnsCount, 0), icon: <RotateCcw className="text-rose-500" /> },
+                  { label: "Today's Revenue", val: formatCurrency(dashboardData.today.todayRevenue), icon: <DollarSign className="text-emerald-400" /> },
               ].map((stat, i) => (
-                  <div key={i} className={`bg-white/5 border border-white/10 p-5 rounded-[2rem] hover:bg-white/10 transition-all group ${i >= 3 ? 'md:col-span-1.5' : ''}`}>
+                  <div key={i} className={`bg-white/5 border border-white/10 p-5 rounded-[2rem] hover:bg-white/10 transition-all group ${stat.label.includes('Revenue') ? 'col-span-2 md:col-span-3' : ''}`}>
                       <div className="flex items-center gap-3 mb-2">
                           {React.cloneElement(stat.icon as any, { size: 14 })}
                           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{stat.label}</p>
