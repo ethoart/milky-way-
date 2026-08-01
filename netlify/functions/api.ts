@@ -41,22 +41,47 @@ const FDE_ERRORS: Record<number, string> = {
 };
 
 const mapStatus = (courierStatus: string) => {
-    const s = (courierStatus || '').toLowerCase();
-    
-    // Priority: Delivered check first
-    if (s.includes('delivered')) return 'DELIVERED';
+    const s = (courierStatus || '').toLowerCase().trim();
+    if (!s) return 'SHIPPED';
 
-    // Distinguish between forward Transfer and Return Transfer
-    if (s.includes('return') && s.includes('transfer')) return 'RETURN_TRANSFER';
+    // Handle return-related statuses first to avoid overlap
+    if (s.includes('return') || s.includes('rtn')) {
+        if (s.includes('transfer')) return 'RETURN_TRANSFER';
+        if (s.includes('handover')) return 'RETURN_HANDOVER';
+        if (s.includes('complete') || s.includes('completed') || s.includes('done') || s.includes('receive') || s.includes('received')) return 'RETURN_COMPLETED';
+        return 'RETURNED';
+    }
+
+    // Handle delivered-related statuses next
+    if (
+        s.includes('delivered') || 
+        s.includes('success') || 
+        s.includes('complete') || 
+        s.includes('completed') || 
+        s.includes('done') || 
+        s.includes('delivered to customer') || 
+        s.includes('delivery success') ||
+        s.includes('cod paid') || 
+        s.includes('cod_paid') || 
+        s.includes('cod collected') || 
+        s.includes('cod_collected') || 
+        s.includes('paid') || 
+        s.includes('settled') || 
+        s.includes('collected') || 
+        s.includes('successful') || 
+        s.includes('closed')
+    ) {
+        return 'DELIVERED';
+    }
+
+    // Handle other states
     if (s.includes('transfer')) return 'TRANSFER';
-
-    if (s.includes('returned')) return 'RETURNED';
-    if (s.includes('handover')) return 'RETURN_HANDOVER';
-    if (s.includes('system')) return 'RETURN_AS_ON_SYSTEM';
     if (s.includes('delivery')) return 'DELIVERY';
     if (s.includes('residual')) return 'RESIDUAL';
     if (s.includes('rearrange')) return 'REARRANGE';
-    if (s.includes('waiting')) return 'PENDING';
+    if (s.includes('waiting') || s.includes('pending')) return 'PENDING';
+    if (s.includes('system')) return 'RETURN_AS_ON_SYSTEM';
+
     return 'SHIPPED'; 
 };
 

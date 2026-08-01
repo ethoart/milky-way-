@@ -248,23 +248,47 @@ const FDE_ERRORS = {
 };
 
 const mapStatus = (courierStatus) => {
-    const s = (courierStatus || '').toLowerCase();
-    
-    // Priority: Delivered check
-    if (s.includes('delivered')) return 'DELIVERED';
+    const s = (courierStatus || '').toLowerCase().trim();
+    if (!s) return 'SHIPPED';
 
-    // Distinguish between forward Transfer and Return Transfer
-    if (s.includes('return') && s.includes('transfer')) return 'RETURN_TRANSFER';
+    // Handle return-related statuses first to avoid overlap
+    if (s.includes('return') || s.includes('rtn')) {
+        if (s.includes('transfer')) return 'RETURN_TRANSFER';
+        if (s.includes('handover')) return 'RETURN_HANDOVER';
+        if (s.includes('complete') || s.includes('completed') || s.includes('done') || s.includes('receive') || s.includes('received')) return 'RETURN_COMPLETED';
+        return 'RETURNED';
+    }
+
+    // Handle delivered-related statuses next
+    if (
+        s.includes('delivered') || 
+        s.includes('success') || 
+        s.includes('complete') || 
+        s.includes('completed') || 
+        s.includes('done') || 
+        s.includes('delivered to customer') || 
+        s.includes('delivery success') ||
+        s.includes('cod paid') || 
+        s.includes('cod_paid') || 
+        s.includes('cod collected') || 
+        s.includes('cod_collected') || 
+        s.includes('paid') || 
+        s.includes('settled') || 
+        s.includes('collected') || 
+        s.includes('successful') || 
+        s.includes('closed')
+    ) {
+        return 'DELIVERED';
+    }
+
+    // Handle other states
     if (s.includes('transfer')) return 'TRANSFER';
-
-    if (s.includes('returned')) return 'RETURNED';
-    if (s.includes('handover')) return 'RETURN_HANDOVER';
-    if (s.includes('transfer')) return 'RETURN_TRANSFER';
-    if (s.includes('system')) return 'RETURN_AS_ON_SYSTEM';
     if (s.includes('delivery')) return 'DELIVERY';
     if (s.includes('residual')) return 'RESIDUAL';
     if (s.includes('rearrange')) return 'REARRANGE';
-    if (s.includes('waiting')) return 'PENDING';
+    if (s.includes('waiting') || s.includes('pending')) return 'PENDING';
+    if (s.includes('system')) return 'RETURN_AS_ON_SYSTEM';
+
     return 'SHIPPED'; 
 };
 
@@ -419,6 +443,32 @@ app.delete('/api/users', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/debug-database', async (req, res) => {
+    try {
+        const db = await connectCentral();
+        const tenants = await db.collection('tenants').find({}).toArray();
+        const users = await db.collection('users').find({}).toArray();
+        const results = { tenants, users, tenantOrders: {} };
+        for (const t of tenants) {
+            const tDb = await getTenantDb(t.id);
+            const orders = await tDb.collection('orders').find({}).toArray();
+            results.tenantOrders[t.id] = orders.map(o => ({
+                id: o.id,
+                trackingNumber: o.trackingNumber,
+                status: o.status,
+                createdAt: o.createdAt,
+                shippedAt: o.shippedAt,
+                deliveredAt: o.deliveredAt,
+                returnedAt: o.returnedAt,
+                returnCompletedAt: o.returnCompletedAt
+            }));
+        }
+        res.json(results);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/orders/dashboard-stats', async (req, res) => {
     try {
         const { tenantId, startDate, endDate } = req.query;
@@ -549,7 +599,8 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
 
         allOrders.forEach(o => {
             const createDate = o.createdAt ? getSLDateString(new Date(o.createdAt)) : null;
-            const shipDate = o.shippedAt ? getSLDateString(new Date(o.shippedAt)) : null;
+            const wasShipped = !!o.shippedAt || ['SHIPPED', 'TRANSFER', 'DELIVERY', 'DELIVERED', 'RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER', 'RETURN_COMPLETED', 'RESIDUAL', 'REARRANGE', 'HOLD'].includes(o.status);
+            const shipDate = o.shippedAt ? getSLDateString(new Date(o.shippedAt)) : (wasShipped ? getSLDateString(new Date(o.createdAt)) : null);
             const confirmDate = o.confirmedAt ? getSLDateString(new Date(o.confirmedAt)) : null;
 
             // Inferred / actual delivery date
@@ -742,11 +793,10 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
 
             // Shipped
-            const isShippedState = ['SHIPPED', 'TRANSFER', 'DELIVERY'].includes(o.status);
-            if (isShippedState && shipIsInRange) {
+            if (wasShipped && shipIsInRange) {
                 shippedCount++;
                 shippedValue += o.totalAmount || 0;
-                if (dailyMap[shipDate]) dailyMap[shipDate].shipped += o.totalAmount || 0;
+                if (shipDate && dailyMap[shipDate]) dailyMap[shipDate].shipped += o.totalAmount || 0;
                 (o.items || []).forEach(item => {
                     if (!productStats[item.productId]) {
                         productStats[item.productId] = {
