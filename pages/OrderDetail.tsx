@@ -368,12 +368,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                     No Answer
                                 </button>
                                 <button 
-                                    onClick={() => updateStatus(OrderStatus.NO_ANSWER_OPEN)} 
-                                    className={`px-5 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.NO_ANSWER_OPEN, 'bg-amber-500 text-white')}`}
-                                >
-                                    No Answer Open
-                                </button>
-                                <button 
                                     onClick={() => updateStatus(OrderStatus.REJECTED)} 
                                     className={`px-5 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.REJECTED, 'bg-rose-600 text-white')}`}
                                 >
@@ -706,7 +700,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
             </div>
         </div>
         {showPrintPortal && tenant && createPortal(
-            <div className="print-only grid grid-cols-3 gap-0 w-[210mm] mx-auto">
+            <div className={`print-only grid w-[210mm] mx-auto ${tenant.settings.billTemplate === 'landscape-waybill' ? 'grid-cols-2 gap-4' : 'grid-cols-3 gap-0'}`}>
                 <BillPrintView order={{...order, ...localFormData, items, totalAmount}} settings={tenant.settings} />
             </div>, 
             document.body

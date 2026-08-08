@@ -1279,7 +1279,23 @@ app.post('/api/customer-history-batch', async (req, res) => {
         await Promise.all(tenants.map(async (t) => {
             try {
                 const tDb = await getTenantDb(t.id);
-                const orders = await tDb.collection('orders').find({ customerPhone: { $in: phones } }).toArray();
+                // Create robust query for the batch of phones
+                const queryConditions = [];
+                phones.forEach(p => {
+                    const cleanP = String(p).replace(/\D/g, '');
+                    const last9 = cleanP.slice(-9);
+                    if (last9.length >= 9) {
+                        const pattern = last9.split('').join('\\D*');
+                        const regex = new RegExp(pattern + '$');
+                        queryConditions.push({ customerPhone: regex });
+                        queryConditions.push({ customerPhone2: regex });
+                    } else {
+                        queryConditions.push({ customerPhone: p });
+                        queryConditions.push({ customerPhone2: p });
+                    }
+                });
+                
+                const orders = await tDb.collection('orders').find({ $or: queryConditions }).toArray();
                 const shopName = t.settings?.shopName || t.id;
                 orders.forEach(o => {
                     o.shopName = shopName;
@@ -1293,7 +1309,19 @@ app.post('/api/customer-history-batch', async (req, res) => {
         // Group by phone
         const historyMap = {};
         for (const order of allHistory) {
-            const p = order.customerPhone;
+            const cleanOrderPhone = String(order.customerPhone || '').replace(/\D/g, '');
+            const cleanOrderPhone2 = String(order.customerPhone2 || '').replace(/\D/g, '');
+            
+            const matchedPhone = phones.find(p => {
+                const cleanP = String(p).replace(/\D/g, '');
+                const last9 = cleanP.slice(-9);
+                if (last9.length >= 9) {
+                    return cleanOrderPhone.endsWith(last9) || cleanOrderPhone2.endsWith(last9);
+                }
+                return p === order.customerPhone || p === order.customerPhone2;
+            });
+            
+            const p = matchedPhone || order.customerPhone;
             if (!historyMap[p]) {
                 historyMap[p] = {
                     status: 'NEW',
@@ -1323,10 +1351,31 @@ app.get('/api/customer-history', async (req, res) => {
         const tenants = await masterDb.collection('tenants').find({}).toArray();
         
         let allHistory = [];
+        const cleanPhone = String(phone).replace(/\D/g, '');
+        const last9 = cleanPhone.slice(-9);
+        let phoneQuery = {};
+        if (last9.length >= 9) {
+            const pattern = last9.split('').join('\\D*');
+            const regex = new RegExp(pattern + '$');
+            phoneQuery = {
+                $or: [
+                    { customerPhone: regex },
+                    { customerPhone2: regex }
+                ]
+            };
+        } else {
+            phoneQuery = {
+                $or: [
+                    { customerPhone: phone },
+                    { customerPhone2: phone }
+                ]
+            };
+        }
+
         await Promise.all(tenants.map(async (t) => {
             try {
                 const tDb = await getTenantDb(t.id);
-                const orders = await tDb.collection('orders').find({ customerPhone: phone }).toArray();
+                const orders = await tDb.collection('orders').find(phoneQuery).toArray();
                 const shopName = t.settings?.shopName || t.id;
                 orders.forEach(o => {
                     o.shopName = shopName;
@@ -1566,10 +1615,31 @@ app.get('/api/customer-history-detailed', async (req, res) => {
         const tenants = await masterDb.collection('tenants').find({}).toArray();
         
         let allHistory = [];
+        const cleanPhone = String(phone).replace(/\D/g, '');
+        const last9 = cleanPhone.slice(-9);
+        let phoneQuery = {};
+        if (last9.length >= 9) {
+            const pattern = last9.split('').join('\\D*');
+            const regex = new RegExp(pattern + '$');
+            phoneQuery = {
+                $or: [
+                    { customerPhone: regex },
+                    { customerPhone2: regex }
+                ]
+            };
+        } else {
+            phoneQuery = {
+                $or: [
+                    { customerPhone: phone },
+                    { customerPhone2: phone }
+                ]
+            };
+        }
+
         await Promise.all(tenants.map(async (t) => {
             try {
                 const tDb = await getTenantDb(t.id);
-                const orders = await tDb.collection('orders').find({ customerPhone: phone }).toArray();
+                const orders = await tDb.collection('orders').find(phoneQuery).toArray();
                 const shopName = t.settings?.shopName || t.id;
                 orders.forEach(o => {
                     o.shopName = shopName;

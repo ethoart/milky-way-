@@ -75,7 +75,7 @@ export const ShippingPipeline: React.FC<ShippingPipelineProps> = ({ tenantId, sh
     const ordersToPrint = res.data || [];
     
     root.render(
-      <div className="grid grid-cols-3 gap-0 w-[210mm] mx-auto">
+      <div className={`grid w-[210mm] mx-auto ${tenantSettings?.billTemplate === 'landscape-waybill' ? 'grid-cols-2 gap-4' : 'grid-cols-3 gap-0'}`}>
         {ordersToPrint.map(o => <BillPrintView key={o.id} order={o} settings={tenantSettings} />)}
       </div>
     );

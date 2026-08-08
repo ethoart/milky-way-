@@ -20,7 +20,7 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId, shopName, onRefres
   const [settings, setSettings] = useState<TenantSettings>({
       shopName: '', shopAddress: '', shopPhone: '', courierApiKey: '', courierApiUrl: '', 
       courierClientId: '', courierMode: CourierMode.STANDARD, showBillQr: true, logoUrl: '',
-      cloudflareToken: ''
+      cloudflareToken: '', billTemplate: 'portrait-classic'
   });
   const [masterNode, setMasterNode] = useState(window.location.host);
   const [saving, setSaving] = useState(false);
@@ -278,6 +278,50 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId, shopName, onRefres
                             <div className="relative">
                                 <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 pl-14 font-black text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={settings.shopAddress || ''} onChange={e => setSettings({...settings, shopAddress: e.target.value})} />
                                 <MapPin className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 md:col-span-2 border-t border-slate-100 pt-6">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block">Bill Typography & Print Template</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <button 
+                                    type="button"
+                                    onClick={() => setSettings({...settings, billTemplate: 'portrait-classic'})}
+                                    className={`p-5 rounded-2xl border text-left flex flex-col justify-between transition-all hover:border-blue-500 hover:bg-slate-50/50 ${(!settings.billTemplate || settings.billTemplate === 'portrait-classic') ? 'border-2 border-blue-600 bg-blue-50/30 ring-2 ring-blue-600/10' : 'border-slate-200'}`}
+                                >
+                                    <div>
+                                        <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[8px] font-black uppercase">Standard Portrait</span>
+                                        <h4 className="text-xs font-black uppercase text-slate-900 mt-2 leading-none">Classic Portrait</h4>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 leading-normal">Our original portrait billing card layout, standard barcode format.</p>
+                                    </div>
+                                    <div className="text-[8px] font-black text-blue-600 uppercase mt-4">Active & Included</div>
+                                </button>
+                                
+                                <button 
+                                    type="button"
+                                    onClick={() => setSettings({...settings, billTemplate: 'portrait-compact'})}
+                                    className={`p-5 rounded-2xl border text-left flex flex-col justify-between transition-all hover:border-blue-500 hover:bg-slate-50/50 ${(settings.billTemplate === 'portrait-compact') ? 'border-2 border-blue-600 bg-blue-50/30 ring-2 ring-blue-600/10' : 'border-slate-200'}`}
+                                >
+                                    <div>
+                                        <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[8px] font-black uppercase">Thermal Portrait</span>
+                                        <h4 className="text-xs font-black uppercase text-slate-900 mt-2 leading-none">Compact Thermal</h4>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 leading-normal">Ultra-high density receipt with minimalist dividers, great for thermal rolls.</p>
+                                    </div>
+                                    <div className="text-[8px] font-black text-amber-600 uppercase mt-4">Space-Saver Portrait</div>
+                                </button>
+                                
+                                <button 
+                                    type="button"
+                                    onClick={() => setSettings({...settings, billTemplate: 'landscape-waybill'})}
+                                    className={`p-5 rounded-2xl border text-left flex flex-col justify-between transition-all hover:border-blue-500 hover:bg-slate-50/50 ${(settings.billTemplate === 'landscape-waybill') ? 'border-2 border-blue-600 bg-blue-50/30 ring-2 ring-blue-600/10' : 'border-slate-200'}`}
+                                >
+                                    <div>
+                                        <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-[8px] font-black uppercase">Shipping Landscape</span>
+                                        <h4 className="text-xs font-black uppercase text-slate-900 mt-2 leading-none">Logistics Landscape</h4>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 leading-normal">Horizontal split-axis logistics style card with side-by-side shipping/COD blocks.</p>
+                                    </div>
+                                    <div className="text-[8px] font-black text-purple-600 uppercase mt-4">Landscape Waybill</div>
+                                </button>
                             </div>
                         </div>
                     </div>
