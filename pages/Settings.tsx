@@ -283,7 +283,7 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId, shopName, onRefres
 
                         <div className="space-y-4 md:col-span-2 border-t border-slate-100 pt-6">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block">Bill Typography & Print Template</label>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <button 
                                     type="button"
                                     onClick={() => setSettings({...settings, billTemplate: 'portrait-classic'})}
@@ -308,6 +308,19 @@ export const Settings: React.FC<SettingsProps> = ({ tenantId, shopName, onRefres
                                         <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 leading-normal">Ultra-high density receipt with minimalist dividers, great for thermal rolls.</p>
                                     </div>
                                     <div className="text-[8px] font-black text-amber-600 uppercase mt-4">Space-Saver Portrait</div>
+                                </button>
+
+                                <button 
+                                    type="button"
+                                    onClick={() => setSettings({...settings, billTemplate: 'portrait-clean-logistics'})}
+                                    className={`p-5 rounded-2xl border text-left flex flex-col justify-between transition-all hover:border-blue-500 hover:bg-slate-50/50 ${(settings.billTemplate === 'portrait-clean-logistics') ? 'border-2 border-blue-600 bg-blue-50/30 ring-2 ring-blue-600/10' : 'border-slate-200'}`}
+                                >
+                                    <div>
+                                        <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[8px] font-black uppercase">Standard Portrait</span>
+                                        <h4 className="text-xs font-black uppercase text-slate-900 mt-2 leading-none">Clean Logistics</h4>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 leading-normal">Horizontal dotted line separators, standard barcode, and clean bold COD line.</p>
+                                    </div>
+                                    <div className="text-[8px] font-black text-emerald-600 uppercase mt-4">Logistics Portrait</div>
                                 </button>
                                 
                                 <button 

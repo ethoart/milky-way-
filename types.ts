@@ -66,7 +66,7 @@ export interface TenantSettings {
   courierMode: CourierMode;
   showBillQr: boolean;
   cloudflareToken?: string; // New field for domain sync
-  billTemplate?: 'portrait-classic' | 'portrait-compact' | 'landscape-waybill';
+  billTemplate?: 'portrait-classic' | 'portrait-compact' | 'landscape-waybill' | 'portrait-clean-logistics';
 }
 
 export interface User {

@@ -54,6 +54,17 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
             height: 99mm;
             background: white;
           }
+          .label-item-clean-logistics { 
+            border: 0.1pt dashed #bbb;
+            padding: 4mm 4mm; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: space-between; 
+            overflow: hidden;
+            height: 99mm;
+            background: white;
+            font-family: sans-serif;
+          }
           .label-item-compact { 
             border: 0.1pt dashed #999;
             padding: 3.5mm 3.5mm; 
@@ -137,6 +148,69 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
                       margin={0}
                     />
                     <p className="text-[8px] font-black uppercase tracking-[0.2em] mt-0.5 text-center text-gray-700">
+                      {displayId}
+                    </p>
+                  </div>
+                </div>
+              );
+            }
+
+            // --- 1.5 Clean Logistics Portrait Label ---
+            if (template === 'portrait-clean-logistics') {
+              return (
+                <div key={order.id} className="label-item-clean-logistics">
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-bold text-gray-500">To:</p>
+                    <div className="text-[12px] leading-tight uppercase font-black text-black">
+                      {order.customerName} {productName ? `(${productName.toUpperCase()})` : ''}
+                    </div>
+                    <p className="text-[10px] font-medium leading-tight whitespace-pre-wrap mt-1 text-gray-800 line-clamp-2">
+                      {order.customerAddress}
+                    </p>
+                    {order.customerCity && (
+                      <p className="text-[10px] font-black uppercase text-black mt-0.5">
+                        [{order.customerCity.toUpperCase()}]
+                      </p>
+                    )}
+                    <div className="mt-1.5">
+                      <p className="text-[13px] font-black tracking-tight leading-none text-black">
+                        {order.customerPhone}{order.customerPhone2 ? ` / ${order.customerPhone2}` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 mb-1">
+                    <h1 className="text-[18px] font-black tracking-tight leading-none text-left text-black">
+                      COD: Rs.{order.totalAmount.toLocaleString()}
+                    </h1>
+                  </div>
+
+                  <div className="border-t border-dashed border-gray-400 my-1"></div>
+
+                  <div className="space-y-0.5">
+                    <p className="text-[9px] font-bold text-gray-500">From:</p>
+                    <p className="text-[11px] font-black uppercase leading-none text-black truncate">{settings.shopName}</p>
+                    <p className="text-[8px] font-bold text-gray-600 truncate mt-0.5">{settings.shopAddress}</p>
+                    <p className="text-[9px] font-black text-black mt-0.5">{settings.shopPhone}</p>
+                    <div className="mt-0.5">
+                      <p className="text-[7px] font-bold text-gray-400 uppercase">OMS REF: {order.id.toUpperCase()}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-center justify-center pt-1">
+                    <Barcode 
+                      value={displayId} 
+                      width={1.1} 
+                      height={32} 
+                      fontSize={0}
+                      background="transparent"
+                      format="CODE128"
+                      margin={0}
+                    />
+                    <p className="text-[8px] font-bold uppercase text-center text-gray-600 leading-none mt-1 mb-0.5">
+                      {displayId}
+                    </p>
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-center text-gray-800 leading-none font-mono">
                       {displayId}
                     </p>
                   </div>
@@ -289,7 +363,7 @@ export const LabelPrintView: React.FC<LabelPrintViewProps> = ({ orders, settings
           {Array.from({ length: itemsPerPage - orders.slice(pageIdx * itemsPerPage, (pageIdx + 1) * itemsPerPage).length }).map((_, i) => (
             <div 
               key={`empty-${i}`} 
-              className={`${template === 'landscape-waybill' ? 'label-item-waybill' : template === 'portrait-compact' ? 'label-item-compact' : 'label-item-classic'} opacity-0`}
+              className={`${template === 'landscape-waybill' ? 'label-item-waybill' : template === 'portrait-compact' ? 'label-item-compact' : template === 'portrait-clean-logistics' ? 'label-item-clean-logistics' : 'label-item-classic'} opacity-0`}
             ></div>
           ))}
         </div>

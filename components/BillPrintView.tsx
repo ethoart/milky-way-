@@ -72,6 +72,69 @@ export const BillPrintView: React.FC<BillPrintViewProps> = ({ order, settings })
     );
   }
 
+  // 1.5 Clean Logistics Portrait Template (from the PDF/Images provided)
+  if (template === 'portrait-clean-logistics') {
+    return (
+      <div className="print-only w-[69mm] h-[98mm] p-4 bg-white text-black font-sans border border-gray-300 box-border overflow-hidden flex flex-col justify-between">
+        <div className="space-y-0.5">
+          <p className="text-[10px] font-bold text-gray-500">To:</p>
+          <div className="text-[12px] leading-tight uppercase font-black text-black">
+            {order.customerName} {productName ? `(${productName.toUpperCase()})` : ''}
+          </div>
+          <p className="text-[10px] font-medium leading-tight whitespace-pre-wrap mt-1 text-gray-800">
+            {order.customerAddress}
+          </p>
+          {order.customerCity && (
+            <p className="text-[10px] font-black uppercase text-black mt-0.5">
+              [{order.customerCity.toUpperCase()}]
+            </p>
+          )}
+          <div className="mt-1.5">
+            <p className="text-[13px] font-black tracking-tight leading-none text-black">
+              {order.customerPhone}{order.customerPhone2 ? ` / ${order.customerPhone2}` : ''}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-2 mb-1">
+          <h1 className="text-[18px] font-black tracking-tight leading-none text-left text-black">
+            COD: Rs.{order.totalAmount.toLocaleString()}
+          </h1>
+        </div>
+
+        <div className="border-t border-dashed border-gray-400 my-1"></div>
+
+        <div className="space-y-0.5">
+          <p className="text-[9px] font-bold text-gray-500">From:</p>
+          <p className="text-[11px] font-black uppercase leading-none text-black">{settings.shopName}</p>
+          <p className="text-[8px] font-bold text-gray-600 truncate mt-0.5">{settings.shopAddress}</p>
+          <p className="text-[9px] font-black text-black mt-0.5">{settings.shopPhone}</p>
+          <div className="mt-0.5">
+            <p className="text-[7px] font-bold text-gray-400 uppercase">OMS REF: {order.id.toUpperCase()}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center justify-center pt-1">
+          <Barcode 
+            value={displayId} 
+            width={1.1} 
+            height={32} 
+            fontSize={0}
+            background="transparent"
+            format="CODE128"
+            margin={0}
+          />
+          <p className="text-[8px] font-bold uppercase text-center text-gray-600 leading-none mt-1 mb-0.5">
+            {displayId}
+          </p>
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-center text-gray-800 leading-none">
+            {displayId}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // 2. Compact Thermal Portrait Template (Elegant vertical thermal style receipt)
   if (template === 'portrait-compact') {
     return (
