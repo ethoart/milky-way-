@@ -136,8 +136,16 @@ class BackendService {
         return this._productsCache[tenantId].data;
     }
     const data = await this.request('/products', 'GET', null, { tenantId });
-    this._productsCache[tenantId] = { data, expiry: Date.now() + 60000 * 1 }; // 1 min cache
-    return data;
+    const normalizedData = (data || []).map((p: any) => ({
+        ...p,
+        batches: (p.batches || []).map((b: any) => ({
+            ...b,
+            originalQuantity: b.originalQuantity !== undefined ? b.originalQuantity : b.quantity,
+            buyingPrice: b.buyingPrice !== undefined ? b.buyingPrice : 0
+        }))
+    }));
+    this._productsCache[tenantId] = { data: normalizedData, expiry: Date.now() + 60000 * 1 }; // 1 min cache
+    return normalizedData;
   }
 
   async updateProduct(product: Product): Promise<void> {
@@ -169,6 +177,8 @@ class BackendService {
         if (remainingToDeduct <= 0) break;
         
         const batch = updatedBatches[i];
+        if (batch.quantity <= 0) continue;
+        
         if (batch.quantity >= remainingToDeduct) {
             batch.quantity -= remainingToDeduct;
             remainingToDeduct = 0;

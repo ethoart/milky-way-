@@ -125,8 +125,12 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   }, []);
 
   useEffect(() => {
-    if (order && order.status === OrderStatus.PENDING) {
+    if (order) {
+      if (order.status === OrderStatus.PENDING) {
         updateStatus(OrderStatus.OPEN_LEAD);
+      } else if (order.status === OrderStatus.NO_ANSWER) {
+        updateStatus(OrderStatus.NO_ANSWER_OPEN);
+      }
     }
   }, [order?.id, order?.status]);
 
@@ -292,6 +296,8 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
       case OrderStatus.DELIVERED: return 'bg-emerald-50 text-emerald-600 border-emerald-100';
       case OrderStatus.REJECTED: return 'bg-rose-50 text-rose-600 border-rose-100';
       case OrderStatus.NO_ANSWER_REJECT: return 'bg-rose-100 text-rose-800 border-rose-200';
+      case OrderStatus.NO_ANSWER_OPEN: return 'bg-amber-100 text-amber-800 border-amber-200';
+      case OrderStatus.NO_ANSWER: return 'bg-amber-50 text-amber-600 border-amber-100';
       case OrderStatus.RETURNED: return 'bg-amber-50 text-amber-600 border-amber-100';
       case OrderStatus.SHIPPED: return 'bg-blue-50 text-blue-600 border-blue-100';
       case OrderStatus.TRANSFER: return 'bg-indigo-50 text-indigo-600 border-indigo-100';
@@ -360,6 +366,12 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                     className={`px-5 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.NO_ANSWER, 'bg-amber-400 text-black')}`}
                                 >
                                     No Answer
+                                </button>
+                                <button 
+                                    onClick={() => updateStatus(OrderStatus.NO_ANSWER_OPEN)} 
+                                    className={`px-5 py-3.5 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md ${getActionBtnClass(OrderStatus.NO_ANSWER_OPEN, 'bg-amber-500 text-white')}`}
+                                >
+                                    No Answer Open
                                 </button>
                                 <button 
                                     onClick={() => updateStatus(OrderStatus.REJECTED)} 

@@ -20,7 +20,9 @@ import {
   Edit2,
   X,
   Save,
-  Tag
+  Tag,
+  Upload,
+  FileSpreadsheet
 } from 'lucide-react';
 
 interface FinancialCenterProps {
@@ -48,6 +50,90 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
   const [manualExpenses, setManualExpenses] = useState(0);
   const [advertisingCosts, setAdvertisingCosts] = useState(0);
   const [workerCount, setWorkerCount] = useState(1);
+  
+  // Custom Override States
+  const [customProductCost, setCustomProductCost] = useState<number | null>(null);
+  const [customExpenses, setCustomExpenses] = useState<number | null>(null);
+  const [shareCount, setShareCount] = useState<number>(3);
+  
+  // CSV Import State
+  const [csvData, setCsvData] = useState<{
+    fileName: string;
+    totalWaybills: number;
+    deliveredCount: number;
+    returnedCount: number;
+    matchingOrderIds: string[];
+  } | null>(null);
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleCSVUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      if (!text) return;
+
+      const lines = text.split(/\r?\n/);
+      const waybillsSet = new Set<string>();
+      let csvDelCount = 0;
+      let csvRetCount = 0;
+
+      lines.forEach(line => {
+        const columns = line.split(',').map(col => col.replace(/^["']|["']$/g, '').trim());
+        let hasDeliveredKeyword = false;
+        let hasReturnedKeyword = false;
+        
+        columns.forEach(col => {
+          if (col && col.length >= 4 && col.length <= 40) {
+            const upperCol = col.toUpperCase();
+            waybillsSet.add(upperCol);
+            
+            if (upperCol.includes('DELIVERED') || upperCol.includes('DELIVERY') || upperCol.includes('SUCCESS') || upperCol.includes('SETTLED') || upperCol === 'DELIVER') {
+              hasDeliveredKeyword = true;
+            }
+            if (upperCol.includes('RETURN') || upperCol.includes('REJECT') || upperCol.includes('FAILED') || upperCol === 'RET') {
+              hasReturnedKeyword = true;
+            }
+          }
+        });
+        if (hasDeliveredKeyword) csvDelCount++;
+        else if (hasReturnedKeyword) csvRetCount++;
+      });
+
+      const extractedList = Array.from(waybillsSet);
+      
+      const matches = orders.filter(o => {
+        const waybill = (o.trackingNumber || o.waybill || '').toUpperCase();
+        const orderId = (o.id || '').toUpperCase();
+        return (waybill && waybillsSet.has(waybill)) || (orderId && waybillsSet.has(orderId));
+      });
+
+      const systemDelivered = matches.filter(o => o.status === OrderStatus.DELIVERED).length;
+      const systemReturned = matches.filter(o => 
+        o.status === OrderStatus.RETURNED || 
+        o.status === OrderStatus.RETURN_COMPLETED
+      ).length;
+
+      const finalDelivered = matches.length > 0 ? systemDelivered : csvDelCount;
+      const finalReturned = matches.length > 0 ? systemReturned : csvRetCount;
+
+      setCsvData({
+        fileName: file.name,
+        totalWaybills: extractedList.length,
+        deliveredCount: finalDelivered,
+        returnedCount: finalReturned,
+        matchingOrderIds: matches.map(o => o.id)
+      });
+    };
+    reader.readAsText(file);
+  };
+
+  const handleClearCSV = () => {
+    setCsvData(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
   
   // Modal State
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -104,15 +190,17 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
     end.setHours(23, 59, 59);
 
     if (!Array.isArray(orders)) return {
-      grossRevenue: 0, totalCogs: 0, grossProfit: 0, deliveredCount: 0, returnedCount: 0,
+      grossRevenue: 0, totalCogs: 0, activeProductCost: 0, activeExpenses: 0, grossProfit: 0, deliveredCount: 0, returnedCount: 0,
       totalDeliveryDeduction: 0, totalReturnDeduction: 0, netProfit: 0, investorShare: 0,
-      workerSharePool: 0, perWorkerProfit: 0, orderCount: 0, productLedger: []
+      threeSharesPool: 0, perShareValue: 0, orderCount: 0, productLedger: []
     };
 
-    const filtered = orders.filter(o => {
-      const d = new Date(o.createdAt);
-      return d >= start && d <= end;
-    });
+    const filtered = csvData 
+      ? orders.filter(o => csvData.matchingOrderIds.includes(o.id))
+      : orders.filter(o => {
+          const d = new Date(o.createdAt);
+          return d >= start && d <= end;
+        });
 
     const deliveredOrders = filtered.filter(o => o.status === OrderStatus.DELIVERED);
     const returnedOrders = filtered.filter(o => 
@@ -166,22 +254,27 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
     // For overall COGS, use what we actually sold
     const totalCogs = pLedger.reduce((sum, pl) => sum + pl.cogs, 0);
 
-    const deliveredCount = deliveredOrders.length;
-    const returnedCount = returnedOrders.length;
+    const deliveredCount = csvData ? csvData.deliveredCount : deliveredOrders.length;
+    const returnedCount = csvData ? csvData.returnedCount : returnedOrders.length;
     
     const totalDeliveryDeduction = deliveredCount * deliveryFee;
     const totalReturnDeduction = returnedCount * returnFee;
     
-    const grossProfit = grossRevenue - totalCogs;
-    const netProfit = grossProfit - totalDeliveryDeduction - totalReturnDeduction - manualExpenses - advertisingCosts;
+    const activeProductCost = customProductCost !== null ? customProductCost : totalCogs;
+    const activeExpenses = customExpenses !== null ? customExpenses : (manualExpenses + advertisingCosts);
+
+    const grossProfit = grossRevenue - activeProductCost;
+    const netProfit = grossProfit - totalDeliveryDeduction - totalReturnDeduction - activeExpenses;
     
     const investorShare = Math.max(0, netProfit * 0.5);
-    const workerSharePool = Math.max(0, netProfit * 0.5);
-    const perWorkerProfit = workerCount > 0 ? workerSharePool / workerCount : 0;
+    const threeSharesPool = Math.max(0, netProfit * 0.5);
+    const perShareValue = shareCount > 0 ? threeSharesPool / shareCount : 0;
 
     return {
       grossRevenue,
       totalCogs,
+      activeProductCost,
+      activeExpenses,
       grossProfit,
       deliveredCount,
       returnedCount,
@@ -189,12 +282,12 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
       totalReturnDeduction,
       netProfit,
       investorShare,
-      workerSharePool,
-      perWorkerProfit,
+      threeSharesPool,
+      perShareValue,
       orderCount: filtered.length,
       productLedger: pLedger
     };
-  }, [orders, products, startDate, endDate, deliveryFee, returnFee, manualExpenses, advertisingCosts, workerCount]);
+  }, [orders, products, startDate, endDate, deliveryFee, returnFee, manualExpenses, advertisingCosts, customProductCost, customExpenses, csvData, shareCount]);
 
   const handlePrint = () => {
     window.print();
@@ -247,6 +340,64 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         <div className="lg:col-span-4 space-y-6 print:hidden">
+          {/* Logistics Check CSV reconciliation */}
+          <div className="modern-card p-6 bg-slate-50 border border-dashed border-slate-200 rounded-3xl space-y-4 shadow-sm">
+            <h3 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2 text-slate-700">
+              <Upload size={16} className="text-blue-600" /> Logistics Reconciliation (Check CSV)
+            </h3>
+            
+            {!csvData ? (
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="cursor-pointer border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-2xl p-6 text-center transition-all bg-white hover:bg-blue-50/20 group"
+              >
+                <input 
+                  ref={fileInputRef}
+                  type="file" 
+                  accept=".csv" 
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleCSVUpload(file);
+                  }} 
+                  className="hidden" 
+                />
+                <FileSpreadsheet className="mx-auto text-slate-300 group-hover:text-blue-500 mb-2 transition-colors" size={32} />
+                <span className="text-[10px] font-black uppercase text-slate-500 block">Click to Upload Check CSV</span>
+                <span className="text-[8px] font-bold text-slate-400 uppercase mt-1 block">Waybill numbers & Courier status</span>
+              </div>
+            ) : (
+              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black text-emerald-800 uppercase tracking-wider truncate max-w-[180px]">{csvData.fileName}</p>
+                    <p className="text-[8px] font-bold text-emerald-600 uppercase">{csvData.totalWaybills} Waybills detected</p>
+                  </div>
+                  <button 
+                    onClick={handleClearCSV}
+                    className="p-1 text-rose-500 hover:bg-rose-100 rounded-lg transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="bg-white/60 rounded-xl p-2.5">
+                    <span className="text-[8px] font-black text-slate-400 uppercase block">Delivered</span>
+                    <span className="text-base font-black text-emerald-700">{csvData.deliveredCount}</span>
+                  </div>
+                  <div className="bg-white/60 rounded-xl p-2.5">
+                    <span className="text-[8px] font-black text-slate-400 uppercase block">Returned</span>
+                    <span className="text-base font-black text-amber-700">{csvData.returnedCount}</span>
+                  </div>
+                </div>
+                
+                <p className="text-[8px] font-bold text-emerald-600/80 uppercase text-center">
+                  CSV Reconciliation Filter Active
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="modern-card p-6 bg-slate-900 text-white border-none shadow-2xl">
             <h3 className="text-[11px] font-black uppercase tracking-widest mb-6 flex items-center gap-2 text-indigo-400">
               <Settings2 size={16} /> Operational Rates
@@ -271,27 +422,25 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
                 />
               </div>
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2">Staff Workforce Count</label>
-                <div className="flex items-center gap-3">
-                    <Users size={18} className="text-slate-500" />
-                    <input 
-                        type="number" 
-                        value={workerCount} 
-                        onChange={e => setWorkerCount(Math.max(1, Number(e.target.value)))}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-black text-xl text-white outline-none focus:border-blue-500 transition-all"
-                    />
-                </div>
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2">Partner Share Count</label>
+                <input 
+                  type="number" 
+                  min="1"
+                  value={shareCount} 
+                  onChange={e => setShareCount(Math.max(1, Number(e.target.value)))}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-black text-xl text-white outline-none focus:border-blue-500 transition-all"
+                />
               </div>
             </div>
           </div>
 
           <div className="modern-card p-6 space-y-6">
             <h3 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2 text-slate-400">
-              <Receipt size={16} /> Variable Overheads
+              <Receipt size={16} /> Expenses & Cost Overrides
             </h3>
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2">General Expenses</label>
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2">General Expenses (LKR)</label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 font-bold text-xs">LKR</span>
                   <input 
@@ -303,7 +452,7 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
                 </div>
               </div>
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2">Advertising Budget</label>
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2">Advertising Budget (LKR)</label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 font-bold text-xs">LKR</span>
                   <input 
@@ -312,6 +461,58 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
                     onChange={e => setAdvertisingCosts(Number(e.target.value))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 font-black text-lg outline-none focus:ring-2 focus:ring-blue-600 transition-all"
                   />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 space-y-4">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Override Direct Profit Calculators</p>
+                
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Product Cost Override (LKR)</label>
+                    {customProductCost !== null && (
+                      <button 
+                        onClick={() => setCustomProductCost(null)}
+                        className="text-[8px] font-black text-blue-600 hover:underline uppercase"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">LKR</span>
+                    <input 
+                      type="number" 
+                      placeholder={String(financialData.totalCogs)}
+                      value={customProductCost !== null ? customProductCost : ''} 
+                      onChange={e => setCustomProductCost(e.target.value === '' ? null : Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 font-black text-lg outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Expenses Override (LKR)</label>
+                    {customExpenses !== null && (
+                      <button 
+                        onClick={() => setCustomExpenses(null)}
+                        className="text-[8px] font-black text-blue-600 hover:underline uppercase"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">LKR</span>
+                    <input 
+                      type="number" 
+                      placeholder={String(manualExpenses + advertisingCosts)}
+                      value={customExpenses !== null ? customExpenses : ''} 
+                      onChange={e => setCustomExpenses(e.target.value === '' ? null : Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 font-black text-lg outline-none focus:ring-2 focus:ring-rose-600 transition-all"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -355,10 +556,22 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
                 <span className="text-xs font-bold text-slate-600">Total Sales Revenue</span>
                 <span className="text-sm font-black text-slate-900">{formatCurrency(financialData.grossRevenue)}</span>
               </div>
-              <div className="flex justify-between items-center py-2 text-rose-600 bg-rose-50 px-3 rounded-lg">
-                <span className="text-xs font-bold uppercase tracking-tight">Cost of Goods Sold (COGS)</span>
-                <span className="text-sm font-black">({formatCurrency(financialData.totalCogs)})</span>
-              </div>
+              
+              {customProductCost !== null ? (
+                <div className="flex justify-between items-center py-2 text-rose-600 bg-rose-50 px-3 rounded-lg">
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-tight block">Product Cost (Custom Override)</span>
+                    <span className="text-[9px] text-slate-400 block uppercase">Calculated COGS was {formatCurrency(financialData.totalCogs)}</span>
+                  </div>
+                  <span className="text-sm font-black">({formatCurrency(financialData.activeProductCost)})</span>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center py-2 text-rose-600 bg-rose-50 px-3 rounded-lg">
+                  <span className="text-xs font-bold uppercase tracking-tight">Cost of Goods Sold (COGS)</span>
+                  <span className="text-sm font-black">({formatCurrency(financialData.totalCogs)})</span>
+                </div>
+              )}
+              
               <div className="flex justify-between items-center py-3 border-y border-slate-50 font-black">
                 <span className="text-xs uppercase">Gross Profit</span>
                 <span className="text-sm">{formatCurrency(financialData.grossProfit)}</span>
@@ -374,14 +587,27 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
                   <span className="text-xs font-medium">Return Fees ({financialData.returnedCount} × {returnFee})</span>
                   <span className="text-xs font-bold text-rose-600">-{formatCurrency(financialData.totalReturnDeduction)}</span>
                 </div>
-                <div className="flex justify-between items-center py-1 text-slate-500">
-                  <span className="text-xs font-medium">General Expenses</span>
-                  <span className="text-xs font-bold text-rose-600">-{formatCurrency(manualExpenses)}</span>
-                </div>
-                <div className="flex justify-between items-center py-1 text-slate-500">
-                  <span className="text-xs font-medium">Advertising Costs</span>
-                  <span className="text-xs font-bold text-rose-600">-{formatCurrency(advertisingCosts)}</span>
-                </div>
+
+                {customExpenses !== null ? (
+                  <div className="flex justify-between items-center py-2 text-rose-600 bg-rose-50/50 px-3 rounded-lg mt-1">
+                    <div>
+                      <span className="text-xs font-black uppercase tracking-tight block">Expenses (Custom Override)</span>
+                      <span className="text-[9px] text-slate-400 block uppercase">Manual + Ad was {formatCurrency(manualExpenses + advertisingCosts)}</span>
+                    </div>
+                    <span className="text-sm font-black">-{formatCurrency(financialData.activeExpenses)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex justify-between items-center py-1 text-slate-500">
+                      <span className="text-xs font-medium">General Expenses</span>
+                      <span className="text-xs font-bold text-rose-600">-{formatCurrency(manualExpenses)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 text-slate-500">
+                      <span className="text-xs font-medium">Advertising Costs</span>
+                      <span className="text-xs font-bold text-rose-600">-{formatCurrency(advertisingCosts)}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="flex justify-between items-center py-4 mt-4 border-t-2 border-slate-900 bg-slate-900 text-white px-5 rounded-[2rem] shadow-xl">
@@ -392,29 +618,38 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="modern-card p-6 border-l-4 border-l-indigo-600 bg-white">
+            <div className="modern-card p-6 border-l-4 border-l-indigo-600 bg-white shadow-sm">
                 <div className="flex items-center gap-3 mb-4">
                     <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><PieChart size={16}/></div>
                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Investor Share (50%)</h4>
                 </div>
                 <p className="text-2xl font-black text-slate-900">{formatCurrency(financialData.investorShare)}</p>
-                <div className="mt-2 text-[9px] font-bold text-slate-400 uppercase">Capital Recovery Share</div>
+                <div className="mt-2 text-[9px] font-bold text-slate-400 uppercase">Capital Recovery Partner</div>
             </div>
             
-            <div className="modern-card p-6 border-l-4 border-l-blue-600 bg-white">
-                <div className="flex items-center gap-3 mb-4">
+            <div className="modern-card p-6 border-l-4 border-l-blue-600 bg-white shadow-sm space-y-3">
+                <div className="flex items-center gap-3">
                     <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Users size={16}/></div>
-                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Worker Share (50%)</h4>
+                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Other 50% Pool ({shareCount} {shareCount === 1 ? 'Share' : 'Shares'})</h4>
                 </div>
                 <div className="flex items-end justify-between">
                     <div>
-                        <p className="text-2xl font-black text-slate-900">{formatCurrency(financialData.workerSharePool)}</p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Pool for {workerCount} Staff</p>
+                        <p className="text-2xl font-black text-slate-900">{formatCurrency(financialData.threeSharesPool)}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Split Equally ({(50 / shareCount).toFixed(2)}% of total each)</p>
                     </div>
                     <div className="text-right">
-                        <p className="text-lg font-black text-blue-600 leading-none">{formatCurrency(financialData.perWorkerProfit)}</p>
-                        <p className="text-[8px] font-black text-slate-400 uppercase">Per Worker</p>
+                        <p className="text-lg font-black text-blue-600 leading-none">{formatCurrency(financialData.perShareValue)}</p>
+                        <p className="text-[8px] font-black text-slate-400 uppercase">Per Share</p>
                     </div>
+                </div>
+                
+                <div className="pt-3 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 gap-2 text-[9px] uppercase font-black text-slate-500 max-h-[160px] overflow-y-auto">
+                  {Array.from({ length: shareCount }).map((_, i) => (
+                    <div key={i} className="bg-slate-50 p-2 rounded-xl text-center">
+                      <span className="text-slate-400 block text-[8px]">Share {i + 1}</span>
+                      <span className="text-slate-900 font-black block mt-0.5">{formatCurrency(financialData.perShareValue)}</span>
+                    </div>
+                  ))}
                 </div>
             </div>
           </div>
@@ -506,12 +741,28 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                     <tr><td className="py-4 font-bold">Total Sales (Delivered)</td><td className="py-4 text-right font-black">{formatCurrency(financialData.grossRevenue)}</td></tr>
-                    <tr><td className="py-4 font-bold">Cost of Goods Sold (COGS)</td><td className="py-4 text-right font-black text-rose-600">({formatCurrency(financialData.totalCogs)})</td></tr>
+                    <tr>
+                        <td className="py-4 font-bold">
+                            Product Cost {customProductCost !== null ? "(Custom Override)" : "(COGS)"}
+                        </td>
+                        <td className="py-4 text-right font-black text-rose-600">
+                            ({formatCurrency(financialData.activeProductCost)})
+                        </td>
+                    </tr>
                     <tr className="bg-slate-50"><td className="py-4 font-black uppercase">Gross Profit</td><td className="py-4 text-right font-black">{formatCurrency(financialData.grossProfit)}</td></tr>
                     <tr><td className="py-4 font-bold">Delivery Fees ({financialData.deliveredCount} parcels)</td><td className="py-4 text-right font-black text-rose-600">-{formatCurrency(financialData.totalDeliveryDeduction)}</td></tr>
                     <tr><td className="py-4 font-bold">Return Fees ({financialData.returnedCount} parcels)</td><td className="py-4 text-right font-black text-rose-600">-{formatCurrency(financialData.totalReturnDeduction)}</td></tr>
-                    <tr><td className="py-4 font-bold">General Expenses</td><td className="py-4 text-right font-black text-rose-600">-{formatCurrency(manualExpenses)}</td></tr>
-                    <tr><td className="py-4 font-bold">Advertising Costs</td><td className="py-4 text-right font-black text-rose-600">-{formatCurrency(advertisingCosts)}</td></tr>
+                    {customExpenses !== null ? (
+                        <tr>
+                            <td className="py-4 font-bold">Expenses (Custom Override)</td>
+                            <td className="py-4 text-right font-black text-rose-600">-{formatCurrency(financialData.activeExpenses)}</td>
+                        </tr>
+                    ) : (
+                        <>
+                            <tr><td className="py-4 font-bold">General Expenses</td><td className="py-4 text-right font-black text-rose-600">-{formatCurrency(manualExpenses)}</td></tr>
+                            <tr><td className="py-4 font-bold">Advertising Costs</td><td className="py-4 text-right font-black text-rose-600">-{formatCurrency(advertisingCosts)}</td></tr>
+                        </>
+                    )}
                     <tr className="border-t-2 border-slate-900 bg-slate-50"><td className="py-6 font-black uppercase text-lg">Net Profit Distribution</td><td className="py-6 text-right font-black text-2xl">{formatCurrency(financialData.netProfit)}</td></tr>
                 </tbody>
             </table>
@@ -522,9 +773,9 @@ export const FinancialCenter: React.FC<FinancialCenterProps> = ({ tenantId, shop
                     <p className="text-2xl font-black">{formatCurrency(financialData.investorShare)}</p>
                 </div>
                 <div>
-                    <h4 className="text-xs font-black uppercase text-slate-400 mb-4">Worker Reward Pool (50%)</h4>
-                    <p className="text-2xl font-black">{formatCurrency(financialData.workerSharePool)}</p>
-                    <p className="text-[10px] font-bold text-slate-500 mt-2 uppercase">{workerCount} active staff | {formatCurrency(financialData.perWorkerProfit)} per person</p>
+                    <h4 className="text-xs font-black uppercase text-slate-400 mb-4">Other 50% Partner Pool ({shareCount} {shareCount === 1 ? 'Share' : 'Shares'})</h4>
+                    <p className="text-2xl font-black">{formatCurrency(financialData.threeSharesPool)}</p>
+                    <p className="text-[10px] font-bold text-slate-500 mt-2 uppercase">{shareCount} equal shares | {formatCurrency(financialData.perShareValue)} per co-owner share</p>
                 </div>
             </div>
         </div>

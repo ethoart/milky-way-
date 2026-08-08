@@ -24,7 +24,8 @@ import {
   ArrowUpRight,
   RefreshCw,
   BarChart3,
-  LayoutDashboard
+  LayoutDashboard,
+  X
 } from 'lucide-react';
 import { formatCurrency, formatFullNumber } from '../utils/helpers';
 
@@ -44,6 +45,8 @@ export const Stock: React.FC<StockProps> = ({ tenantId, shopName }) => {
   const [batchForms, setBatchForms] = useState<{[key: string]: { quantity: number, buyingPrice: number }}>({});
   const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
   const [tempPrice, setTempPrice] = useState<number>(0);
+  const [tempQuantity, setTempQuantity] = useState<number>(0);
+  const [tempOriginalQuantity, setTempOriginalQuantity] = useState<number>(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,12 +134,12 @@ export const Stock: React.FC<StockProps> = ({ tenantId, shopName }) => {
     load();
   };
 
-  const handleUpdateBatchPrice = async (productId: string, batchId: string) => {
+  const handleUpdateBatch = async (productId: string, batchId: string) => {
     const product = products.find(p => p.id === productId);
     if (!product) return;
 
     const updatedBatches = product.batches.map(b => 
-        b.id === batchId ? { ...b, buyingPrice: tempPrice } : b
+        b.id === batchId ? { ...b, buyingPrice: tempPrice, quantity: tempQuantity, originalQuantity: tempOriginalQuantity } : b
     );
 
     await db.updateProduct({ ...product, batches: updatedBatches });
@@ -276,48 +279,92 @@ export const Stock: React.FC<StockProps> = ({ tenantId, shopName }) => {
                                     <div className="lg:col-span-7 space-y-4">
                                         <div className="flex items-center justify-between">
                                             <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                                <TrendingDown size={14} className="text-blue-500"/> Batch Registry (Active Only)
+                                                <TrendingDown size={14} className="text-blue-500"/> Batch Registry (FIFO Control)
                                             </h5>
                                             <span className="text-[9px] font-bold text-slate-300 uppercase italic">FIFO: Oldest first</span>
                                         </div>
                                         <div className="space-y-2">
-                                            {p.batches.filter(b => b.quantity > 0).map((batch, idx) => (
-                                                <div key={batch.id} className={`flex items-center justify-between p-4 rounded-2xl border ${batch.id.startsWith('rb-') ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
-                                                    <div className="flex items-center gap-4">
-                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black ${idx === 0 ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-500 border border-slate-200'}`}>
+                                            {([...(p.batches || [])].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())).map((batch, idx) => (
+                                                <div key={batch.id} className={`flex flex-col sm:flex-row items-stretch sm:items-center justify-between p-4 rounded-2xl border ${batch.quantity === 0 ? 'bg-slate-50/50 border-slate-200/60 opacity-70' : batch.id.startsWith('rb-') ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
+                                                    <div className="flex items-center gap-4 flex-1">
+                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${idx === 0 && batch.quantity > 0 ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-500 border border-slate-200'}`}>
                                                             {idx + 1}
                                                         </div>
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
+                                                        <div className="flex-1">
+                                                            <div className="flex flex-wrap items-center gap-2">
                                                                 <p className="text-xs font-black text-slate-900">
-                                                                    Added: {batch.originalQuantity ?? batch.quantity} <span className="text-slate-300 mx-1">|</span> Remaining: <span className={batch.quantity < 5 ? 'text-rose-600' : 'text-emerald-600'}>{batch.quantity}</span>
+                                                                    Added: {batch.originalQuantity ?? batch.quantity} <span className="text-slate-300 mx-1">|</span> Remaining: <span className={batch.quantity === 0 ? 'text-slate-400 font-bold' : batch.quantity < 5 ? 'text-rose-600' : 'text-emerald-600'}>{batch.quantity}</span>
                                                                 </p>
+                                                                {batch.quantity === 0 && <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-[7px] font-black uppercase">Depleted</span>}
                                                                 {batch.id.startsWith('rb-') && <span className="bg-rose-600 text-white px-2 py-0.5 rounded text-[7px] font-black uppercase">Returned Stock</span>}
                                                             </div>
-                                                            <p className="text-[9px] font-bold text-slate-400 uppercase">{new Date(batch.createdAt).toLocaleDateString()}</p>
+                                                            <p className="text-[9px] font-bold text-slate-400 uppercase">{new Date(batch.createdAt).toLocaleDateString()} {new Date(batch.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="text-right">
+                                                    <div className="flex items-center gap-4 mt-3 sm:mt-0">
+                                                        <div className="text-right w-full sm:w-auto">
                                                             {editingBatchId === batch.id ? (
-                                                                <div className="flex items-center gap-2">
-                                                                    <input 
-                                                                        type="number" 
-                                                                        className="w-24 bg-white border border-blue-500 rounded-lg px-2 py-1 text-xs font-black outline-none"
-                                                                        value={tempPrice}
-                                                                        onChange={e => setTempPrice(parseFloat(e.target.value) || 0)}
-                                                                        autoFocus
-                                                                    />
-                                                                    <button onClick={() => handleUpdateBatchPrice(p.id, batch.id)} className="p-1.5 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-all">
-                                                                        <Check size={14} />
-                                                                    </button>
+                                                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-blue-50/50 p-3 rounded-xl border border-blue-200">
+                                                                    <div className="grid grid-cols-3 gap-2 flex-1">
+                                                                        <div>
+                                                                            <label className="text-[8px] font-black text-slate-400 block uppercase mb-1">Cost (LKR)</label>
+                                                                            <input 
+                                                                                type="number" 
+                                                                                className="w-full bg-white border border-blue-300 rounded-lg px-2 py-1 text-xs font-black outline-none"
+                                                                                value={tempPrice}
+                                                                                onChange={e => setTempPrice(parseFloat(e.target.value) || 0)}
+                                                                                placeholder="Cost"
+                                                                            />
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="text-[8px] font-black text-slate-400 block uppercase mb-1">Current Stock</label>
+                                                                            <input 
+                                                                                type="number" 
+                                                                                className="w-full bg-white border border-blue-300 rounded-lg px-2 py-1 text-xs font-black outline-none"
+                                                                                value={tempQuantity}
+                                                                                onChange={e => setTempQuantity(parseInt(e.target.value) || 0)}
+                                                                                placeholder="Remaining"
+                                                                            />
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="text-[8px] font-black text-slate-400 block uppercase mb-1">Original Stock</label>
+                                                                            <input 
+                                                                                type="number" 
+                                                                                className="w-full bg-white border border-blue-300 rounded-lg px-2 py-1 text-xs font-black outline-none"
+                                                                                value={tempOriginalQuantity}
+                                                                                onChange={e => setTempOriginalQuantity(parseInt(e.target.value) || 0)}
+                                                                                placeholder="Original"
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 self-end sm:self-center">
+                                                                        <button 
+                                                                            onClick={() => handleUpdateBatch(p.id, batch.id)} 
+                                                                            className="p-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-all flex items-center justify-center"
+                                                                            title="Save Changes"
+                                                                        >
+                                                                            <Check size={14} />
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => setEditingBatchId(null)} 
+                                                                            className="p-2 bg-slate-200 text-slate-600 rounded-lg shadow-md hover:bg-slate-300 transition-all flex items-center justify-center"
+                                                                            title="Cancel"
+                                                                        >
+                                                                            <X size={14} />
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             ) : (
                                                                 <div className="flex flex-col items-end">
                                                                     <div className="flex items-center gap-2 group/price">
                                                                         <p className="text-xs font-black text-slate-900 uppercase">Cost: {formatCurrency(batch.buyingPrice)}</p>
                                                                         <button 
-                                                                            onClick={() => { setEditingBatchId(batch.id); setTempPrice(batch.buyingPrice); }} 
+                                                                            onClick={() => { 
+                                                                                setEditingBatchId(batch.id); 
+                                                                                setTempPrice(batch.buyingPrice); 
+                                                                                setTempQuantity(batch.quantity);
+                                                                                setTempOriginalQuantity(batch.originalQuantity ?? batch.quantity);
+                                                                            }} 
                                                                             className="p-1 text-slate-300 hover:text-blue-600 opacity-0 group-hover/price:opacity-100 transition-all"
                                                                         >
                                                                             <Edit3 size={12}/>
@@ -330,9 +377,9 @@ export const Stock: React.FC<StockProps> = ({ tenantId, shopName }) => {
                                                     </div>
                                                 </div>
                                             ))}
-                                            {p.batches.filter(b => b.quantity > 0).length === 0 && (
+                                            {(p.batches || []).length === 0 && (
                                                 <div className="text-center py-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                                                    Stock Depleted
+                                                    Stock Depleted (No Batches)
                                                 </div>
                                             )}
                                         </div>

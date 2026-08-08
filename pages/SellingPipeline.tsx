@@ -15,7 +15,7 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, shop
   const [activeFilter, setActiveFilter] = useState<OrderStatus | 'ALL'>('ALL');
   const [selectedProductId, setSelectedProductId] = useState<string>('ALL');
   const [products, setProducts] = useState<Product[]>([]);
-  const [counts, setCounts] = useState({ ALL: 0, PENDING: 0, OPEN_LEAD: 0, CONFIRMED: 0, HOLD: 0, NO_ANSWER: 0, REJECTED: 0, NO_ANSWER_REJECT: 0 });
+  const [counts, setCounts] = useState({ ALL: 0, PENDING: 0, OPEN_LEAD: 0, CONFIRMED: 0, HOLD: 0, NO_ANSWER: 0, NO_ANSWER_OPEN: 0, REJECTED: 0, NO_ANSWER_REJECT: 0 });
   const [refreshKey, setRefreshKey] = useState(0);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -30,6 +30,7 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, shop
             CONFIRMED: res.CONFIRMED || 0,
             HOLD: res.HOLD || 0,
             NO_ANSWER: res.NO_ANSWER || 0,
+            NO_ANSWER_OPEN: res.NO_ANSWER_OPEN || 0,
             REJECTED: res.REJECTED || 0,
             NO_ANSWER_REJECT: res.NO_ANSWER_REJECT || 0
         });
@@ -43,6 +44,7 @@ export const SellingPipeline: React.FC<SellingPipelineProps> = ({ tenantId, shop
     { label: 'CONFIRMED', status: OrderStatus.CONFIRMED, icon: <CheckCircle size={14} />, count: counts.CONFIRMED, color: 'text-emerald-500' },
     { label: 'HOLD', status: OrderStatus.HOLD, icon: <Pause size={14} />, count: counts.HOLD },
     { label: 'NO ANSWER', status: OrderStatus.NO_ANSWER, icon: <PhoneOff size={14} />, count: counts.NO_ANSWER, color: 'text-amber-500' },
+    { label: 'NO ANSWER OPEN', status: OrderStatus.NO_ANSWER_OPEN, icon: <PhoneOff size={14} />, count: counts.NO_ANSWER_OPEN, color: 'text-amber-600 font-extrabold' },
     { label: 'REJECTED', status: OrderStatus.REJECTED, icon: <XCircle size={14} />, count: counts.REJECTED, color: 'text-rose-500' },
     { label: 'NO ANSWER REJECT', status: OrderStatus.NO_ANSWER_REJECT, icon: <XCircle size={14} />, count: counts.NO_ANSWER_REJECT, color: 'text-rose-800' },
   ];

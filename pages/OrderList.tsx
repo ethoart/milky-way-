@@ -278,6 +278,7 @@ export const OrderList: React.FC<OrderListProps> = ({
       case OrderStatus.REJECTED: return 'bg-rose-600 text-white';
       case OrderStatus.NO_ANSWER_REJECT: return 'bg-rose-800 text-white';
       case OrderStatus.NO_ANSWER: return 'bg-amber-400 text-black';
+      case OrderStatus.NO_ANSWER_OPEN: return 'bg-amber-500 text-white';
       case OrderStatus.SHIPPED: return 'bg-indigo-600 text-white';
       case OrderStatus.HOLD: return 'bg-purple-600 text-white';
       case OrderStatus.RETURN_TRANSFER: return 'bg-indigo-500 text-white';
@@ -306,7 +307,7 @@ export const OrderList: React.FC<OrderListProps> = ({
               </div>
           </div>
           <div className="flex gap-2">
-            {(status === OrderStatus.PENDING || status === OrderStatus.NO_ANSWER) && (
+            {(status === OrderStatus.PENDING || status === OrderStatus.NO_ANSWER || status === OrderStatus.NO_ANSWER_OPEN) && (
               <button disabled={bulkProcessing} onClick={handleExportCSV} className="bg-emerald-600 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all disabled:opacity-50">
                 <Download size={14} /> Export CSV
               </button>
