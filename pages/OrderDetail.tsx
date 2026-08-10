@@ -35,6 +35,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   const [citySearch, setCitySearch] = useState('');
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
   const cityDropdownRef = useRef<HTMLDivElement>(null);
+  const isFreshlyLoadedRef = useRef<boolean>(false);
 
   const [localFormData, setLocalFormData] = useState({ 
     customerName: '', 
@@ -72,6 +73,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
       setTeamMembers(fetchedTeamMembers);
 
       if (data) {
+        isFreshlyLoadedRef.current = true;
         setOrder(data);
         setProducts(fetchedProducts);
         setTenant(fetchedTenant || null);
@@ -125,7 +127,8 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
   }, []);
 
   useEffect(() => {
-    if (order) {
+    if (order && isFreshlyLoadedRef.current) {
+      isFreshlyLoadedRef.current = false;
       if (order.status === OrderStatus.PENDING) {
         updateStatus(OrderStatus.OPEN_LEAD);
       } else if (order.status === OrderStatus.NO_ANSWER) {
