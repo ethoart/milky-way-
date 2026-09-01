@@ -77,7 +77,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
         setOrder(data);
         setProducts(fetchedProducts);
         setTenant(fetchedTenant || null);
-        db.getCustomerDetailedHistory(data.customerPhone, tenantId).then(h => setCustomerHistory(h.filter(x => x.id !== orderId))).catch(() => {});
+        db.getCustomerDetailedHistory(data.customerPhone, tenantId).then(h => setCustomerHistory(h)).catch(() => {});
 
         const initialCity = data.customerCity || ''; 
         setCitySearch(initialCity);
@@ -599,8 +599,9 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                             customerHistory.map(h => {
                                 const lastLog = h.logs && h.logs.length > 0 ? h.logs[h.logs.length - 1] : null;
                                 const lastUpdater = lastLog ? lastLog.user : (h.rescheduledBy || 'System');
+                                const isCurrent = h.id === orderId;
                                 return (
-                                    <div key={h.id} className="p-5 bg-slate-50 border border-slate-100 rounded-[2rem] flex flex-col gap-4 group hover:bg-white hover:shadow-lg transition-all">
+                                    <div key={h.id} className={`p-5 border rounded-[2rem] flex flex-col gap-4 group transition-all ${isCurrent ? 'bg-blue-50/40 border-blue-200 ring-2 ring-blue-500/10' : 'bg-slate-50 border-slate-100 hover:bg-white hover:shadow-lg'}`}>
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-3">
                                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center border font-black text-[12px] ${getStatusBadgeClass(h.status)}`}>
@@ -615,6 +616,11 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                                         {h.shopName && (
                                                             <span className="px-2 py-0.5 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg text-[8px] font-black uppercase tracking-tight">
                                                                 {h.shopName}
+                                                            </span>
+                                                        )}
+                                                        {isCurrent && (
+                                                            <span className="px-2 py-0.5 border border-blue-200 bg-blue-100 text-blue-700 rounded-lg text-[8px] font-black uppercase tracking-tight animate-pulse">
+                                                                Viewing Now
                                                             </span>
                                                         )}
                                                     </div>
@@ -643,7 +649,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ orderId, tenantId, onB
                                                     <HistoryIcon size={10} /> History
                                                 </button>
 
-                                                {onSelectOrder && (
+                                                {onSelectOrder && !isCurrent && (
                                                     <button 
                                                         onClick={(e) => { e.stopPropagation(); onSelectOrder(h.id); }} 
                                                         className="px-3 py-1.5 bg-slate-950 text-white hover:bg-black rounded-lg font-black uppercase text-[8px] flex items-center gap-1 transition-all"

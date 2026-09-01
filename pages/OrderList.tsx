@@ -307,7 +307,7 @@ export const OrderList: React.FC<OrderListProps> = ({
               </div>
           </div>
           <div className="flex gap-2">
-            {(status === OrderStatus.PENDING || status === OrderStatus.NO_ANSWER || status === OrderStatus.NO_ANSWER_OPEN) && (
+            {(status === OrderStatus.PENDING || status === OrderStatus.NO_ANSWER || status === OrderStatus.NO_ANSWER_OPEN || status === OrderStatus.CONFIRMED) && (
               <button disabled={bulkProcessing} onClick={handleExportCSV} className="bg-emerald-600 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all disabled:opacity-50">
                 <Download size={14} /> Export CSV
               </button>

@@ -1154,17 +1154,31 @@ async function isCustomerBlocked(phone1, phone2) {
         const masterDb = await connectCentral();
         const tenants = await masterDb.collection('tenants').find({}).toArray();
         
+        const queryConditions = [];
+        phones.forEach(p => {
+            const cleanP = String(p).replace(/\D/g, '');
+            const last9 = cleanP.slice(-9);
+            if (last9.length >= 9) {
+                const pattern = last9.split('').join('\\D*');
+                const regex = new RegExp(pattern + '$');
+                queryConditions.push({ customerPhone: regex });
+                queryConditions.push({ customerPhone2: regex });
+            } else {
+                queryConditions.push({ customerPhone: p });
+                queryConditions.push({ customerPhone2: p });
+            }
+        });
+
+        if (queryConditions.length === 0) return false;
+
         let negativeRecordCount = 0;
         
         await Promise.all(tenants.map(async (t) => {
             try {
                 const tDb = await getTenantDb(t.id);
                 const count = await tDb.collection('orders').countDocuments({
-                    $or: [
-                        { customerPhone: { $in: phones } },
-                        { customerPhone2: { $in: phones } }
-                    ],
-                    status: { $in: ['REJECTED', 'NO_ANSWER_REJECT', 'NO_ANSWER'] }
+                    $or: queryConditions,
+                    status: { $in: ['REJECTED', 'NO_ANSWER_REJECT', 'RETURN_COMPLETED'] }
                 });
                 negativeRecordCount += count;
             } catch (err) {
@@ -1172,7 +1186,7 @@ async function isCustomerBlocked(phone1, phone2) {
             }
         }));
         
-        return negativeRecordCount >= 2;
+        return negativeRecordCount >= 3;
     } catch (err) {
         console.error("Error in isCustomerBlocked master lookup:", err);
         return false;
@@ -1233,7 +1247,7 @@ app.post('/api/orders', async (req, res) => {
             if (isNew && isLeadStatus && !isDevAdmin) {
                 const blocked = await isCustomerBlocked(order.customerPhone, order.customerPhone2);
                 if (blocked) {
-                    return res.status(400).json({ error: 'Lead Blocked: Customer has 2 or more rejected/no-answer records in history.' });
+                    return res.status(400).json({ error: 'Lead Blocked: Customer has 3 or more rejected, no-answer-rejected, or return-completed records in history.' });
                 }
             }
 
@@ -1669,16 +1683,22 @@ app.post('/api/process-return', async (req, res) => {
         const db = await getTenantDb(tenantId);
         const order = await db.collection('orders').findOne({ tenantId, $or: [{ id: trackingOrId }, { trackingNumber: trackingOrId }] });
         if (!order) return res.status(404).json({ error: 'Not Found' });
-        order.status = 'RETURN_COMPLETED';
-        order.returnCompletedAt = new Date().toISOString();
-        if (!order.returnedAt) {
-            order.returnedAt = order.returnCompletedAt;
+
+        let alreadyProcessed = false;
+        if (order.status === 'RETURN_COMPLETED') {
+            alreadyProcessed = true;
+        } else {
+            order.status = 'RETURN_COMPLETED';
+            order.returnCompletedAt = new Date().toISOString();
+            if (!order.returnedAt) {
+                order.returnedAt = order.returnCompletedAt;
+            }
+            if (!order.logs) order.logs = [];
+            order.logs.push({ id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to RETURN_COMPLETED`, timestamp: order.returnCompletedAt, user: user || 'System' });
+            await db.collection('orders').updateOne({ id: order.id }, { $set: { ...clean(order), tenantId } });
+            clearTenantCache(tenantId);
         }
-        if (!order.logs) order.logs = [];
-        order.logs.push({ id: `l-${Date.now()}`, message: `Status Protocol: Order transitioned to RETURN_COMPLETED`, timestamp: order.returnCompletedAt, user: user || 'System' });
-        await db.collection('orders').updateOne({ id: order.id }, { $set: { ...clean(order), tenantId } });
-        clearTenantCache(tenantId);
-        res.json(clean(order));
+        res.json({ ...clean(order), alreadyProcessed });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
