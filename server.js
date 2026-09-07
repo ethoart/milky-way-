@@ -1685,9 +1685,10 @@ app.post('/api/process-return', async (req, res) => {
         if (!order) return res.status(404).json({ error: 'Not Found' });
 
         let alreadyProcessed = false;
-        if (order.status === 'RETURN_COMPLETED') {
+        if (order.warehouseScanned) {
             alreadyProcessed = true;
         } else {
+            order.warehouseScanned = true;
             order.status = 'RETURN_COMPLETED';
             order.returnCompletedAt = new Date().toISOString();
             if (!order.returnedAt) {

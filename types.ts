@@ -123,6 +123,7 @@ export interface Order {
   deliveredAt?: string;
   returnedAt?: string; // New field for return analytics
   returnCompletedAt?: string; // New field for restocking analytics
+  warehouseScanned?: boolean; // New field to track warehouse scan separate from courier status
   trackingNumber?: string;
   courierStatus?: string;
   isPrinted: boolean;
