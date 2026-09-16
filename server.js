@@ -35,7 +35,6 @@ async function connectCentral() {
         }
         centralDbPromise = (async () => {
             const mongoOptions = {
-                serverApi: { version: ServerApiVersion.v1, strict: false, deprecationErrors: false },
                 connectTimeoutMS: 20000,
                 socketTimeoutMS: 45000,
                 maxPoolSize: 50,
@@ -101,6 +100,20 @@ async function connectCentral() {
         })();
         centralDbPromise.catch(err => {
             centralDbPromise = null;
+            const msg = err?.message || String(err);
+            if (msg.includes('alert number 80') || msg.includes('alert internal error') || msg.includes('0A000438')) {
+                console.error("\n========================================================");
+                console.error(">>> [CRITICAL MONGODB ATLAS TLS ALERT 80]");
+                console.error(">>> Reason: MongoDB Atlas rejected the TLS handshake.");
+                console.error(">>> Primary Cause: The server's IP address is NOT whitelisted in MongoDB Atlas Network Access!");
+                console.error(">>> Resolution:");
+                console.error(">>>   1. Open https://cloud.mongodb.com and go to 'Network Access'.");
+                console.error(">>>   2. Click 'Add IP Address' -> Add your current server IP or '0.0.0.0/0' (Allow anywhere).");
+                console.error(">>>   3. Save changes and wait 1-2 minutes for Atlas to deploy.");
+                console.error("========================================================\n");
+            } else {
+                console.error(">>> MongoDB Connection Error:", err);
+            }
         });
     }
     return centralDbPromise;
@@ -223,7 +236,7 @@ async function getTenantDb(tenantId) {
                 maxPoolSize: 50,
                 connectTimeoutMS: 20000,
                 socketTimeoutMS: 45000,
-                serverApi: { version: ServerApiVersion.v1, strict: false, deprecationErrors: false }
+                retryWrites: true
             };
             if (tenantConfig.mongoUri.startsWith('mongodb+srv://') || tenantConfig.mongoUri.includes('tls=true') || tenantConfig.mongoUri.includes('ssl=true')) {
                 tenantOptions.tls = true;

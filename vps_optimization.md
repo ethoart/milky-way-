@@ -29,6 +29,35 @@ I have done the following:
 When starting your VPS with `pm2 restart oms-server`, you weren't setting `NODE_ENV=production`. This caused the heavy Vite Development Server to run in the background. On a small VPS, this leads to immediate memory exhaustion (OOM Killed), resulting in instant 502 errors!
 *I patched `server.js` to automatically detect your production build and bypass Vite entirely, saving massive amounts of memory.*
 
+## 5. Fix "SSL routines:ssl3_read_bytes:tlsv1 alert internal error (SSL Alert 80)"
+If `/api/login` or `/api/tenants` fails with:
+`Error: 00583CDF22770000:error:0A000438:SSL routines:ssl3_read_bytes:tlsv1 alert internal error:../ssl/record/rec_layer_s3.c:1599:SSL alert number 80`
+
+### What causes this:
+This is **MongoDB Atlas rejecting the connection during TLS handshake**. In MongoDB Atlas, when a machine's IP address is **NOT** whitelisted in the IP Access List, Atlas immediately terminates the TLS connection by sending TLS Alert 80 (`internal_error`).
+
+### How to fix it (2-minute fix):
+1. **Find your VPS public IP address**:
+   On your VPS terminal, run:
+   ```bash
+   curl -s https://checkip.amazonaws.com
+   ```
+2. **Whitelist the IP in MongoDB Atlas**:
+   - Go to [cloud.mongodb.com](https://cloud.mongodb.com) and log in.
+   - In the left-hand navigation under **Security**, click **Network Access**.
+   - Click the green **+ Add IP Address** button on the right.
+   - Either:
+     - Enter the IP from Step 1 with comment `AWS VPS`.
+     - OR, click **ALLOW ACCESS FROM ANYWHERE** (`0.0.0.0/0`) if you want access from all instances/development setups.
+   - Click **Confirm**.
+3. **Wait 1-2 minutes**: Atlas takes about 60 seconds to deploy the new network rule.
+4. **Pull updates and restart server on VPS**:
+   ```bash
+   cd ~/hyperoms
+   git pull origin main
+   pm2 restart oms-server
+   ```
+
 ## Final update required on your VPS:
 ```bash
 # Pull the latest architecture fixes

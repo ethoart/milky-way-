@@ -12,11 +12,11 @@ async function getConnectedClient(uri: string) {
   if (uri === CENTRAL_URI && cachedCentralClient) return cachedCentralClient;
   if (tenantClients.has(uri)) return tenantClients.get(uri)!;
   const options: any = {
-    serverApi: { version: ServerApiVersion.v1, strict: false, deprecationErrors: false },
     maxPoolSize: 10,
     minPoolSize: 2,
     connectTimeoutMS: 20000,
     socketTimeoutMS: 45000,
+    retryWrites: true,
   };
   if (uri.startsWith('mongodb+srv://') || uri.includes('tls=true') || uri.includes('ssl=true')) {
     options.tls = true;
