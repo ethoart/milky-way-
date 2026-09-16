@@ -34,11 +34,17 @@ async function connectCentral() {
             return Promise.reject(new Error("MONGODB_URI is missing"));
         }
         centralDbPromise = (async () => {
-            const client = new MongoClient(MONGODB_URI, {
-                serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
-                connectTimeoutMS: 15000,
-                maxPoolSize: 50
-            });
+            const mongoOptions = {
+                serverApi: { version: ServerApiVersion.v1, strict: false, deprecationErrors: false },
+                connectTimeoutMS: 20000,
+                socketTimeoutMS: 45000,
+                maxPoolSize: 50,
+                retryWrites: true
+            };
+            if (MONGODB_URI.startsWith('mongodb+srv://') || MONGODB_URI.includes('tls=true') || MONGODB_URI.includes('ssl=true')) {
+                mongoOptions.tls = true;
+            }
+            const client = new MongoClient(MONGODB_URI, mongoOptions);
             await client.connect();
             console.log(">>> MW-OMS Master Node Active.");
             const db = client.db(CENTRAL_DB_NAME);
@@ -213,7 +219,16 @@ async function getTenantDb(tenantId) {
     const tenantConfig = await db.collection('tenants').findOne({ id: tenantId });
     if (tenantConfig && tenantConfig.mongoUri) {
         try {
-            const tClient = new MongoClient(tenantConfig.mongoUri, { maxPoolSize: 50 });
+            const tenantOptions = { 
+                maxPoolSize: 50,
+                connectTimeoutMS: 20000,
+                socketTimeoutMS: 45000,
+                serverApi: { version: ServerApiVersion.v1, strict: false, deprecationErrors: false }
+            };
+            if (tenantConfig.mongoUri.startsWith('mongodb+srv://') || tenantConfig.mongoUri.includes('tls=true') || tenantConfig.mongoUri.includes('ssl=true')) {
+                tenantOptions.tls = true;
+            }
+            const tClient = new MongoClient(tenantConfig.mongoUri, tenantOptions);
             await tClient.connect();
             const tDb = tClient.db();
             tenantDbs.set(tenantId, tDb);
