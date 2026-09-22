@@ -362,6 +362,10 @@ class BackendService {
     return this.request('/process-return', 'POST', { trackingOrId, tenantId, user });
   }
 
+  async shareLeads(sourceTenantId: string, targetTenantIds: string[], orderIds: string[], user: string): Promise<any> {
+    return this.request('/orders/share', 'POST', { sourceTenantId, targetTenantIds, orderIds, user });
+  }
+
   async getSecurityLogs(): Promise<any[]> {
     return this.request('/security-logs', 'GET');
   }

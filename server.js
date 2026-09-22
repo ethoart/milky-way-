@@ -1288,6 +1288,169 @@ app.post('/api/orders', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/orders/share', async (req, res) => {
+    try {
+        const { sourceTenantId, targetTenantIds, orderIds, user } = req.body;
+        if (!sourceTenantId || !targetTenantIds || !Array.isArray(targetTenantIds) || !orderIds || !Array.isArray(orderIds)) {
+            return res.status(400).json({ error: 'Missing required fields for sharing' });
+        }
+
+        const sourceDb = await getTenantDb(sourceTenantId);
+        const sourceOrdersCol = sourceDb.collection('orders');
+        const sourceProductsCol = sourceDb.collection('products');
+
+        // Fetch source orders
+        const sourceOrders = await sourceOrdersCol.find({ id: { $in: orderIds }, tenantId: sourceTenantId }).toArray();
+        if (sourceOrders.length === 0) {
+            return res.status(404).json({ error: 'No orders found to share' });
+        }
+
+        // Fetch all source products used in these orders
+        const productIds = [];
+        sourceOrders.forEach(o => {
+            o.items?.forEach(item => {
+                if (item.productId) productIds.push(item.productId);
+            });
+        });
+        const sourceProducts = await sourceProductsCol.find({ id: { $in: productIds } }).toArray();
+        const sourceProductsMap = new Map(sourceProducts.map(p => [p.id, p]));
+
+        // Determine actual target tenants
+        let resolvedTargets = [...targetTenantIds];
+        if (targetTenantIds.includes('all')) {
+            const centralDb = await connectCentral();
+            const activeTenants = await centralDb.collection('tenants').find({ isActive: true }).toArray();
+            resolvedTargets = activeTenants.map(t => t.id).filter(id => id !== sourceTenantId);
+        }
+
+        const shareSummary = [];
+
+        for (const targetTenantId of resolvedTargets) {
+            try {
+                const targetDb = await getTenantDb(targetTenantId);
+                const targetOrdersCol = targetDb.collection('orders');
+                const targetProductsCol = targetDb.collection('products');
+
+                // Get existing products in target tenant to check SKU match
+                const targetProducts = await targetProductsCol.find({}).toArray();
+                
+                const targetSkuMap = new Map();
+                targetProducts.forEach(p => {
+                    if (p.sku) targetSkuMap.set(p.sku.toLowerCase().trim(), p);
+                    if (p.name) targetSkuMap.set(p.name.toLowerCase().trim(), p);
+                });
+
+                let sharedCount = 0;
+                let duplicateCount = 0;
+
+                for (const order of sourceOrders) {
+                    const targetOrderId = `shared-${order.id}`;
+                    
+                    // Check if already shared
+                    const existingOrder = await targetOrdersCol.findOne({ id: targetOrderId });
+                    if (existingOrder) {
+                        duplicateCount++;
+                        continue;
+                    }
+
+                    // Map order items and ensure products exist in target tenant
+                    const mappedItems = [];
+                    for (const item of (order.items || [])) {
+                        let targetProduct = null;
+                        const sourceProd = sourceProductsMap.get(item.productId);
+                        const itemSku = sourceProd?.sku || item.sku || item.name;
+
+                        if (itemSku) {
+                            targetProduct = targetSkuMap.get(itemSku.toLowerCase().trim());
+                        }
+
+                        if (!targetProduct) {
+                            // Create product in target tenant
+                            const newProductId = `p-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                            const newProduct = {
+                                id: newProductId,
+                                tenantId: targetTenantId,
+                                sku: sourceProd?.sku || itemSku || 'GENERIC-SKU',
+                                name: sourceProd?.name || item.name || 'Shared Product',
+                                price: sourceProd?.price || item.price || 0,
+                                batches: [{
+                                    id: `batch-${Date.now()}`,
+                                    quantity: 100,
+                                    buyingPrice: (sourceProd?.price || item.price || 0) * 0.5,
+                                    createdAt: new Date().toISOString()
+                                }]
+                            };
+                            await targetProductsCol.insertOne(newProduct);
+                            targetProduct = newProduct;
+                            if (newProduct.sku) targetSkuMap.set(newProduct.sku.toLowerCase().trim(), newProduct);
+                        }
+
+                        mappedItems.push({
+                            productId: targetProduct.id,
+                            sku: targetProduct.sku,
+                            name: targetProduct.name,
+                            price: targetProduct.price,
+                            quantity: item.quantity || 1
+                        });
+                    }
+
+                    const totalAmount = mappedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+                    const sharedOrder = {
+                        id: targetOrderId,
+                        tenantId: targetTenantId,
+                        customerName: order.customerName,
+                        customerPhone: order.customerPhone,
+                        customerPhone2: order.customerPhone2 || '',
+                        customerAddress: order.customerAddress,
+                        customerCity: order.customerCity || '',
+                        parcelWeight: order.parcelWeight || '1',
+                        items: mappedItems,
+                        totalAmount: totalAmount,
+                        status: order.status || 'CONFIRMED',
+                        createdAt: new Date().toISOString(),
+                        isPrinted: false,
+                        openedBy: user || 'System Share',
+                        logs: [
+                            {
+                                id: `l-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                                message: `Shared from shop: ${sourceTenantId}`,
+                                timestamp: new Date().toISOString(),
+                                user: user || 'System Share'
+                            },
+                            ...(order.logs || []).map(l => ({ ...l, id: `l-orig-${l.id}` }))
+                        ]
+                    };
+
+                    await targetOrdersCol.insertOne(sharedOrder);
+                    sharedCount++;
+                }
+
+                clearTenantCache(targetTenantId);
+                shareSummary.push({
+                    tenantId: targetTenantId,
+                    shared: sharedCount,
+                    duplicate: duplicateCount,
+                    success: true
+                });
+
+            } catch (err) {
+                console.error(`Error sharing to tenant ${targetTenantId}:`, err);
+                shareSummary.push({
+                    tenantId: targetTenantId,
+                    success: false,
+                    error: err.message
+                });
+            }
+        }
+
+        res.json({ success: true, summary: shareSummary });
+    } catch (e) {
+        console.error("Critical error in share endpoint:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.delete('/api/orders', async (req, res) => {
     try {
         const { tenantId, id, purge } = req.query;

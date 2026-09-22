@@ -397,6 +397,168 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
+    if (path === '/orders/share' && method === 'POST') {
+      const { sourceTenantId, targetTenantIds, orderIds, user } = bodyData;
+      if (!sourceTenantId || !targetTenantIds || !Array.isArray(targetTenantIds) || !orderIds || !Array.isArray(orderIds)) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing required fields for sharing' }) };
+      }
+
+      // Fetch source client & DB
+      const sourceConfig = await tenantsCol.findOne({ id: sourceTenantId });
+      if (!sourceConfig || !sourceConfig.mongoUri) {
+        return { statusCode: 404, headers, body: JSON.stringify({ error: 'Source tenant database not found' }) };
+      }
+      const sourceClient = await getConnectedClient(sourceConfig.mongoUri);
+      const sourceDb = sourceClient.db();
+      const sourceOrdersCol = sourceDb.collection('orders');
+      const sourceProductsCol = sourceDb.collection('products');
+
+      // Fetch source orders
+      const sourceOrders = await sourceOrdersCol.find({ id: { $in: orderIds }, tenantId: sourceTenantId }).toArray();
+      if (sourceOrders.length === 0) {
+        return { statusCode: 404, headers, body: JSON.stringify({ error: 'No orders found to share' }) };
+      }
+
+      // Map source products by ID
+      const productIds = [];
+      sourceOrders.forEach((o: any) => {
+        o.items?.forEach((item: any) => {
+          if (item.productId) productIds.push(item.productId);
+        });
+      });
+      const sourceProducts = await sourceProductsCol.find({ id: { $in: productIds } }).toArray();
+      const sourceProductsMap = new Map<string, any>(sourceProducts.map((p: any) => [p.id, p]));
+
+      // Determine target tenant IDs
+      let resolvedTargets = [...targetTenantIds];
+      if (targetTenantIds.includes('all')) {
+        const activeTenants = await tenantsCol.find({ isActive: true }).toArray();
+        resolvedTargets = activeTenants.map((t: any) => t.id).filter(id => id !== sourceTenantId);
+      }
+
+      const shareSummary: any[] = [];
+
+      for (const targetTenantId of resolvedTargets) {
+        try {
+          const targetConfig = await tenantsCol.findOne({ id: targetTenantId });
+          if (!targetConfig || !targetConfig.mongoUri) {
+            shareSummary.push({ tenantId: targetTenantId, success: false, error: 'Database config missing' });
+            continue;
+          }
+          const targetClient = await getConnectedClient(targetConfig.mongoUri);
+          const targetDb = targetClient.db();
+          const targetOrdersCol = targetDb.collection('orders');
+          const targetProductsCol = targetDb.collection('products');
+
+          // Get existing products in target tenant to check SKU match
+          const targetProducts = await targetProductsCol.find({}).toArray();
+          const targetSkuMap = new Map<string, any>();
+          targetProducts.forEach((p: any) => {
+            if (p.sku) targetSkuMap.set(p.sku.toLowerCase().trim(), p);
+            if (p.name) targetSkuMap.set(p.name.toLowerCase().trim(), p);
+          });
+
+          let sharedCount = 0;
+          let duplicateCount = 0;
+
+          for (const order of sourceOrders) {
+            const targetOrderId = `shared-${order.id}`;
+            const existingOrder = await targetOrdersCol.findOne({ id: targetOrderId });
+            if (existingOrder) {
+              duplicateCount++;
+              continue;
+            }
+
+            const mappedItems: any[] = [];
+            for (const item of (order.items || [])) {
+              let targetProduct = null;
+              const sourceProd = sourceProductsMap.get(item.productId);
+              const itemSku = sourceProd?.sku || item.sku || item.name;
+
+              if (itemSku) {
+                targetProduct = targetSkuMap.get(itemSku.toLowerCase().trim());
+              }
+
+              if (!targetProduct) {
+                const newProductId = `p-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                const newProduct = {
+                  id: newProductId,
+                  tenantId: targetTenantId,
+                  sku: sourceProd?.sku || itemSku || 'GENERIC-SKU',
+                  name: sourceProd?.name || item.name || 'Shared Product',
+                  price: sourceProd?.price || item.price || 0,
+                  batches: [{
+                    id: `batch-${Date.now()}`,
+                    quantity: 100,
+                    buyingPrice: (sourceProd?.price || item.price || 0) * 0.5,
+                    createdAt: new Date().toISOString()
+                  }]
+                };
+                await targetProductsCol.insertOne(newProduct);
+                targetProduct = newProduct;
+                if (newProduct.sku) targetSkuMap.set(newProduct.sku.toLowerCase().trim(), newProduct);
+              }
+
+              mappedItems.push({
+                productId: targetProduct.id,
+                sku: targetProduct.sku,
+                name: targetProduct.name,
+                price: targetProduct.price,
+                quantity: item.quantity || 1
+              });
+            }
+
+            const totalAmount = mappedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+            const sharedOrder = {
+              id: targetOrderId,
+              tenantId: targetTenantId,
+              customerName: order.customerName,
+              customerPhone: order.customerPhone,
+              customerPhone2: order.customerPhone2 || '',
+              customerAddress: order.customerAddress,
+              customerCity: order.customerCity || '',
+              parcelWeight: order.parcelWeight || '1',
+              items: mappedItems,
+              totalAmount: totalAmount,
+              status: order.status || 'CONFIRMED',
+              createdAt: new Date().toISOString(),
+              isPrinted: false,
+              openedBy: user || 'System Share',
+              logs: [
+                {
+                  id: `l-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                  message: `Shared from shop: ${sourceTenantId}`,
+                  timestamp: new Date().toISOString(),
+                  user: user || 'System Share'
+                },
+                ...(order.logs || []).map((l: any) => ({ ...l, id: `l-orig-${l.id}` }))
+              ]
+            };
+
+            await targetOrdersCol.insertOne(sharedOrder);
+            sharedCount++;
+          }
+
+          shareSummary.push({
+            tenantId: targetTenantId,
+            shared: sharedCount,
+            duplicate: duplicateCount,
+            success: true
+          });
+
+        } catch (err: any) {
+          shareSummary.push({
+            tenantId: targetTenantId,
+            success: false,
+            error: err.message
+          });
+        }
+      }
+
+      return { statusCode: 200, headers, body: JSON.stringify({ success: true, summary: shareSummary }) };
+    }
+
     if (path === '/ship-order' && method === 'POST') {
         const { order } = bodyData;
         const ordersCol = activeDb.collection('orders');

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../services/mockBackend';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency } from '../utils/helpers';
-import { Search, ChevronRight, Trash2, CheckSquare, Square, Truck, Printer, ExternalLink, ChevronLeft, Loader2, Download } from 'lucide-react';
+import { Search, ChevronRight, Trash2, CheckSquare, Square, Truck, Printer, ExternalLink, ChevronLeft, Loader2, Download, Share2, XCircle, CheckCircle } from 'lucide-react';
 
 interface OrderListProps {
   tenantId: string;
@@ -42,6 +42,49 @@ export const OrderList: React.FC<OrderListProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [bulkProgressMsg, setBulkProgressMsg] = useState('');
+
+  // Share Lead States
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [tenants, setTenants] = useState<any[]>([]);
+  const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
+  const [shareAllShops, setShareAllShops] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareResult, setShareResult] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (showShareModal) {
+      db.getTenants().then(res => {
+        setTenants((res || []).filter((t: any) => t.id !== tenantId && t.isActive));
+      }).catch(err => {
+        console.error("Error loading tenants for sharing:", err);
+      });
+    }
+  }, [showShareModal, tenantId]);
+
+  const handleShareLeads = async () => {
+    if (!shareAllShops && selectedTenantIds.length === 0) {
+      alert("Please select at least one destination shop.");
+      return;
+    }
+    
+    setIsSharing(true);
+    setShareResult(null);
+
+    const currentUserStr = localStorage.getItem('mw_user') 
+      ? JSON.parse(localStorage.getItem('mw_user')!).username 
+      : 'System';
+
+    const targetIds = shareAllShops ? ['all'] : selectedTenantIds;
+
+    try {
+      const res = await db.shareLeads(tenantId, targetIds, selectedIds, currentUserStr);
+      setShareResult(res);
+    } catch (err: any) {
+      alert(err.message || "Failed to share leads");
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -312,6 +355,9 @@ export const OrderList: React.FC<OrderListProps> = ({
                 <Download size={14} /> Export CSV
               </button>
             )}
+            <button disabled={bulkProcessing} onClick={() => setShowShareModal(true)} className="bg-purple-600 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:bg-purple-700 transition-all disabled:opacity-50">
+              <Share2 size={14} /> Share Leads
+            </button>
             {status === OrderStatus.CONFIRMED && (
               <button disabled={bulkProcessing} onClick={handleBulkShip} className="bg-blue-600 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50">
                 <Truck size={14} /> Bulk Ship
@@ -446,6 +492,182 @@ export const OrderList: React.FC<OrderListProps> = ({
             <button disabled={currentPage === totalPages || totalPages === 0 || isLoading} onClick={() => setCurrentPage(totalPages)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-[10px] font-black uppercase hover:bg-slate-200 disabled:opacity-30">Last</button>
           </div>
       </div>
+
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl p-10 max-w-xl w-full mx-4 space-y-6 relative overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center border border-purple-100">
+                  <Share2 size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tighter uppercase">Share Leads</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">Cross-Shop Distribution</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setShowShareModal(false); setShareResult(null); setSelectedTenantIds([]); setShareAllShops(false); }}
+                className="p-2 text-slate-400 hover:text-slate-900 rounded-xl hover:bg-slate-50 transition-all"
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            {!shareResult ? (
+              <div className="space-y-6">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                    Select target shops to receive <strong className="text-purple-600">{selectedIds.length}</strong> selected leads:
+                  </p>
+                </div>
+
+                {/* Option 1: Share all shops */}
+                <div 
+                  onClick={() => {
+                    setShareAllShops(!shareAllShops);
+                    if (!shareAllShops) setSelectedTenantIds([]);
+                  }}
+                  className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${shareAllShops ? 'border-purple-600 bg-purple-50/20' : 'border-slate-100 bg-slate-50/50 hover:border-slate-200'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${shareAllShops ? 'bg-purple-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                      <CheckCircle size={16} />
+                    </div>
+                    <div>
+                      <span className="text-sm font-black uppercase text-slate-900">Share with ALL shops</span>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mt-0.5">Publish to every active node in cluster</p>
+                    </div>
+                  </div>
+                  <div className={shareAllShops ? 'text-purple-600' : 'text-slate-300'}>
+                    {shareAllShops ? <CheckSquare size={22} /> : <Square size={22} />}
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div className="flex items-center gap-4 text-[10px] font-black text-slate-300 uppercase tracking-widest my-2">
+                  <div className="flex-1 h-px bg-slate-100"></div>
+                  <span>OR SELECT SPECIFIC SHOPS</span>
+                  <div className="flex-1 h-px bg-slate-100"></div>
+                </div>
+
+                {/* Specific Tenants List */}
+                <div className="max-h-[220px] overflow-y-auto space-y-3 pr-1 no-scrollbar">
+                  {tenants.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-slate-400 font-bold uppercase tracking-wider">No other active shops available</div>
+                  ) : (
+                    tenants.map(t => {
+                      const isSelected = selectedTenantIds.includes(t.id);
+                      return (
+                        <div 
+                          key={t.id}
+                          onClick={() => {
+                            if (shareAllShops) setShareAllShops(false);
+                            setSelectedTenantIds(prev => 
+                              prev.includes(t.id) ? prev.filter(id => id !== t.id) : [...prev, t.id]
+                            );
+                          }}
+                          className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between ${isSelected ? 'border-purple-600 bg-purple-50/10' : 'border-slate-100 bg-white hover:border-slate-200'}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-black uppercase text-slate-900">{t.settings?.shopName || t.name}</span>
+                            <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full uppercase">ID: {t.id}</span>
+                          </div>
+                          <div className={isSelected ? 'text-purple-600' : 'text-slate-300'}>
+                            {isSelected ? <CheckSquare size={20} /> : <Square size={20} />}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-4 pt-4 border-t border-slate-50">
+                  <button 
+                    disabled={isSharing}
+                    onClick={() => { setShowShareModal(false); setSelectedTenantIds([]); setShareAllShops(false); }}
+                    className="flex-1 py-4 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    disabled={isSharing || (!shareAllShops && selectedTenantIds.length === 0)}
+                    onClick={handleShareLeads}
+                    className="flex-[2] py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSharing ? (
+                      <>
+                        <Loader2 className="animate-spin" size={16} />
+                        SHARING...
+                      </>
+                    ) : (
+                      <>
+                        <Share2 size={16} />
+                        Confirm Share
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              // Results Display
+              <div className="space-y-6">
+                <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[1.5rem] flex items-center gap-4 text-emerald-800">
+                  <CheckCircle size={32} className="text-emerald-500 shrink-0" />
+                  <div>
+                    <h4 className="text-sm font-black uppercase tracking-wider">Sharing Pipeline Triggered</h4>
+                    <p className="text-[11px] font-bold text-emerald-600 mt-1 uppercase">Distribution execution complete</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Distribution Report</p>
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 no-scrollbar">
+                    {shareResult.summary?.map((report: any) => (
+                      <div key={report.tenantId} className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-black uppercase text-slate-900">{report.tenantId}</span>
+                          <div className="flex gap-2 mt-1">
+                            <span className="text-[9px] font-bold text-slate-500 uppercase">{report.shared} SHARED</span>
+                            {report.duplicate > 0 && (
+                              <span className="text-[9px] font-bold text-amber-600 uppercase">{report.duplicate} DUPLICATES SKIPPED</span>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          {report.success ? (
+                            <span className="px-2 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded text-[9px] font-black uppercase">Success</span>
+                          ) : (
+                            <span className="px-2 py-1 bg-rose-100 text-rose-800 border border-rose-200 rounded text-[9px] font-black uppercase">Failed: {report.error}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => {
+                    setShowShareModal(false);
+                    setShareResult(null);
+                    setSelectedTenantIds([]);
+                    setShareAllShops(false);
+                    setSelectedIds([]);
+                    if (onRefresh) onRefresh();
+                  }}
+                  className="w-full py-4 bg-black text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-lg transition-all"
+                >
+                  Close & Refresh Registry
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
