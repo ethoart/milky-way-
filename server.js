@@ -428,7 +428,7 @@ app.post('/api/login', async (req, res) => {
                 id: 'admin-bootstrap',
                 username: 'admin',
                 password: 'admin',
-                role: 'ADMIN',
+                role: 'DEV_ADMIN',
                 name: 'Emergency Bootstrap Admin',
                 tenantId: 'dev'
             };
@@ -2154,6 +2154,151 @@ app.get('/api/tenant-last-action', (req, res) => {
 
 app.get('/api/security-logs', async (req, res) => {
     res.json([]);
+});
+
+app.get('/api/admin/unified-backup', async (req, res) => {
+    try {
+        console.log(">>> Initiating unified system backup...");
+        const db = await connectCentral();
+        
+        // 1. Fetch central collections
+        const users = await db.collection('users').find({}).toArray();
+        const tenants = await db.collection('tenants').find({}).toArray();
+        
+        let globalCities = [];
+        try {
+            globalCities = await db.collection('global_cities').find({}).toArray();
+        } catch (e) {
+            console.warn("Could not fetch global_cities, using empty array:", e);
+        }
+
+        // 2. Fetch tenant-specific collections (orders and products)
+        const tenantsData = {};
+        for (const t of tenants) {
+            try {
+                console.log(`>>> Backing up data for tenant: ${t.id}`);
+                const tDb = await getTenantDb(t.id);
+                
+                const orders = await tDb.collection('orders').find({ tenantId: t.id }).toArray();
+                const products = await tDb.collection('products').find({ tenantId: t.id }).toArray();
+                
+                tenantsData[t.id] = {
+                    orders: orders.map(clean),
+                    products: products.map(clean)
+                };
+            } catch (err) {
+                console.error(`Error exporting data for tenant ${t.id}:`, err);
+                tenantsData[t.id] = {
+                    orders: [],
+                    products: [],
+                    error: err.message
+                };
+            }
+        }
+
+        const backupPayload = {
+            central: {
+                users: users.map(clean),
+                tenants: tenants.map(clean),
+                global_cities: globalCities.map(clean)
+            },
+            tenantsData
+        };
+
+        console.log(">>> Unified backup compilation complete.");
+        res.json(backupPayload);
+    } catch (e) {
+        console.error(">>> Unified backup execution failed:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/admin/unified-restore', async (req, res) => {
+    try {
+        console.log(">>> Initiating unified system restore...");
+        const backupPayload = req.body;
+        
+        if (!backupPayload || !backupPayload.central || !backupPayload.tenantsData) {
+            return res.status(400).json({ error: "Invalid unified backup schema format. Missing central or tenantsData." });
+        }
+
+        const db = await connectCentral();
+
+        // 1. Purge & Restore Central Collections
+        console.log(">>> Restoring central users...");
+        await db.collection('users').deleteMany({});
+        if (backupPayload.central.users && backupPayload.central.users.length > 0) {
+            await db.collection('users').insertMany(backupPayload.central.users.map(clean));
+        }
+
+        console.log(">>> Restoring central tenants list...");
+        await db.collection('tenants').deleteMany({});
+        if (backupPayload.central.tenants && backupPayload.central.tenants.length > 0) {
+            await db.collection('tenants').insertMany(backupPayload.central.tenants.map(clean));
+        }
+
+        console.log(">>> Restoring global cities...");
+        await db.collection('global_cities').deleteMany({});
+        if (backupPayload.central.global_cities && backupPayload.central.global_cities.length > 0) {
+            await db.collection('global_cities').insertMany(backupPayload.central.global_cities.map(clean));
+        }
+
+        // 2. Clear out existing cache & connections map so new tenant connection info applies
+        tenantDbs.clear();
+
+        // 3. Purge & Restore Tenant Collections
+        const summary = [];
+        const restoredTenants = backupPayload.central.tenants || [];
+        
+        for (const tenant of restoredTenants) {
+            const tenantId = tenant.id;
+            try {
+                console.log(`>>> Restoring data for tenant: ${tenantId}`);
+                const tDb = await getTenantDb(tenantId);
+
+                // Purge orders and products for this tenant
+                await tDb.collection('orders').deleteMany({ tenantId });
+                await tDb.collection('products').deleteMany({ tenantId });
+
+                const tenantBackup = backupPayload.tenantsData[tenantId] || { orders: [], products: [] };
+                
+                let restoredOrdersCount = 0;
+                let restoredProductsCount = 0;
+
+                if (tenantBackup.orders && tenantBackup.orders.length > 0) {
+                    await tDb.collection('orders').insertMany(tenantBackup.orders.map(clean));
+                    restoredOrdersCount = tenantBackup.orders.length;
+                }
+
+                if (tenantBackup.products && tenantBackup.products.length > 0) {
+                    await tDb.collection('products').insertMany(tenantBackup.products.map(clean));
+                    restoredProductsCount = tenantBackup.products.length;
+                }
+
+                clearTenantCache(tenantId);
+
+                summary.push({
+                    tenantId,
+                    success: true,
+                    ordersCount: restoredOrdersCount,
+                    productsCount: restoredProductsCount
+                });
+            } catch (err) {
+                console.error(`Failed to restore tenant ${tenantId}:`, err);
+                summary.push({
+                    tenantId,
+                    success: false,
+                    error: err.message
+                });
+            }
+        }
+
+        console.log(">>> Unified system restoration completed.");
+        res.json({ success: true, summary });
+    } catch (e) {
+        console.error(">>> Unified system restoration failed:", e);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 const isProd = process.env.NODE_ENV === "production" || fs.existsSync(path.join(__dirname, 'dist', 'index.html'));
