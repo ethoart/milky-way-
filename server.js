@@ -621,7 +621,14 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             const tEndDate = new Date(`${today}T23:59:59.999+05:30`).toISOString();
             const wDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
             
+            const sDateObj = new Date(sDate);
+            const eDateObj = new Date(eDate);
+            const tDateObj = new Date(tDate);
+            const tEndDateObj = new Date(tEndDate);
+            const wDateObj = new Date(wDate);
+
             query.$or = [
+                // String comparisons
                 { createdAt: { $gte: sDate, $lte: eDate } },
                 { shippedAt: { $gte: sDate, $lte: eDate } },
                 { confirmedAt: { $gte: sDate, $lte: eDate } },
@@ -638,7 +645,26 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
                 { shippedAt: { $gte: wDate } },
                 { deliveredAt: { $gte: wDate } },
                 { returnedAt: { $gte: wDate } },
-                { returnCompletedAt: { $gte: wDate } }
+                { returnCompletedAt: { $gte: wDate } },
+
+                // Date object comparisons
+                { createdAt: { $gte: sDateObj, $lte: eDateObj } },
+                { shippedAt: { $gte: sDateObj, $lte: eDateObj } },
+                { confirmedAt: { $gte: sDateObj, $lte: eDateObj } },
+                { deliveredAt: { $gte: sDateObj, $lte: eDateObj } },
+                { returnedAt: { $gte: sDateObj, $lte: eDateObj } },
+                { returnCompletedAt: { $gte: sDateObj, $lte: eDateObj } },
+                { "logs.timestamp": { $gte: sDateObj, $lte: eDateObj } },
+                { createdAt: { $gte: tDateObj, $lte: tEndDateObj } },
+                { shippedAt: { $gte: tDateObj, $lte: tEndDateObj } },
+                { deliveredAt: { $gte: tDateObj, $lte: tEndDateObj } },
+                { returnedAt: { $gte: tDateObj, $lte: tEndDateObj } },
+                { returnCompletedAt: { $gte: tDateObj, $lte: tEndDateObj } },
+                { createdAt: { $gte: wDateObj } },
+                { shippedAt: { $gte: wDateObj } },
+                { deliveredAt: { $gte: wDateObj } },
+                { returnedAt: { $gte: wDateObj } },
+                { returnCompletedAt: { $gte: wDateObj } }
             ];
         }
 
@@ -654,7 +680,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
 
         allOrders.forEach(o => {
             const createDate = o.createdAt ? getSLDateString(new Date(o.createdAt)) : null;
-            const wasShipped = !!o.shippedAt || ['SHIPPED', 'TRANSFER', 'DELIVERY', 'DELIVERED', 'RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER', 'RETURN_COMPLETED', 'RESIDUAL', 'REARRANGE', 'HOLD'].includes(o.status);
+            const wasShipped = !!o.shippedAt || (o.status && ['SHIPPED', 'TRANSFER', 'DELIVERY', 'DELIVERED', 'RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER', 'RETURN_COMPLETED', 'RESIDUAL', 'REARRANGE', 'HOLD'].includes(o.status.toUpperCase()));
             const shipDate = o.shippedAt ? getSLDateString(new Date(o.shippedAt)) : (wasShipped ? getSLDateString(new Date(o.createdAt)) : null);
             const confirmDate = o.confirmedAt ? getSLDateString(new Date(o.confirmedAt)) : null;
 
@@ -662,17 +688,18 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             let actualDeliverDate = null;
             if (o.deliveredAt) {
                 actualDeliverDate = o.deliveredAt;
-            } else if (o.status === 'DELIVERED') {
+            } else if (o.status && o.status.toUpperCase() === 'DELIVERED') {
                 if (o.logs && Array.isArray(o.logs)) {
                     for (let i = o.logs.length - 1; i >= 0; i--) {
                         const log = o.logs[i];
                         if (log && log.message) {
-                            if (log.message.includes('transitioned to DELIVERED')) {
+                            const msgUpper = log.message.toUpperCase();
+                            if (msgUpper.includes('TRANSITIONED TO DELIVERED')) {
                                 actualDeliverDate = log.timestamp;
                                 break;
                             }
-                            if (log.message.includes('WEBHOOK: Status update to')) {
-                                const match = log.message.match(/WEBHOOK: Status update to ([^\[]+)/);
+                            if (msgUpper.includes('WEBHOOK: STATUS UPDATE TO')) {
+                                const match = log.message.match(/WEBHOOK: Status update to ([^\[]+)/i);
                                 if (match) {
                                     const rawStat = match[1].trim();
                                     if (mapStatus(rawStat) === 'DELIVERED') {
@@ -813,7 +840,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
 
             // Confirmed
-            const isConfirmedState = o.status === 'CONFIRMED';
+            const isConfirmedState = o.status && o.status.toUpperCase() === 'CONFIRMED';
             if (isConfirmedState && (confirmIsInRange || (!o.confirmedAt && createIsInRange))) {
                 confirmedCount++;
                 confirmedValue += o.totalAmount || 0;
@@ -829,7 +856,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
 
             // Delivered
-            const isDeliveredState = o.status === 'DELIVERED';
+            const isDeliveredState = o.status && o.status.toUpperCase() === 'DELIVERED';
             if (isDeliveredState && deliverIsInRange) {
                 deliveredCount++;
                 deliveredValue += o.totalAmount || 0;
@@ -865,14 +892,14 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
 
             // Returned (overall) - if it is currently in a returned state and was returned in range
             const activeReturnStatuses = ['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER'];
-            const isCurrentlyActiveReturned = activeReturnStatuses.includes(o.status);
+            const isCurrentlyActiveReturned = o.status && activeReturnStatuses.includes(o.status.toUpperCase());
             if (isCurrentlyActiveReturned && returnedIsInRange) {
                 returnedCount++;
                 returnedValue += o.totalAmount || 0;
             }
 
             // Return Completed (Restock)
-            const isReturnCompletedState = o.status === 'RETURN_COMPLETED';
+            const isReturnCompletedState = o.status && o.status.toUpperCase() === 'RETURN_COMPLETED';
             if (isReturnCompletedState && returnCompletedIsInRange) {
                 restockCount++;
                 restockValue += o.totalAmount || 0;
@@ -888,7 +915,7 @@ app.get('/api/orders/dashboard-stats', async (req, res) => {
             }
             
             // Upcoming Returns
-            if (['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER'].includes(o.status) && returnedIsInRange) {
+            if (o.status && ['RETURNED', 'RETURN_TRANSFER', 'RETURN_AS_ON_SYSTEM', 'RETURN_HANDOVER'].includes(o.status.toUpperCase()) && returnedIsInRange) {
                  (o.items || []).forEach(item => {
                     if (!productStats[item.productId]) {
                         productStats[item.productId] = {
