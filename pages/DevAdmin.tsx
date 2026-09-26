@@ -31,6 +31,12 @@ export const DevAdmin: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inventoryFileRef = useRef<HTMLInputElement>(null);
 
+  // Unified Database Backup & Restore States
+  const [unifiedProgress, setUnifiedProgress] = useState<'IDLE' | 'EXPORTING' | 'RESTORING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [unifiedLog, setUnifiedLog] = useState('');
+  const [unifiedSummary, setUnifiedSummary] = useState<any[]>([]);
+  const unifiedFileRef = useRef<HTMLInputElement>(null);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -254,6 +260,76 @@ export const DevAdmin: React.FC = () => {
       reader.readAsText(file);
   };
 
+  const handleUnifiedBackup = async () => {
+    setUnifiedProgress('EXPORTING');
+    setUnifiedLog('Interrogating cluster databases and compiling master record indices...');
+    setUnifiedSummary([]);
+    try {
+      const backup = await db.getUnifiedBackup();
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", `milkyway_unified_backup_${new Date().toISOString().split('T')[0]}.json`);
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+      
+      setUnifiedProgress('SUCCESS');
+      setUnifiedLog('Unified database backup compiled and downloaded successfully.');
+    } catch (err: any) {
+      setUnifiedProgress('ERROR');
+      setUnifiedLog(`Backup Failure: ${err.message}`);
+    }
+  };
+
+  const handleUnifiedRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!confirm("⚠️ CRITICAL SECURITY WARNING: Proceeding with this action will completely wipe your current database, including central user credentials, tenant setups, and all order/product data. This action is absolutely IRREVERSIBLE. Are you sure you want to proceed?")) {
+      e.target.value = '';
+      return;
+    }
+
+    setUnifiedProgress('RESTORING');
+    setUnifiedLog('Parsing master JSON archive data...');
+    setUnifiedSummary([]);
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const backupPayload = JSON.parse(event.target?.result as string);
+        if (!backupPayload || !backupPayload.central || !backupPayload.tenantsData) {
+          throw new Error("Invalid unified backup schema format. Missing central or tenantsData.");
+        }
+
+        setUnifiedLog('Authenticating with cloud cluster database and rewriting database entries...');
+        const res = await db.restoreUnifiedBackup(backupPayload);
+        
+        if (res.success) {
+          setUnifiedProgress('SUCCESS');
+          setUnifiedLog('Unified system-wide database restoration complete.');
+          setUnifiedSummary(res.summary || []);
+          alert("Restore operations completed successfully! Cluster refreshed.");
+          load();
+        } else {
+          throw new Error(res.error || "Execution failed.");
+        }
+      } catch (err: any) {
+        setUnifiedProgress('ERROR');
+        setUnifiedLog(`Restoration Failed: ${err.message}`);
+      }
+    };
+
+    reader.onerror = () => {
+      setUnifiedProgress('ERROR');
+      setUnifiedLog('File Access Error: Failed to read backup file.');
+    };
+
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const handlePurgeCluster = async () => {
     if (!migrationTenantId) return alert("Select target cluster node first.");
     const tenant = tenants.find(t => t.id === migrationTenantId);
@@ -447,6 +523,94 @@ export const DevAdmin: React.FC = () => {
                               <input ref={inventoryFileRef} type="file" accept=".json" onChange={handleInventoryRestore} className="hidden" />
                           </button>
                       </div>
+                  </div>
+
+                  {/* Unified System Backup & Restore Hub */}
+                  <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
+                      <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center"><DatabaseBackup size={24}/></div>
+                          <div>
+                              <h3 className="text-xl font-black uppercase text-slate-900 leading-none">Unified Backup & Restore Hub</h3>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Absolute System-Wide Database Recovery Protocol</p>
+                          </div>
+                      </div>
+
+                      <p className="text-[11px] font-semibold text-slate-500 uppercase leading-relaxed px-1">
+                        Creates an absolute system snapshot including main shop registries, users/credentials, and all active shop records (orders & inventory) across separate MongoDB clusters into a single file.
+                      </p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <button 
+                            onClick={handleUnifiedBackup}
+                            disabled={unifiedProgress === 'EXPORTING' || unifiedProgress === 'RESTORING'}
+                            className="flex items-center justify-center gap-3 py-6 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-[2rem] font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-30"
+                          >
+                              {unifiedProgress === 'EXPORTING' ? (
+                                <>
+                                  <RefreshCcw className="animate-spin" size={18} /> Exporting...
+                                </>
+                              ) : (
+                                <>
+                                  <Download size={18} /> Export Full Unified Backup
+                                </>
+                              )}
+                          </button>
+                          <button 
+                            onClick={() => unifiedFileRef.current?.click()}
+                            disabled={unifiedProgress === 'EXPORTING' || unifiedProgress === 'RESTORING'}
+                            className="flex items-center justify-center gap-3 py-6 bg-purple-600 text-white rounded-[2rem] font-black text-[10px] uppercase tracking-widest hover:bg-purple-700 shadow-lg transition-all disabled:opacity-30"
+                          >
+                              {unifiedProgress === 'RESTORING' ? (
+                                <>
+                                  <RefreshCcw className="animate-spin" size={18} /> Restoring...
+                                </>
+                              ) : (
+                                <>
+                                  <Upload size={18} /> Restore Full Unified Backup
+                                </>
+                              )}
+                              <input ref={unifiedFileRef} type="file" accept=".json" onChange={handleUnifiedRestore} className="hidden" />
+                          </button>
+                      </div>
+
+                      {/* Unified System Restore Monitor Console log output inside card */}
+                      {unifiedProgress !== 'IDLE' && (
+                        <div className={`p-6 rounded-2xl border text-xs font-black uppercase tracking-tight space-y-4 ${
+                          unifiedProgress === 'ERROR' ? 'bg-rose-50 border-rose-200 text-rose-700' :
+                          unifiedProgress === 'SUCCESS' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                          'bg-purple-50 border-purple-200 text-purple-700'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            {unifiedProgress === 'EXPORTING' || unifiedProgress === 'RESTORING' ? (
+                              <RefreshCcw size={16} className="animate-spin" />
+                            ) : unifiedProgress === 'SUCCESS' ? (
+                              <CheckCircle2 size={16} />
+                            ) : (
+                              <AlertCircle size={16} />
+                            )}
+                            <span>{unifiedLog}</span>
+                          </div>
+
+                          {/* Render restore summary report table if present */}
+                          {unifiedSummary.length > 0 && (
+                            <div className="pt-4 border-t border-slate-200/50 space-y-2">
+                              <p className="text-[9px] font-black tracking-widest text-slate-400">Restoration Summary Index:</p>
+                              <div className="space-y-1 max-h-[150px] overflow-y-auto no-scrollbar">
+                                {unifiedSummary.map((item: any) => (
+                                  <div key={item.tenantId} className="flex justify-between text-[10px] font-bold text-slate-600">
+                                    <span>SHOP ID: {item.tenantId}</span>
+                                    {item.success ? (
+                                      <span className="text-emerald-600 font-black">Success (+{item.ordersCount} orders, +{item.productsCount} products)</span>
+                                    ) : (
+                                      <span className="text-rose-600 font-black">Failed: {item.error}</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                   </div>
 
                   {/* High Speed Purge Utility */}

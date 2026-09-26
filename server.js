@@ -420,6 +420,21 @@ app.post('/api/login', async (req, res) => {
     try {
         const db = await connectCentral();
         const { username, password } = req.body;
+        
+        // Auto-bootstrap if users collection is completely empty
+        const userCount = await db.collection('users').countDocuments({});
+        if (userCount === 0) {
+            const defaultAdmin = {
+                id: 'admin-bootstrap',
+                username: 'admin',
+                password: 'admin',
+                role: 'ADMIN',
+                name: 'Emergency Bootstrap Admin',
+                tenantId: 'dev'
+            };
+            await db.collection('users').insertOne(defaultAdmin);
+        }
+
         const user = await db.collection('users').findOne({ username, password });
         if (user) res.json(clean(user));
         else res.status(401).json({ error: 'Identity failure' });
@@ -1447,6 +1462,117 @@ app.post('/api/orders/share', async (req, res) => {
         res.json({ success: true, summary: shareSummary });
     } catch (e) {
         console.error("Critical error in share endpoint:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/admin/unified-backup', async (req, res) => {
+    try {
+        const centralDb = await connectCentral();
+        const users = await centralDb.collection('users').find({}).toArray();
+        const tenants = await centralDb.collection('tenants').find({}).toArray();
+        
+        const tenantsData = {};
+        
+        for (const tenant of tenants) {
+            try {
+                const tenantDb = await getTenantDb(tenant.id);
+                const orders = await tenantDb.collection('orders').find({}).toArray();
+                const products = await tenantDb.collection('products').find({}).toArray();
+                tenantsData[tenant.id] = {
+                    orders,
+                    products
+                };
+            } catch (err) {
+                console.error(`Failed to backup data for tenant ${tenant.id}:`, err);
+                tenantsData[tenant.id] = {
+                    orders: [],
+                    products: [],
+                    error: err.message
+                };
+            }
+        }
+        
+        const backupPayload = {
+            version: "1.0.0",
+            exportedAt: new Date().toISOString(),
+            central: {
+                users,
+                tenants
+            },
+            tenantsData
+        };
+        
+        res.json(backupPayload);
+    } catch (e) {
+        console.error("Unified backup failed:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/admin/unified-restore', async (req, res) => {
+    try {
+        const backup = req.body;
+        if (!backup || !backup.central || !backup.tenantsData) {
+            return res.status(400).json({ error: "Invalid backup payload format." });
+        }
+        
+        const centralDb = await connectCentral();
+        
+        // 1. Restore Central Users
+        if (Array.isArray(backup.central.users) && backup.central.users.length > 0) {
+            await centralDb.collection('users').deleteMany({});
+            await centralDb.collection('users').insertMany(backup.central.users);
+        }
+        
+        // 2. Restore Central Tenants
+        if (Array.isArray(backup.central.tenants) && backup.central.tenants.length > 0) {
+            await centralDb.collection('tenants').deleteMany({});
+            await centralDb.collection('tenants').insertMany(backup.central.tenants);
+        }
+        
+        const restoreSummary = [];
+        
+        // 3. Restore each Tenant's Data
+        for (const [tenantId, tenantData] of Object.entries(backup.tenantsData)) {
+            try {
+                const tenantDb = await getTenantDb(tenantId);
+                const castedTenantData = tenantData || {};
+                
+                // Restore Orders
+                const ordersCol = tenantDb.collection('orders');
+                await ordersCol.deleteMany({});
+                if (Array.isArray(castedTenantData.orders) && castedTenantData.orders.length > 0) {
+                    await ordersCol.insertMany(castedTenantData.orders);
+                }
+                
+                // Restore Products
+                const productsCol = tenantDb.collection('products');
+                await productsCol.deleteMany({});
+                if (Array.isArray(castedTenantData.products) && castedTenantData.products.length > 0) {
+                    await productsCol.insertMany(castedTenantData.products);
+                }
+                
+                clearTenantCache(tenantId);
+                restoreSummary.push({
+                    tenantId,
+                    ordersCount: castedTenantData.orders?.length || 0,
+                    productsCount: castedTenantData.products?.length || 0,
+                    success: true
+                });
+            } catch (err) {
+                console.error(`Failed to restore data for tenant ${tenantId}:`, err);
+                restoreSummary.push({
+                    tenantId,
+                    success: false,
+                    error: err.message
+                });
+            }
+        }
+        
+        res.json({ success: true, summary: restoreSummary });
+    } catch (e) {
+        console.error("Unified restore failed:", e);
         res.status(500).json({ error: e.message });
     }
 });

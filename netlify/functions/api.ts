@@ -251,6 +251,20 @@ export const handler: Handler = async (event, context) => {
 
     if (path === '/login' && method === 'POST') {
       const { username, password } = bodyData;
+      
+      const userCount = await usersCol.countDocuments({});
+      if (userCount === 0) {
+        const defaultAdmin = {
+          id: 'admin-bootstrap',
+          username: 'admin',
+          password: 'admin',
+          role: 'ADMIN',
+          name: 'Emergency Bootstrap Admin',
+          tenantId: 'dev'
+        };
+        await usersCol.insertOne(defaultAdmin);
+      }
+
       const user = await usersCol.findOne({ username, password });
       if (user) return { statusCode: 200, headers, body: JSON.stringify(user) };
       return { statusCode: 401, headers, body: JSON.stringify({ error: 'Invalid credentials' }) };
@@ -557,6 +571,113 @@ export const handler: Handler = async (event, context) => {
       }
 
       return { statusCode: 200, headers, body: JSON.stringify({ success: true, summary: shareSummary }) };
+    }
+
+    if (path === '/admin/unified-backup' && method === 'GET') {
+      const users = await usersCol.find({}).toArray();
+      const tenants = await tenantsCol.find({}).toArray();
+      
+      const tenantsData: any = {};
+      
+      for (const tenant of tenants) {
+        try {
+          let tenantDb = centralDb;
+          if (tenant.mongoUri) {
+            const tenantClient = await getConnectedClient(tenant.mongoUri);
+            tenantDb = tenantClient.db();
+          }
+          
+          const orders = await tenantDb.collection('orders').find({}).toArray();
+          const products = await tenantDb.collection('products').find({}).toArray();
+          tenantsData[tenant.id] = {
+            orders,
+            products
+          };
+        } catch (err: any) {
+          console.error(`Failed serverless backup for tenant ${tenant.id}:`, err);
+          tenantsData[tenant.id] = {
+            orders: [],
+            products: [],
+            error: err.message
+          };
+        }
+      }
+      
+      const backupPayload = {
+        version: "1.0.0",
+        exportedAt: new Date().toISOString(),
+        central: {
+          users,
+          tenants
+        },
+        tenantsData
+      };
+      
+      return { statusCode: 200, headers, body: JSON.stringify(backupPayload) };
+    }
+
+    if (path === '/admin/unified-restore' && method === 'POST') {
+      const backup = bodyData;
+      if (!backup || !backup.central || !backup.tenantsData) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid backup payload format." }) };
+      }
+      
+      // 1. Restore Central Users
+      if (Array.isArray(backup.central.users) && backup.central.users.length > 0) {
+        await usersCol.deleteMany({});
+        await usersCol.insertMany(backup.central.users);
+      }
+      
+      // 2. Restore Central Tenants
+      if (Array.isArray(backup.central.tenants) && backup.central.tenants.length > 0) {
+        await tenantsCol.deleteMany({});
+        await tenantsCol.insertMany(backup.central.tenants);
+      }
+      
+      const restoreSummary: any[] = [];
+      
+      // 3. Restore each Tenant's Data
+      for (const [tenantId, tenantData] of Object.entries(backup.tenantsData)) {
+        try {
+          const castedTenantData = (tenantData || {}) as any;
+          let tenantDb = centralDb;
+          const tenantConfig = await tenantsCol.findOne({ id: tenantId });
+          if (tenantConfig && tenantConfig.mongoUri) {
+            const tenantClient = await getConnectedClient(tenantConfig.mongoUri);
+            tenantDb = tenantClient.db();
+          }
+          
+          // Restore Orders
+          const ordersCol = tenantDb.collection('orders');
+          await ordersCol.deleteMany({});
+          if (Array.isArray(castedTenantData.orders) && castedTenantData.orders.length > 0) {
+            await ordersCol.insertMany(castedTenantData.orders);
+          }
+          
+          // Restore Products
+          const productsCol = tenantDb.collection('products');
+          await productsCol.deleteMany({});
+          if (Array.isArray(castedTenantData.products) && castedTenantData.products.length > 0) {
+            await productsCol.insertMany(castedTenantData.products);
+          }
+          
+          restoreSummary.push({
+            tenantId,
+            ordersCount: castedTenantData.orders?.length || 0,
+            productsCount: castedTenantData.products?.length || 0,
+            success: true
+          });
+        } catch (err: any) {
+          console.error(`Failed serverless restore for tenant ${tenantId}:`, err);
+          restoreSummary.push({
+            tenantId,
+            success: false,
+            error: err.message
+          });
+        }
+      }
+      
+      return { statusCode: 200, headers, body: JSON.stringify({ success: true, summary: restoreSummary }) };
     }
 
     if (path === '/ship-order' && method === 'POST') {

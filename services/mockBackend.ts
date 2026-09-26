@@ -366,6 +366,14 @@ class BackendService {
     return this.request('/orders/share', 'POST', { sourceTenantId, targetTenantIds, orderIds, user });
   }
 
+  async getUnifiedBackup(): Promise<any> {
+    return this.request('/admin/unified-backup', 'GET');
+  }
+
+  async restoreUnifiedBackup(backupPayload: any): Promise<any> {
+    return this.request('/admin/unified-restore', 'POST', backupPayload);
+  }
+
   async getSecurityLogs(): Promise<any[]> {
     return this.request('/security-logs', 'GET');
   }
