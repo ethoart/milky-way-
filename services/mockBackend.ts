@@ -260,6 +260,7 @@ class BackendService {
   }
 
   async updateTenant(tenant: Tenant, adminEmail?: string, adminPass?: string): Promise<void> {
+    this._tenantsCache = null;
     const payload: any = { tenant };
     if (adminEmail || adminPass) {
         payload.adminUser = {
@@ -276,6 +277,7 @@ class BackendService {
   }
 
   async createTenant(formData: any): Promise<void> {
+    this._tenantsCache = null;
     const tenant = {
       id: formData.name,
       name: formData.name,
@@ -307,6 +309,7 @@ class BackendService {
   }
 
   async deleteTenant(tenantId: string): Promise<void> {
+    this._tenantsCache = null;
     await this.request('/tenants', 'DELETE', null, { id: tenantId });
   }
 

@@ -48,6 +48,18 @@ async function connectCentral() {
             console.log(">>> MW-OMS Master Node Active.");
             const db = client.db(CENTRAL_DB_NAME);
 
+            // Ensure central indexes for lightning fast queries
+            try {
+                await db.collection('tenants').createIndex({ id: 1 }, { unique: true, background: true });
+                await db.collection('users').createIndex({ id: 1 }, { unique: true, background: true });
+                await db.collection('users').createIndex({ username: 1 }, { background: true });
+                await db.collection('users').createIndex({ tenantId: 1 }, { background: true });
+                await db.collection('global_cities').createIndex({ id: 1 }, { unique: true, background: true });
+                console.log(">>> Central collection indexes established in background.");
+            } catch (indexErr) {
+                console.error(">>> Failed to establish central indexes:", indexErr);
+            }
+
             // Self-healing database migration for admin users
             try {
                 const usersCol = db.collection('users');
@@ -165,27 +177,27 @@ async function ensureTenantIndexes(db, tenantId) {
     try {
         const ordersCol = db.collection('orders');
         const indexesToCreate = [
-            { spec: { id: 1 }, options: { unique: true } },
-            { spec: { tenantId: 1 } },
-            { spec: { status: 1 } },
-            { spec: { createdAt: 1 } },
-            { spec: { shippedAt: 1 } },
-            { spec: { confirmedAt: 1 } },
-            { spec: { deliveredAt: 1 } },
-            { spec: { returnedAt: 1 } },
-            { spec: { returnCompletedAt: 1 } },
-            { spec: { tenantId: 1, createdAt: -1 } },
-            { spec: { tenantId: 1, status: 1 } },
-            { spec: { tenantId: 1, customerPhone: 1 } },
-            { spec: { tenantId: 1, shippedAt: 1 } },
-            { spec: { tenantId: 1, confirmedAt: 1 } },
-            { spec: { tenantId: 1, deliveredAt: 1 } },
-            { spec: { tenantId: 1, returnedAt: 1 } },
-            { spec: { tenantId: 1, returnCompletedAt: 1 } },
-            { spec: { tenantId: 1, "logs.timestamp": 1 } },
-            { spec: { trackingNumber: 1 } },
-            { spec: { customerName: 1 } },
-            { spec: { "logs.timestamp": 1 } }
+            { spec: { id: 1 }, options: { unique: true, background: true } },
+            { spec: { tenantId: 1 }, options: { background: true } },
+            { spec: { status: 1 }, options: { background: true } },
+            { spec: { createdAt: 1 }, options: { background: true } },
+            { spec: { shippedAt: 1 }, options: { background: true } },
+            { spec: { confirmedAt: 1 }, options: { background: true } },
+            { spec: { deliveredAt: 1 }, options: { background: true } },
+            { spec: { returnedAt: 1 }, options: { background: true } },
+            { spec: { returnCompletedAt: 1 }, options: { background: true } },
+            { spec: { tenantId: 1, createdAt: -1 }, options: { background: true } },
+            { spec: { tenantId: 1, status: 1 }, options: { background: true } },
+            { spec: { tenantId: 1, customerPhone: 1 }, options: { background: true } },
+            { spec: { tenantId: 1, shippedAt: 1 }, options: { background: true } },
+            { spec: { tenantId: 1, confirmedAt: 1 }, options: { background: true } },
+            { spec: { tenantId: 1, deliveredAt: 1 }, options: { background: true } },
+            { spec: { tenantId: 1, returnedAt: 1 }, options: { background: true } },
+            { spec: { tenantId: 1, returnCompletedAt: 1 }, options: { background: true } },
+            { spec: { tenantId: 1, "logs.timestamp": 1 }, options: { background: true } },
+            { spec: { trackingNumber: 1 }, options: { background: true } },
+            { spec: { customerName: 1 }, options: { background: true } },
+            { spec: { "logs.timestamp": 1 }, options: { background: true } }
         ];
         
         for (const index of indexesToCreate) {
@@ -194,7 +206,7 @@ async function ensureTenantIndexes(db, tenantId) {
             } catch (e) {
                 if (index.options && index.options.unique) {
                     try {
-                        await ordersCol.createIndex(index.spec, {});
+                        await ordersCol.createIndex(index.spec, { background: true });
                     } catch (e2) {
                         console.error(`Failed to create index ${JSON.stringify(index.spec)}:`, e2);
                     }
@@ -206,8 +218,8 @@ async function ensureTenantIndexes(db, tenantId) {
         
         const productsCol = db.collection('products');
         const productIndexes = [
-            { spec: { id: 1 }, options: { unique: true } },
-            { spec: { tenantId: 1 } }
+            { spec: { id: 1 }, options: { unique: true, background: true } },
+            { spec: { tenantId: 1 }, options: { background: true } }
         ];
         for (const index of productIndexes) {
             try {
@@ -215,7 +227,7 @@ async function ensureTenantIndexes(db, tenantId) {
             } catch (e) {
                 if (index.options && index.options.unique) {
                     try {
-                        await productsCol.createIndex(index.spec, {});
+                        await productsCol.createIndex(index.spec, { background: true });
                     } catch (e2) {}
                 }
             }
@@ -1789,6 +1801,10 @@ app.post('/api/tenants', async (req, res) => {
         const { tenant, adminUser } = req.body;
         const db = await connectCentral();
         await db.collection('tenants').updateOne({ id: tenant.id }, { $set: clean(tenant) }, { upsert: true });
+        
+        // Clear cached connection for this tenant so new mongoUri takes effect immediately
+        tenantDbs.delete(tenant.id);
+
         if (adminUser) {
             const userId = adminUser.id || `u-admin-${tenant.id}`;
             const userTenantId = adminUser.tenantId || tenant.id;
@@ -1827,6 +1843,10 @@ app.delete('/api/tenants', async (req, res) => {
         const { id } = req.query;
         const db = await connectCentral();
         await db.collection('tenants').deleteOne({ id });
+        
+        // Clear cached connection for this tenant
+        if (id) tenantDbs.delete(id);
+        
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
