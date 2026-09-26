@@ -99,10 +99,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
               .map((p: any) => [p.name, p.shipped] as [string, number])
               .sort((a, b) => b[1] - a[1]);
               
-          const scannedReturnManifest = Object.values(pStats)
-              .filter((p: any) => p.returned > 0)
-              .map((p: any) => [p.name, { sku: p.sku, count: p.returned }] as [string, any])
-              .sort((a, b) => b[1].count - a[1].count);
+          const scannedReturnManifest: any[] = [];
+          Object.values(pStats).forEach((p: any) => {
+              if (p.upcomingReturn && p.upcomingReturn > 0) {
+                  scannedReturnManifest.push({
+                      name: p.name,
+                      sku: p.sku,
+                      count: p.upcomingReturn,
+                      type: 'returned'
+                  });
+              }
+              if (p.returned && p.returned > 0) {
+                  scannedReturnManifest.push({
+                      name: p.name,
+                      sku: p.sku,
+                      count: p.returned,
+                      type: 'restocked'
+                  });
+              }
+          });
+          scannedReturnManifest.sort((a: any, b: any) => b.count - a.count);
 
           setDashboardData({ manifest, scannedReturnManifest,
               globalStats: fetchedStats.stats,
@@ -277,18 +293,54 @@ export const Dashboard: React.FC<DashboardProps> = ({ tenantId, shopName }) => {
                     <p className="text-[10px] font-black uppercase tracking-widest">No Scanned Parcel Returns</p>
                   </div>
                 ) : (
-                  dashboardData.scannedReturnManifest.map(([name, data]: any, i) => (
-                    <div key={i} className="flex items-center justify-between p-4 bg-rose-50/50 rounded-2xl border border-rose-100 group hover:bg-rose-50 transition-all">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-white border border-rose-200 rounded-lg flex items-center justify-center text-[10px] font-black text-rose-600 group-hover:border-rose-400">{i+1}</div>
-                        <div className="flex flex-col">
-                            <span className="text-[11px] font-black text-slate-900 uppercase tracking-tight truncate max-w-[150px]">{name}</span>
-                            <span className="text-[8px] font-mono text-rose-500 font-bold uppercase">{data.sku}</span>
+                  dashboardData.scannedReturnManifest.map((item: any, i) => {
+                    const isReturnedPending = item.type === 'returned';
+                    return (
+                      <div 
+                        key={i} 
+                        className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                          isReturnedPending 
+                            ? 'bg-rose-50/50 border-rose-100/80 hover:bg-rose-50/80' 
+                            : 'bg-yellow-50/40 border-yellow-100/80 hover:bg-yellow-50/70'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className={`w-8 h-8 bg-white border rounded-lg flex items-center justify-center text-[10px] font-black ${
+                              isReturnedPending 
+                                ? 'border-rose-200 text-rose-600' 
+                                : 'border-yellow-200 text-yellow-600'
+                            }`}
+                          >
+                            {i+1}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[11px] font-black text-slate-900 uppercase tracking-tight truncate max-w-[180px]">
+                              {item.name}
+                            </span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className={`text-[8px] font-mono font-bold uppercase ${isReturnedPending ? 'text-rose-500' : 'text-yellow-600'}`}>
+                                {item.sku}
+                              </span>
+                              <span className="text-[8px] text-slate-300">·</span>
+                              <span className={`text-[8px] font-bold uppercase tracking-wider ${isReturnedPending ? 'text-rose-500' : 'text-yellow-600'}`}>
+                                {isReturnedPending ? 'Return Initiated' : 'Restocked & Complete'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
+                        <span 
+                          className={`px-3 py-1 rounded-full text-[10px] font-black shadow-sm ${
+                            isReturnedPending 
+                              ? 'bg-rose-600 text-white shadow-rose-200' 
+                              : 'bg-yellow-400 text-slate-900 shadow-yellow-100'
+                          }`}
+                        >
+                          ×{formatFullNumber(item.count)}
+                        </span>
                       </div>
-                      <span className="bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg shadow-rose-200">×{formatFullNumber(data.count)}</span>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
             </div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-4 text-center">Data filtered by terminal scan status</p>

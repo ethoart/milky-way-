@@ -1769,6 +1769,7 @@ app.post('/api/products', async (req, res) => {
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
         const db = await getTenantDb(tenantId);
         await db.collection('products').updateOne({ id: product.id }, { $set: { ...clean(product), tenantId } }, { upsert: true });
+        clearTenantCache(tenantId);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1779,6 +1780,7 @@ app.delete('/api/products', async (req, res) => {
         if (!tenantId || !id) return res.status(400).json({ error: 'Context Required' });
         const db = await getTenantDb(tenantId);
         await db.collection('products').deleteOne({ id, tenantId });
+        clearTenantCache(tenantId);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
