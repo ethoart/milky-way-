@@ -2047,7 +2047,17 @@ app.post('/api/process-return', async (req, res) => {
         const { trackingOrId, user } = req.body;
         if (!tenantId) return res.status(400).json({ error: 'Context Required' });
         const db = await getTenantDb(tenantId);
-        const order = await db.collection('orders').findOne({ tenantId, $or: [{ id: trackingOrId }, { trackingNumber: trackingOrId }] });
+        const cleanCode = trackingOrId ? trackingOrId.trim() : '';
+        const codeRegex = new RegExp("^" + cleanCode.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + "$", "i");
+        const order = await db.collection('orders').findOne({ 
+            tenantId, 
+            $or: [
+                { id: cleanCode },
+                { trackingNumber: cleanCode },
+                { id: codeRegex },
+                { trackingNumber: codeRegex }
+            ] 
+        });
         if (!order) return res.status(404).json({ error: 'Not Found' });
 
         let alreadyProcessed = false;
@@ -2128,14 +2138,28 @@ app.post('/api/courier-webhook', async (req, res) => {
             const db = await getTenantDb(tenant.id);
             let order = null;
             if (waybillId) {
-                order = await db.collection('orders').findOne({ trackingNumber: waybillId });
+                const cleanWb = waybillId.trim();
+                const wbRegex = new RegExp("^" + cleanWb.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + "$", "i");
+                order = await db.collection('orders').findOne({
+                    $or: [
+                        { trackingNumber: cleanWb },
+                        { trackingNumber: wbRegex }
+                    ]
+                });
             }
             if (!order && orderId) {
-                order = await db.collection('orders').findOne({ id: orderId });
+                const cleanId = orderId.trim();
+                const idRegex = new RegExp("^" + cleanId.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + "$", "i");
+                order = await db.collection('orders').findOne({
+                    $or: [
+                        { id: cleanId },
+                        { id: idRegex }
+                    ]
+                });
                 if (!order) {
                     const numericId = orderId.replace(/\D/g, '');
                     if (numericId) {
-                        order = await db.collection('orders').findOne({ id: { $regex: new RegExp(numericId + "$") } });
+                        order = await db.collection('orders').findOne({ id: { $regex: new RegExp(numericId + "$", "i") } });
                     }
                 }
             }
