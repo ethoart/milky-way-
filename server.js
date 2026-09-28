@@ -60,6 +60,35 @@ async function connectCentral() {
                 console.error(">>> Failed to establish central indexes:", indexErr);
             }
 
+            // Self-healing database migration for global cities
+            try {
+                const citiesCol = db.collection('global_cities');
+                const existing = await citiesCol.findOne({ id: 'master_list' });
+                const existingCount = existing && Array.isArray(existing.cities) ? existing.cities.length : 0;
+                
+                if (existingCount < 1000) {
+                    console.log(`>>> Seeding/Upgrading global cities (Current count: ${existingCount})...`);
+                    const citiesPath = path.join(__dirname, 'cities.json');
+                    if (fs.existsSync(citiesPath)) {
+                        const citiesData = JSON.parse(fs.readFileSync(citiesPath, 'utf8'));
+                        if (Array.isArray(citiesData) && citiesData.length > 0) {
+                            await citiesCol.updateOne(
+                                { id: 'master_list' },
+                                { $set: { cities: citiesData } },
+                                { upsert: true }
+                            );
+                            console.log(`>>> Successfully seeded/upgraded to ${citiesData.length} global cities from cities.json`);
+                        }
+                    } else {
+                        console.warn(">>> cities.json not found at " + citiesPath);
+                    }
+                } else {
+                    console.log(`>>> Global cities master list is healthy with ${existingCount} towns.`);
+                }
+            } catch (cityErr) {
+                console.error(">>> Failed to seed global cities:", cityErr);
+            }
+
             // Self-healing database migration for admin users
             try {
                 const usersCol = db.collection('users');
